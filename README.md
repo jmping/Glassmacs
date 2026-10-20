@@ -156,6 +156,13 @@ It is an independent experimental project, not an official Aquamacs release or a
 
 We intend to acknowledge and respect the contributions of the Aquamacs, GNU Emacs, ESS, and broader open-source communities.
 
+## Planned AI and remote terminal integration
+
+- **Support opt-in AI assistance.** Query local or remote agents about code, errors and documents with explicit context sharing, permissions and reviewed edits.
+- **Support resilient remote terminals.** Offer Mosh as an optional interactive transport alongside SSH/TRAMP and tmux for unstable connections.
+
+See [architecture](docs/architecture.md) and [roadmap](docs/roadmap.md) for proposed capabilities, trust boundaries and delivery stages. These integrations are not yet implemented.
+
 ## License
 
 License selection and third-party code obligations will be documented before redistribution. Components derived from GNU Emacs or Aquamacs must comply with their applicable GNU GPL terms.
