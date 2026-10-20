@@ -4,7 +4,7 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-19  
+> **Last reviewed:** 2026-10-20
 > **Coverage:** Contributor setup, testing and verification workflow  
 > **Supersedes:** None
 
@@ -23,6 +23,16 @@ Run ERT in isolated batch mode:
 ./scripts/test
 ```
 
+GitHub Actions runs the ERT suite and byte-compiles all Lisp modules on Ubuntu
+24.04 with its `emacs-nox` package. The CI environment does not install R, ESS,
+Quarto, or TeX; integration tests requiring optional tools are skipped when
+those dependencies are unavailable. CI verifies batch behavior only.
+
+For PR #4, the workflow was created but the GitHub Actions run ended with
+`action_required` before any jobs were created. This is an approval/permissions
+gate outside the workflow definition, not a passing or failing test result.
+Local checks are reported separately from GitHub Actions status.
+
 Byte-compile the Lisp modules with `.elc` output redirected to the system
 temporary directory:
 
@@ -40,6 +50,8 @@ For a real ESS/R integration check, install ESS and R, start Glassmacs, open an
 R file, run `M-x glassmacs-r-start`, and evaluate `1 + 1`. Rendering tests
 likewise require R packages or the Quarto CLI. GUI key behavior must be checked
 on macOS with a graphical Cocoa Emacs; Linux batch tests do not validate it.
+Native macOS GUI behavior, including hybrid shortcuts, appearance, and frame
+handling, remains a manual verification item.
 
 ## Isolated launch and dependencies
 
@@ -49,7 +61,9 @@ into the separate Glassmacs package directory. Set `GLASSMACS_HOME` before
 launch/bootstrap to choose another location. Optional customizations can be
 placed in `$GLASSMACS_HOME/custom.el` (default `~/.config/glassmacs/custom.el`).
 This prevents Glassmacs from rewriting a pre-existing Emacs init or Aquamacs
-preferences.
+preferences. ERT exercises this launcher with a temporary `GLASSMACS_HOME` and
+a separate simulated ordinary Emacs home, and verifies the ordinary home files
+are unchanged.
 
 The package archives are not version-locked in this initial milestone. Tests
 should be run with the project's supported Emacs version and with optional
