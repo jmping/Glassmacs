@@ -1,5 +1,14 @@
 # Glassmacs development roadmap
 
+> **Document ID:** DOC-ROADMAP  
+> **Status:** Canonical  
+> **Owner:** Glassmacs maintainers  
+> **Effective date:** 2026-10-19  
+> **Last reviewed:** 2026-10-19  
+> **Coverage:** Delivery milestones, priorities, dependencies and acceptance criteria  
+> **Supersedes:** None
+
+
 This roadmap translates the [architecture](architecture.md) into staged, testable delivery. It is a planning document, not a statement that planned features are implemented. Keep the README's project vision and Aquamacs-inspired macOS/R emphasis intact. Update milestone status as pull requests merge; do not claim GUI, SSH, performance or language integration was tested unless it actually was.
 
 ## Principles and cross-cutting acceptance criteria
