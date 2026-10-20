@@ -273,6 +273,14 @@ Architecture invariants:
 
 Evaluate feature proposals against these invariants. Reject designs whose main justification is parity with RStudio UI conventions rather than measurable benefits to cross-language research work.
 
+## Aquamacs behavioral compatibility: document and menu boundaries
+
+The [proposed behavioral inventory](aquamacs-compatibility.md) captures source-traced Aquamacs feature parity and settings, while the [proposed menu architecture](menu-architecture.md) specifies shared command/menu/key/toolbar behavior. Both are documentation proposals awaiting review, not proof of implementation.
+
+**Product requirement:** on macOS graphical frames, user-created or opened ordinary documents should by default appear in **independent native Emacs graphical frames (macOS windows)**, rather than new tabs. Users can opt into tabs or reuse. Treat internal ESS/Help/Completions/diagnostic buffers separately using context-aware display policies, and preserve buffer/frame semantics and unsaved-work safety. This is an intentional Glassmacs choice, not an assertion about Aquamacs 3's historical tabbar default.
+
+Menu, keyboard, toolbar and potential Swift settings controls should dispatch the same underlying Emacs interactive commands and share one authoritative preference state. Existing GNU Emacs menu/keymap and frame APIs are preferred to a new UI command engine; no mandatory Swift text renderer or duplicate document store. Validate frame/tab behavior on macOS GUI independently of Linux batch ERT.
+
 ## Existing limitations
 
 Current implementation is local-first, uses no version-locked package snapshot and has not been confirmed in native macOS Cocoa. The proposed execution layer and backend contracts in this document are targets, **not assertions of existing code**. Preserve these distinctions in README and workflow documentation.
