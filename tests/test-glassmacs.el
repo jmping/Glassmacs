@@ -62,18 +62,61 @@
               (when (buffer-live-p buffer) (kill-buffer buffer)))
             (list document special)))))
 
-(ert-deftest glassmacs-find-file-policy-preserves-noninteractive-opens ()
-  (let (called)
-    (cl-letf (((symbol-function 'find-file-noselect)
-               (lambda (&rest _) (ert-fail "Policy must not visit the file")))
-              ((symbol-function 'display-graphic-p)
+(ert-deftest glassmacs-file-menu-uses-document-opening-command ()
+  (let ((global-map (copy-keymap global-map))
+        (system-type 'darwin))
+    (cl-letf (((symbol-function 'display-graphic-p)
                (lambda (&optional _frame) t)))
+      (glassmacs--install-document-menu))
+    (should (eq (lookup-key global-map [menu-bar file open-file])
+                'glassmacs-open-file))
+    (should (eq (lookup-key global-map [menu-bar file new-file])
+                'glassmacs-open-file))))
+
+(ert-deftest glassmacs-visible-document-is-not-opened-in-an-extra-frame ()
+  (let ((buffer (generate-new-buffer "glassmacs-visible-document"))
+        (old-buffer (window-buffer (selected-window)))
+        frame-created)
+    (unwind-protect
+        (progn
+          (set-window-buffer (selected-window) buffer)
+          (cl-letf (((symbol-function 'select-frame-set-input-focus)
+                     (lambda (&rest _) nil))
+                    ((symbol-function 'make-frame)
+                     (lambda (&rest _)
+                       (setq frame-created t)
+                       (error "A visible document must be reused"))))
+            (glassmacs--show-document-buffer buffer 'new-frame))
+          (should-not frame-created)
+          (should (eq (window-buffer (selected-window)) buffer))
+          (should (eq (selected-window)
+                      (get-buffer-window buffer t))))
+      (set-window-buffer (selected-window) old-buffer)
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-new-document-programmatic-call-does-not-create-frame ()
+  (let ((glassmacs-document-opening-policy 'new-frame)
+        (displayed nil))
+    (cl-letf (((symbol-function 'display-graphic-p)
+               (lambda (&optional _frame) t))
+              ((symbol-function 'called-interactively-p)
+               (lambda (&rest _) nil))
+              ((symbol-function 'glassmacs--show-document-buffer)
+               (lambda (&rest _) (setq displayed t))))
+      (let ((buffer (glassmacs-new-document)))
+        (should (buffer-live-p buffer))
+        (should-not displayed)
+        (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-open-file-policy-preserves-noninteractive-opens ()
+  (let (called)
+    (cl-letf (((symbol-function 'find-file)
+               (lambda (filename &optional _wildcards)
+                 (setq called filename)
+                 'original-result)))
       (should
-       (eq (glassmacs--find-file-with-policy
-            (lambda (filename &optional _wildcards)
-              (setq called filename)
-              'original-result)
-            "/tmp/startup.R")
+       (eq (glassmacs-open-file "/tmp/startup.R")
            'original-result))
       (should (equal called "/tmp/startup.R")))))
 
@@ -91,6 +134,7 @@
       (glassmacs-diagnostics)
       (setq buffer (get-buffer "*Glassmacs Diagnostics*"))
       (with-current-buffer buffer
+        (goto-char (point-min))
         (should (search-forward "Emacs:" nil t))
         (should (search-forward "Operating system:" nil t))
         (should (search-forward "/private/glassmacs" nil t))
@@ -98,6 +142,31 @@
         (should (search-forward "R: not found" nil t))
         (should-not (search-forward "SSH_AUTH_SOCK" nil t)))
       (kill-buffer buffer))))
+
+(ert-deftest glassmacs-interactive-find-file-uses-configured-policy ()
+  (let* ((file (make-temp-file "glassmacs-open-policy-"))
+         (opened-buffer nil)
+         (selected-action nil)
+         (glassmacs-document-opening-policy 'reuse-current))
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'display-graphic-p)
+                     (lambda (&optional _frame) t))
+                    ((symbol-function 'find-file-read-args)
+                     (lambda (&rest _) (list file nil)))
+                    ((symbol-function 'called-interactively-p)
+                     (lambda (&rest _) t))
+                    ((symbol-function 'glassmacs--show-document-buffer)
+                     (lambda (buffer action)
+                       (setq opened-buffer buffer
+                             selected-action action)
+                       (switch-to-buffer buffer))))
+            (call-interactively #'glassmacs-open-file))
+          (should (buffer-live-p opened-buffer))
+          (should (eq selected-action 'reuse-current)))
+      (when (buffer-live-p opened-buffer)
+        (kill-buffer opened-buffer))
+      (delete-file file))))
 
 (ert-deftest glassmacs-package-state-is-isolated ()
   (should (equal user-emacs-directory
@@ -265,7 +334,8 @@
 (ert-deftest glassmacs-hybrid-bindings-are-defined ()
   (dolist (binding glassmacs-hybrid-keybindings)
     (should (commandp (cdr binding))))
-  (should (eq (cdr (assoc [super-o] glassmacs-hybrid-keybindings)) 'find-file))
+  (should (eq (cdr (assoc [super-o] glassmacs-hybrid-keybindings))
+              'glassmacs-open-file))
   (should (eq (cdr (assoc [super-S] glassmacs-hybrid-keybindings)) 'write-file)))
 
 (ert-deftest glassmacs-does-not-rebind-emacs-prefix-keys ()
@@ -279,7 +349,7 @@
     (cl-letf (((symbol-function 'display-graphic-p)
                (lambda (&optional _frame) t)))
       (glassmacs--install-hybrid-bindings))
-    (should (eq (lookup-key global-map [super-o]) 'find-file)))
+    (should (eq (lookup-key global-map [super-o]) 'glassmacs-open-file)))
   (let ((global-map (copy-keymap global-map))
         (system-type 'gnu/linux))
     (cl-letf (((symbol-function 'display-graphic-p)
@@ -352,6 +422,24 @@
   (with-temp-buffer
     (should (zerop (process-file "Rscript" nil t nil "-e"
                                  "stopifnot(1 + 1 == 2)")))))
+
+(ert-deftest glassmacs-rscript-renders-base-plot-to-png-when-available ()
+  (unless (executable-find "Rscript")
+    (ert-skip "Rscript is not installed"))
+  (unless (zerop (process-file "Rscript" nil nil nil "-e"
+                               "quit(status = !capabilities('png'))"))
+    (ert-skip "R build has no PNG graphics capability"))
+  (let ((image (make-temp-file "glassmacs-plot-" nil ".png")))
+    (unwind-protect
+        (let ((status
+               (process-file
+                "Rscript" nil nil nil "-e"
+                (format "png(%s); plot(cars); dev.off()"
+                        (glassmacs-r-quote image)))))
+          (should (zerop status))
+          (should (> (file-attribute-size (file-attributes image)) 0)))
+      (when (file-exists-p image)
+        (delete-file image)))))
 
 (ert-deftest glassmacs-ess-mode-is-available-when-installed ()
   (unless (locate-library "ess-r-mode")

@@ -15,6 +15,7 @@ Command) is mapped as follows:
 
 | Shortcut | Command |
 | --- | --- |
+| Command-N | New untitled document (uses the document-opening policy) |
 | Command-O | Open file |
 | Command-S | Save |
 | Command-Shift-S | Save As |
@@ -39,11 +40,11 @@ No Aquamacs source or preference behavior was imported.
 
 ## Compatibility audit and pending behavior
 
-See the [proposed Aquamacs behavior inventory](aquamacs-compatibility.md) and [menu architecture](menu-architecture.md) for full parity coverage and menu command state. The planned graphical macOS **new-document default is a separate native Emacs frame**, with tabs and frame reuse opt-in; this does not change the current unverified prototype's behavior. Command-W currently deletes the selected frame; it must eventually dispatch a context-aware document close command with unsaved-buffer protection. Menu shortcut labels should reflect effective bindings, not copied Aquamacs annotation strings.
+See the [proposed Aquamacs behavior inventory](aquamacs-compatibility.md) and [menu architecture](menu-architecture.md) for full parity coverage and menu command state. Interactive Command-O and Command-N now follow the configurable graphical document-opening policy, whose macOS default is a separate native Emacs frame. Actual Cocoa behavior remains unverified. Command-W currently deletes the selected frame; it must eventually dispatch a context-aware document close command with unsaved-buffer protection. Menu shortcut labels should reflect effective bindings, not copied Aquamacs annotation strings.
 
 ## Aquamacs-specific command and conflict audit
 
-The current Glassmacs profile binds Command-O/S/Shift-S/W/Q/C/V/X/A/Z/F to `find-file`, `save-buffer`, `write-file`, `delete-frame`, `save-buffers-kill-emacs`, `kill-ring-save`, `yank`, `kill-region`, `mark-whole-buffer`, `undo`, and `isearch-forward`. This is a partial macOS convenience layer, not full Aquamacs compatibility. In particular:
+The current Glassmacs profile binds Command-N/O/S/Shift-S/W/Q/C/V/X/A/Z/F to `glassmacs-new-document`, `find-file`, `save-buffer`, `write-file`, `delete-frame`, `save-buffers-kill-emacs`, `kill-ring-save`, `yank`, `kill-region`, `mark-whole-buffer`, `undo`, and `isearch-forward`. Command-O applies the configurable interactive document-opening policy; Command-N creates an untitled document under the same policy. This is a partial macOS convenience layer, not full Aquamacs compatibility. In particular:
 
 - Command-W currently deletes the selected frame. Target behavior is a context-aware close-document/view command with GNU Emacs' unsaved-buffer protection. Closing a frame must not kill a buffer shown in another frame.
 - Command-Q currently exits Emacs through the normal save-buffers prompt; it is not proof of a native app remains-open/reopen lifecycle.

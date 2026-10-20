@@ -25,9 +25,12 @@ Run ERT in isolated batch mode:
 ```
 
 GitHub Actions runs the ERT suite, including remote-workflow stubs, and byte-compiles all Lisp modules on Ubuntu
-24.04 with its `emacs-nox` package. The CI environment does not install R, ESS,
-Quarto, or TeX; integration tests requiring optional tools are skipped when
-those dependencies are unavailable. CI verifies batch behavior only.
+24.04 with `emacs-nox`. A separate integration job installs `r-base-core` and
+`elpa-ess`, adds the packaged ESS directory to `EMACSLOADPATH`, and runs the
+same suite against real R/ESS processes and a base-graphics PNG smoke test.
+Neither job verifies a native macOS graphics device; the real ESS/R check only
+establishes Linux process/evaluation behavior. Quarto and TeX remain optional
+and are skipped unless available.
 
 For PR #4, the workflow was created but the GitHub Actions run ended with
 `action_required` before any jobs were created. This is an approval/permissions
@@ -50,8 +53,9 @@ emacs -Q --batch -l init.el \
 `tests/test-glassmacs-sessions.el` covers sessions and the queue with mocked
 sending against throwaway processes, plus `glassmacs-sessions-integration-real-ess`,
 which skips unless R and ESS are discoverable (`GLASSMACS_SKIP_INTEGRATION=1`
-forces a skip). To run it against a system ESS, add `-L <ess directory>` to the
-`emacs` command in `scripts/test`.
+forces a skip). The dedicated CI job supplies these dependencies. To run locally
+against a system ESS, add its directory to `EMACSLOADPATH` when invoking
+`scripts/test`.
 
 Remote tests use constructed TRAMP paths and mocked commands, not a real SSH server. See the optional manual SSH procedure in [R workflows](r-workflows.md).
 
@@ -78,6 +82,17 @@ From the repository checkout:
 ./scripts/glassmacs /ssh:research:/home/user/project/analysis.R
 ```
 
+On macOS, use a graphical Cocoa GNU Emacs executable. If it is not on the
+launching shell's `PATH`, select the executable inside the installed app bundle:
+
+```sh
+GLASSMACS_EMACS="/Applications/Emacs.app/Contents/MacOS/Emacs" ./scripts/glassmacs
+```
+
+Adjust the path to match the installed app. This starts the upstream Emacs GUI
+with the checkout's Glassmacs configuration; it is not a standalone Glassmacs
+app or an in-process Swift integration.
+
 These are ordinary Emacs command-line arguments. GNU Emacs handles file names
 and TRAMP paths. Opening a remote path is an explicit user action; startup does
 not establish SSH connections, start R, or execute project configuration.
@@ -97,6 +112,31 @@ optional tools; SSH/TRAMP uses Emacs' built-in TRAMP and local OpenSSH. Plain
 text editing and local startup do not require these tools. Glassmacs reports
 missing optional tools when the related commands are invoked.
 
+On a graphical macOS session, Glassmacs Open File (`M-x glassmacs-open-file`,
+Command-O, and File > Open) opens ordinary documents in a separate frame by
+default; `glassmacs-new-document` (Command-N) uses the same policy. Save changes
+to `glassmacs-document-opening-policy` through Customize for future sessions,
+or set it in `$GLASSMACS_HOME/custom.el`, for example:
+
+```elisp
+(setq glassmacs-document-opening-policy 'new-tab)
+```
+
+Use `reuse-current` instead of `new-tab` to keep opening in the current frame/tab.
+Special-mode and Dired buffers, non-graphical sessions, and command-line
+startup file arguments are not redirected. Existing visible document views are
+focused instead of duplicated. This Lisp policy has ERT coverage, but Cocoa
+frame behavior has not been manually verified on macOS.
+
+Run `M-x glassmacs-diagnostics` for a local report of Emacs/OS/window-system,
+Glassmacs home, ESS/R/Rscript availability and graphics guidance. It does not
+include environment variables, credentials, process output or project contents,
+and it does not run optional tools.
+
+For R plotting, see the [ESS graphics smoke path](r-workflows.md#ess-r-graphics-smoke-path).
+It uses ordinary R graphics devices and does not add a Glassmacs plot viewer or
+make X11/XQuartz mandatory.
+
 To install the optional Emacs packages explicitly, run `./scripts/bootstrap`.
 It installs packages that are missing under the isolated package directory and
 requires network access when installation is needed. It does not run
@@ -107,13 +147,18 @@ machines.
 
 ### Manual smoke test
 
-1. Launch `./scripts/glassmacs`, open a local `.txt` file, edit it, and save it.
-2. Launch `./scripts/glassmacs -nw` and verify ordinary text editing and saving.
-3. Start with an empty `GLASSMACS_HOME` and no R/ESS or document tools; verify
-   startup and plain-text editing still work.
-4. If you have a configured SSH alias, verify launch itself made no connection,
-   then explicitly open a test TRAMP path.
-5. Launch ordinary `emacs` and verify it still uses the existing Emacs setup.
+Maintainer dogfood checklist (three checks):
+
+1. Launch the graphical macOS build, edit and save a local text file, and verify
+   a second ordinary document opens in a separate frame. Change the policy to
+   `new-tab` or `reuse-current` and confirm it applies to later opens.
+2. Start an ESS R session and evaluate `1 + 1` from an R source buffer.
+3. Evaluate `plot(cars)` in ESS and verify the native macOS graphics device
+   appears. If `ggplot2` is installed, also try the optional example in
+   [R workflows](r-workflows.md#ess-r-graphics-smoke-path).
+
+This checklist requires a graphical macOS Emacs build and has not been run in
+the Linux development environment used for this change.
 
 ### Troubleshooting and verification limits
 
@@ -125,9 +170,17 @@ machines.
   is on `PATH`; Glassmacs does not install R, Quarto, TeX, SSH or Mosh.
 - If package installation fails offline, plain-text startup remains available;
   retry bootstrap when network access is available.
+- If macOS GUI startup fails, verify `GLASSMACS_EMACS` names the graphical
+  executable inside the Emacs app bundle, not a terminal-only `emacs-nox`
+  binary. Use `M-x glassmacs-diagnostics` to check the active window system and
+  whether ESS, R and Rscript are discoverable.
+- If `plot(cars)` does not open a native graphics window, check the R build's
+  native graphics capability from the ESS console. Only try `X11()` when
+  XQuartz and its display are installed and configured; Glassmacs does not
+  select X11 or install XQuartz automatically.
 - Linux ERT and batch checks do not establish Cocoa behavior. Native macOS GUI
   startup, Finder/LaunchServices integration, hybrid shortcut event handling,
-  appearance, and frame behavior have not been verified by Linux tests and
+  appearance, and actual frame behavior have not been verified by Linux tests and
   require a graphical macOS Emacs smoke test. This distribution does not
   include a packaged/signed/notarized macOS application.
 

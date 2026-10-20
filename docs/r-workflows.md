@@ -23,6 +23,28 @@ ESS's `inferior-ess-r-program` setting. No platform-specific R path is
 assumed. ESS provides completion, help, syntax highlighting, and project-aware
 session behavior.
 
+### ESS/R graphics smoke path
+
+Glassmacs does not manage graphics devices or provide a plot viewer. From an R
+source buffer, start ESS with `M-x glassmacs-r-start`, then evaluate
+`plot(cars)` using `M-x glassmacs-r-send-line` or ESS's normal evaluation
+bindings. On macOS, use the native graphics device provided by the installed R
+build when available; device and window behavior depend on that R installation.
+This path has not been validated on macOS by Linux CI.
+
+If `ggplot2` is already installed, an optional second check is:
+
+```r
+ggplot2::ggplot(cars, ggplot2::aes(speed, dist)) +
+  ggplot2::geom_point()
+```
+
+If the native device is unavailable, check the R build's graphics capabilities
+in the ESS console. `X11()` is an explicit fallback only when XQuartz and its
+display are configured; Glassmacs neither requires XQuartz nor selects X11
+automatically. To diagnose Glassmacs startup and optional dependencies, run
+`M-x glassmacs-diagnostics`; it does not probe or execute R.
+
 ## Documents
 
 R Markdown (`.Rmd`), Quarto (`.qmd`), Sweave (`.Rnw`, `.Snw`), and R

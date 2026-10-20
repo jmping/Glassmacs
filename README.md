@@ -108,6 +108,16 @@ forwards these arguments to upstream Emacs; no separate argument syntax is
 introduced. Set `GLASSMACS_EMACS` if the executable is not named `emacs` or is
 not on `PATH`.
 
+On macOS, point `GLASSMACS_EMACS` at a graphical Cocoa Emacs executable if one
+is not available on the launching shell's `PATH`, for example:
+
+```sh
+GLASSMACS_EMACS="/Applications/Emacs.app/Contents/MacOS/Emacs" ./scripts/glassmacs
+```
+
+This launches upstream Emacs with the Glassmacs configuration; there is no
+standalone `.app` or Swift wrapper.
+
 Core editing requires only GNU Emacs. ESS, R, Quarto, TeX/AUCTeX, SSH and Mosh
 are optional integrations; ordinary text editing does not require them. To
 install the optional Emacs packages for research/document workflows, run:
@@ -135,6 +145,13 @@ macOS Cocoa behavior. A native macOS graphical build, its hybrid shortcuts and
 appearance still require manual verification; no standalone app packaging,
 signing or notarization is provided.
 
+Interactive document opens on a graphical macOS session default to a separate
+frame, with configurable new-tab and reuse-current policies. Special buffers
+and command-line startup file arguments are not redirected. The Lisp policy is
+covered by tests, but native macOS frame behavior remains unverified. Run
+`M-x glassmacs-diagnostics` for local dependency and platform information. For
+the optional R graphics smoke check, see [R workflows](docs/r-workflows.md).
+
 Run the automated tests with:
 
 ```sh
@@ -158,8 +175,9 @@ The first milestone introduces:
 - Best-effort R Markdown, Quarto, Sweave/knitr, and Rd editing support,
   plus document-rendering commands.
 - Local Shiny process start/stop commands.
-- Emacs Lisp tests for startup, keybindings, file associations, themes,
-  string quoting, and missing dependencies.
+- ERT coverage for isolated startup, document-opening policy, diagnostics,
+  keybindings, file associations, themes, R graphics output and missing tools;
+  CI also runs a real ESS/R integration job.
 
 **Not yet verified:** Native macOS Cocoa behavior and full Aquamacs
 keybinding compatibility. Copilot developed this milestone in a Linux
@@ -168,6 +186,12 @@ the relevant Emacs packages, R packages, and external executables.
 Package versions are not pinned to a reproducible snapshot.
 A native Swift integration layer, standalone application packaging,
 and polished previews remain future work.
+
+Issue #10 adds an interactive document-opening policy and local diagnostics.
+The default separate-frame behavior, `new-tab` and `reuse-current` choices,
+and privacy-limited report are implemented in Lisp; actual Cocoa frame behavior
+and ESS graphics on macOS have not been verified. Standard R graphics remain
+owned by the installed R device; Glassmacs has no managed plot viewer.
 
 ## Development Status
 
