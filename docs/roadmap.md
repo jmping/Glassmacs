@@ -125,6 +125,10 @@ Acceptance: Glassmacs starts and edits normally without AI; the user can ask a c
 
 Acceptance: a researcher can open a supported external model file without executing it, edit with suitable mode support, explicitly run an installed tool locally or on a configured host, inspect bounded logs and retrieve outputs; missing runtimes do not break editing; user configuration cannot silently launch untrusted commands. See [architecture](architecture.md).
 
+## Product-fit gate for every milestone
+
+The target audience is **base R / ESS / Emacs power users who routinely cross language and machine boundaries**, not users seeking an RStudio-style IDE. Each milestone PR should explain how it preserves buffer-first editing, direct command-line access, Emacs/ESS keybindings, optional tooling and cross-language workflows. Features must not make R, a project format, a graphical pane, an AI service or a network connection prerequisites for plain-text editing. Use this positioning to prioritize responsiveness, process control, remote execution, file safety and composable integrations over IDE mimicry.
+
 ## Verification matrix
 
 | Capability | Unit / CI | Local macOS integration | Opt-in remote integration |
