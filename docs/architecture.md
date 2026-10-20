@@ -117,6 +117,29 @@ Design requirements:
 
 The initial implementation may provide conservative detection, user choice and read-only inspection before implementing fully featured chunked editing. Document supported file sizes and limitations rather than promising arbitrary-size editing.
 
+## Nonblocking, user-editable R execution queue
+
+Repeated source evaluation must never make the Glassmacs GUI wait synchronously for the entire backlog. Implement a **per-session execution queue** between user commands and supported ESS evaluation submission, preserving ESS's ownership of the inferior-R process and prompt handling. The queue is an orchestration layer, not a replacement for ESS/comint.
+
+### Queue model and semantics
+
+- Each submitted unit has a stable ID, target session/host, project, source file/buffer and source range, captured code snapshot, submission timestamp, status and optional dependencies. Snapshot code when enqueued so later source edits cannot silently alter a pending command; allow explicit editing of the queued snapshot before dispatch.
+- States should distinguish `pending`, `dispatching`, `running`, `completed`, `failed`, `cancelled` and `interrupted`, with a separate `paused` flag on the queue. Only a single active evaluation may own a given sequential ESS session; unrelated sessions may run concurrently.
+- Preserve FIFO by default. Allow inspection, editing, reordering, deleting selected pending entries, clearing future work, pausing after the current evaluation, and resuming. Show a preview of the exact code and target R session before dispatch. No action on pending entries should alter already-dispatched code.
+- **Interrupt current** sends a supported ESS/process interrupt and leaves future work paused pending explicit user action. **Cancel pending** only removes commands not dispatched. **Terminate session** is a distinct explicit action. Never imply that interrupting R rolls back side effects already performed.
+- A source region may be queued as one atomic unit. Splitting it into expressions is optional and must use a correct R parser/ESS-supported expression boundary mechanism; never split arbitrary R code by physical lines. Respect multiline functions, pipes, braces, strings and comments.
+- Dispatch the next entry only when supported ESS signals establish that the previous evaluation is finished and the target process is ready. Do not infer completion from a timeout or arbitrary output text alone. Define behavior for prompts, errors, debugger/browser prompts, `readline()`, interactive input, process restarts, lost SSH connections and changed working directories.
+- Integrate with bounded console output: output suppression must not be mistaken for evaluation completion; queue progress and status must remain accurate when printing is flooded or discarded. Keep queue metadata and retained logs bounded.
+- Maintain a nonblocking queue UI (for example, an Emacs tabulated list or special-mode buffer) with explicit actions and keyboard shortcuts that do not shadow ESS/Aquamacs bindings. User editing of queued code must be safe and reviewable, not silent mutation of the source file.
+- Treat remote execution similarly, but never replay unacknowledged or partially executed commands automatically after SSH disconnect: they may have already produced side effects. Mark uncertain entries and require explicit reconciliation or resubmission. Pending queues must be bound to the correct session/host.
+- By default, the queue may be ephemeral; persistence, crash recovery and automatic retries require an explicit design for sensitive code, filesystem writes, duplicate execution and side effects. Do not auto-retry non-idempotent work.
+
+### Verification
+
+Test rapid repeated submissions, multiline regions, queued edits/reordering/deletion, pause/resume, ESS readiness and error prompts, R interrupts, process death, output flooding, remote disconnection, and multiple concurrent sessions. Verify that the editor remains responsive and no command is silently duplicated, lost or sent to the wrong R session. Measure dispatch overhead and latency against direct ESS and Terminal baselines. Mark any guarantees that cannot be established in the test environment as unverified.
+
+**Status:** This queue is a planned capability; no queue UI or dispatcher exists in the current prototype.
+
 ## Bounded R console output and output-flood recovery
 
 Printing an unexpectedly large R object (for example, an enormous data frame or database query result) must not freeze Glassmacs, exhaust editor memory or require terminating an otherwise healthy R session. This is **distinct from large-file loading** and applies to ESS inferior-R consoles, local subprocesses, terminal/PTY sessions and remote SSH streams.
