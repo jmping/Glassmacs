@@ -95,6 +95,16 @@ Output-flood handling is a high-priority reliability requirement, separate from 
 
 Acceptance: printing a large object does not cause unbounded Emacs buffer growth or an unresponsive UI; the user can suppress further display without unintentionally killing R; interrupts remain independently available; output truncation is visible; subsequent R evaluation works after the flood ends. Confirm process behavior and transport backpressure under test rather than assuming suppressed display means printing has stopped.
 
+## Nonblocking R execution queue track
+
+The execution queue is a major usability requirement and should be introduced alongside ESS stabilization rather than deferred until a Swift UI exists.
+
+- **Milestone 2:** define per-session job identity and state machine; prototype safe nonblocking FIFO submission using supported ESS completion/readiness signals; expose inspect, pause, cancel pending, interrupt current and resume actions. Preserve conventional ESS commands and add tests for rapid submissions, multiline code and output floods.
+- **Milestone 3:** add editable/reorderable pending snapshots and a dedicated queue buffer; connect queue selection to local terminal and remote ESS sessions. Explicitly handle interactive prompts, SSH disconnects and uncertain execution status without automatic retries.
+- **Milestone 4:** refine diagnostics, bounded history, cancellation and project/session observability; validate performance and failure recovery with real R sessions.
+
+Acceptance: rapidly submitting multiple R expressions leaves editing responsive; only one command at a time is dispatched to a single ESS session; users can pause or delete work not yet sent; interrupting the current evaluation does not silently delete or run the rest; edits to source buffers do not mutate queued snapshots; a reconnect never silently replays potentially executed work. See [architecture](architecture.md).
+
 ## Verification matrix
 
 | Capability | Unit / CI | Local macOS integration | Opt-in remote integration |
