@@ -73,9 +73,62 @@ Where necessary, lightweight Swift components may provide additional macOS appli
 
 The project will avoid modifying the GNU Emacs core unless a specific limitation makes such changes necessary.
 
+## Getting started with the prototype
+
+The first development milestone provides an experimental Emacs Lisp configuration,
+not a packaged macOS application. Install GNU Emacs 29 or newer, then from a
+checkout of Glassmacs run:
+
+```sh
+./scripts/bootstrap
+./scripts/glassmacs
+```
+
+The bootstrap installs ESS and optional document-editing packages in
+`~/.config/glassmacs/elpa`, separate from your existing Emacs and Aquamacs
+configuration. Set `GLASSMACS_HOME` to choose another data directory.
+The launcher starts Emacs with `-Q` and loads Glassmacs's `init.el`;
+it does not edit `~/.emacs`, `~/.emacs.d`, or Aquamacs preferences.
+
+Install R separately and ensure its executable is available on `PATH`.
+Quarto and other rendering tools are also external dependencies.
+
+Run the automated tests with:
+
+```sh
+./scripts/test
+```
+
+See [development](docs/development.md), [architecture](docs/architecture.md),
+[keybindings](docs/keybindings.md), and [R workflows](docs/r-workflows.md)
+for details.
+
+## Prototype implementation status
+
+The first milestone introduces:
+
+- Isolated startup and package storage.
+- A macOS graphical Command-key profile, intended to preserve conventional
+  Emacs Control/Meta bindings and language-mode keymaps.
+- Optional modern ESS integration and `.R`/`.r` file associations.
+- Glassmacs dark and light themes.
+- Best-effort R Markdown, Quarto, Sweave/knitr, and Rd editing support,
+  plus document-rendering commands.
+- Local Shiny process start/stop commands.
+- Emacs Lisp tests for startup, keybindings, file associations, themes,
+  string quoting, and missing dependencies.
+
+**Not yet verified:** Native macOS Cocoa behavior and full Aquamacs
+keybinding compatibility. Copilot developed this milestone in a Linux
+environment. ESS, R, document rendering, and Shiny functionality require
+the relevant Emacs packages, R packages, and external executables.
+Package versions are not pinned to a reproducible snapshot.
+A native Swift integration layer, standalone application packaging,
+and polished previews remain future work.
+
 ## Development Status
 
-**Early planning and prototyping.**
+**Early prototype available for testing; not yet a production-ready macOS application.**
 
 The initial development priorities are:
 
@@ -86,7 +139,7 @@ The initial development priorities are:
 5. Develop the visual theme and native application experience.
 6. Package and test a standalone macOS application.
 
-The features described above are project goals and are not yet implemented.
+The first milestone implements part of this foundation, as described above. The complete feature set remains a development goal.
 
 ## Relationship to Aquamacs
 

@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+exec emacs -Q --batch -l "$root/init.el" -l "$root/tests/test-glassmacs.el" \
+  -f ert-run-tests-batch-and-exit
