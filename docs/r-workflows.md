@@ -44,3 +44,16 @@ Output and startup errors appear in `*Glassmacs Shiny*`. Set
 
 R, the Shiny R package, Quarto, and document packages are external
 dependencies; their presence is not guaranteed by installing Glassmacs.
+
+## Planned execution routing: local, terminal and SSH
+
+The current commands above run locally; remote execution and unified project backend selection are **not implemented**. The target architecture is described in [architecture](architecture.md).
+
+- **Local direct:** Rscript, Quarto and rendering with direct process arguments; use persistent ESS for interactive evaluation rather than spawning an R process per command.
+- **Terminal/PTY:** project-associated persistent shell or R sessions, keeping the console independent from source buffers. Generic terminal text injection must not replace ESS evaluation APIs.
+- **SSH/TRAMP:** select an OpenSSH host alias from the user's SSH configuration; open remote files with TRAMP; use established ESS remote-R facilities and verify session and working directory before evaluating.
+- **Local editor / remote compute:** explicit mapping or transfer of source code and artifacts is required. A local path is not assumed to exist on the server.
+- **Remote Shiny:** future opt-in SSH port forwarding, remote loopback binding, local preview URL and tunnel cleanup, never public exposure by default.
+- **Durable remote work:** future tmux/scheduler support with detach/reconnect/log/cancel semantics; ordinary SSH sessions do not guarantee survival across disconnects.
+
+Project execution configuration must be opt-in and non-executable; never run commands simply because a project or TRAMP path was opened. The profile shape in the architecture document is illustrative and is not yet an available Lisp variable.
