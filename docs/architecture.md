@@ -117,6 +117,24 @@ Design requirements:
 
 The initial implementation may provide conservative detection, user choice and read-only inspection before implementing fully featured chunked editing. Document supported file sizes and limitations rather than promising arbitrary-size editing.
 
+## Bounded R console output and output-flood recovery
+
+Printing an unexpectedly large R object (for example, an enormous data frame or database query result) must not freeze Glassmacs, exhaust editor memory or require terminating an otherwise healthy R session. This is **distinct from large-file loading** and applies to ESS inferior-R consoles, local subprocesses, terminal/PTY sessions and remote SSH streams.
+
+Separate three user actions with clearly different semantics:
+
+1. **Stop displaying output:** stop appending excessive output to the visible buffer while keeping the console usable. This must not be presented as an R interrupt or as a guarantee that R has stopped generating output.
+2. **Interrupt computation:** use the supported ESS/process interrupt path to request that the current R operation stop. The R session should remain alive where possible.
+3. **Terminate session:** explicitly stop the R process, with confirmation where appropriate; reserve for irrecoverable sessions.
+
+Design an output budget for interactive consoles and command output: configurable byte/line thresholds, per-burst rate detection, bounded retained history, and a clear notification such as *Output limit reached — additional output suppressed*. Offer a user action to resume display, inspect a bounded tail, or redirect output to a user-selected file when supported. Never silently discard output while implying that it is complete. Do not confuse console-output truncation with truncating a file being edited.
+
+**Transport/backpressure constraint:** suppressing buffer insertion does not automatically suppress R's printing. The consumer must continue draining or explicitly interrupt/stop the producer where appropriate; otherwise full pipes/PTYs or SSH channel windows can block R. Design bounded queues and nonblocking draining with careful flow control. For a local subprocess, it may be possible to drain and discard after a threshold; for ESS/comint, integrate with supported process filters and their prompt/session bookkeeping rather than replacing them with a filter that breaks ESS state. Remote SSH and PTY behavior requires independent validation. Avoid unbounded in-memory buffering or unbounded temporary logging as a supposed fix.
+
+Preserve command boundaries, prompts, ESS markers, error messages and session state when output is suppressed; an output flood must not leave evaluation permanently marked busy or route subsequent commands to the wrong session. Expose clear status for *output suppressed*, *interrupt requested*, *process still running*, and *session terminated*. Automatic limits should be conservative and configurable, with an explicit opt-in path for genuinely large output.
+
+Test a large R data-frame print, repeated fast output, a never-ending print loop, multiline errors, prompts after suppression, manual interruption, remote SSH flooding, and recovery for subsequent evaluations. Benchmarks must include peak editor memory, redisplay responsiveness, CPU use, output throughput and R-process liveness. No performance or interruption guarantees should be claimed without empirical tests.
+
 ## Performance requirements
 
 The old Aquamacs experience was noticeably slower than equivalent Terminal workflows. Glassmacs must minimize overhead and **measure** it.
