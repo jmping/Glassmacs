@@ -1,5 +1,14 @@
 # Glassmacs architecture
 
+> **Document ID:** DOC-ARCH  
+> **Status:** Canonical  
+> **Owner:** Glassmacs maintainers  
+> **Effective date:** 2026-10-19  
+> **Last reviewed:** 2026-10-19  
+> **Coverage:** Target technical architecture, invariants, security and integration contracts  
+> **Supersedes:** None
+
+
 ## Product contract
 
 Glassmacs is an R-first, modern macOS GNU Emacs distribution inspired by Aquamacs. It must preserve upstream Emacs extensibility, familiar Aquamacs/macOS hybrid shortcuts, and traditional Emacs/ESS controls while delivering attractive source highlighting, interactive research workflows, and a responsive interface. It is not a fork of GNU Emacs or a port of obsolete Aquamacs internals.
