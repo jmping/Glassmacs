@@ -1,5 +1,14 @@
 # Glassmacs
 
+> **Document ID:** DOC-README  
+> **Status:** Canonical  
+> **Owner:** Glassmacs maintainers  
+> **Effective date:** 2026-10-19  
+> **Last reviewed:** 2026-10-19  
+> **Coverage:** Project identity, audience, vision and high-level getting started  
+> **Supersedes:** None
+
+
 **The power of Emacs. The elegance of macOS. Built for R and research.**
 
 Glassmacs is an open-source project to create a modern, Mac-native GNU Emacs experience, inspired by Aquamacs and designed for statistical computing, programming, and reproducible research.
@@ -168,6 +177,8 @@ Glassmacs also plans **research application profiles**: lightweight support for 
 ## Who Glassmacs is for
 
 Glassmacs is designed for **experienced base R, ESS and Emacs users who work across languages, applications and remote computers**. It is not an RStudio clone or a project to impose RStudio-style workflows on established researchers. R is a first-class language, not the owner of the workspace. Files, buffers, terminals, external tools and reproducible scripts come first; integrations remain optional, transparent and composable.
+
+See the [canonical documentation index](docs/index.md) for document authority, [governance policy](docs/documentation-governance.md) for updates, and [change register](docs/documentation-changelog.md) for changes in coverage.
 
 ## License
 
