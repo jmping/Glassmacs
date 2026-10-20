@@ -43,3 +43,11 @@ Future entries should state date, affected document IDs, old/new coverage or aut
 - **Updated DOC-R-WORKFLOWS:** the minimal queue and session registry are now documented as implemented (`lisp/glassmacs-sessions.el`); editing, reordering, a queue buffer, output budgets, persistence and remote sessions remain planned.
 - **Updated DOC-ROADMAP:** Milestone 2 queue track records what is delivered and what is deferred. Pending-command removal now always requires confirmation; this tightens the earlier "delete work not yet sent" wording.
 - No documents superseded. Dependencies on menu, keybinding and preference architecture are documented, not implemented.
+
+## 2026-10-19 — Integrated release and first-class remote-workflow planning
+
+- **Expanded DOC-ROADMAP:** made the first integrated runnable Glassmacs release a near-term delivery gate, with independently implementable distribution/startup, remote-running terminal/headless Emacs, and native GUI TRAMP remote-buffer tracks, followed by real ESS/R and SSH integration validation.
+- **Clarified three supported target modes:** local macOS GUI; macOS GUI editing first-class SSH/TRAMP remote buffers; and remote Linux/Unix terminal Emacs with server-local R. Editing location and execution location remain independent and explicit.
+- **Added GUI remote-document acceptance:** native frame-default policy applies to ordinary remote files; host identity, nonblocking status, disconnected unsaved edits, save retry, external-modification conflicts and remote large-file safeguards require actual macOS/SSH tests.
+- **Added terminal/headless acceptance:** single upstream GNU Emacs core without macOS/Cocoa requirements, optional daemon/client and tmux/Mosh workflows, and preserved ESS queue audit/confirmation semantics. Reconnection is not automatic command replay or durable-job proof.
+- No document status, owner, precedence, or supersession changed. These are target requirements and planned verification work, **not newly implemented features**.
