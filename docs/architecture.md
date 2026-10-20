@@ -247,6 +247,23 @@ The profile contract should support discovery, capability negotiation, documenta
 
 **Status:** proposed extension architecture; profile-specific functionality beyond existing ESS scaffolding is not yet implemented or validated.
 
+## Product positioning: polyglot research power users, not an RStudio clone
+
+**Glassmacs is a modern macOS-oriented GNU Emacs environment for experienced, keyboard-driven researchers working across languages, files, applications and local/remote machines.** Its initial R/ESS emphasis reflects an important research workflow, not an assumption that R owns the workspace. The primary user is comfortable with base R, shells, text files, Emacs conventions, external programs and reproducible scripts. Do not optimize the design primarily for RStudio migration or reproduce RStudio's fixed IDE layout.
+
+Architecture invariants:
+
+- **Editor-first, buffer-first:** files, buffers, processes, shells, search and text manipulation remain the core abstractions; no mandatory project dashboard, environment pane or notebook interface.
+- **Base R/ESS without mediation:** preserve direct evaluation, console behavior, standard debugging and user control of the R process; rich inspectors and statistical profiles are optional, never compulsory replacements for R commands.
+- **Polyglot by default:** R, LaTeX, shell, SQL, Python, Julia, Stan, JAGS, external model files and plain text coexist without an R-centric workspace hierarchy.
+- **External tools remain external:** support discovery, editing, execution, diagnostics and artifacts without requiring conversion into a proprietary Glassmacs project format or reinventing existing language tools.
+- **Remote-first compatibility:** source, compute, agent and artifact locations can differ; SSH, TRAMP, Mosh terminals and durable jobs are normal research configurations.
+- **Power-user transparency:** queues, commands, working directories, environments, process status, output limits, provenance and AI context/permissions must be inspectable and overridable.
+- **Modernize presentation, not the mental model:** macOS appearance and convenience may supplement Emacs/ESS keybindings and extensibility but must not replace them or impair terminal-like responsiveness.
+- **No mandatory services:** plain-text editing, language modes and local processes must remain useful without R, cloud accounts, AI, network connectivity or proprietary statistical applications.
+
+Evaluate feature proposals against these invariants. Reject designs whose main justification is parity with RStudio UI conventions rather than measurable benefits to cross-language research work.
+
 ## Existing limitations
 
 Current implementation is local-first, uses no version-locked package snapshot and has not been confirmed in native macOS Cocoa. The proposed execution layer and backend contracts in this document are targets, **not assertions of existing code**. Preserve these distinctions in README and workflow documentation.
