@@ -1,5 +1,14 @@
 # Keyboard profile
 
+> **Document ID:** DOC-KEYS  
+> **Status:** Canonical  
+> **Owner:** Glassmacs maintainers  
+> **Effective date:** 2026-10-19  
+> **Last reviewed:** 2026-10-19  
+> **Coverage:** Keyboard profile, implemented mappings and intended shortcuts  
+> **Supersedes:** None
+
+
 The configurable `glassmacs-keyboard-profile` currently supports
 `glassmacs-hybrid`. On graphical macOS frames, the Super key (normally
 Command) is mapped as follows:
