@@ -9,3 +9,6 @@
 
 # Temporary backups
 *.app.bak
+
+# Intermediate macOS icon generation files
+*.iconset/
