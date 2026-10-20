@@ -1,6 +1,7 @@
 ;;; glassmacs-r-ui.el --- R console history and contextual actions -*- lexical-binding: t; -*-
 
 (require 'comint)
+(require 'mouse)
 (require 'glassmacs-sessions)
 
 (defgroup glassmacs-r-ui nil
@@ -13,7 +14,8 @@
   (setq-local comint-input-ignoredups t)
   (local-set-key [up] #'glassmacs-r-ui-previous-input-or-line)
   (local-set-key [down] #'glassmacs-r-ui-next-input-or-line)
-  (local-set-key (kbd "RET") #'comint-send-input))
+  (local-set-key (kbd "RET") #'comint-send-input)
+  (glassmacs-r-ui--enable-context-menu))
 
 (defun glassmacs-r-ui--input-start ()
   "Return the beginning of the current comint input, or nil."
@@ -45,7 +47,7 @@
       (line-move 1))))
 
 (defun glassmacs-r-ui--menu-has-session-p ()
-  "Return whether a session is already known without refreshing anything."
+  "Return whether an R process is live without refreshing the registry."
   (or (and glassmacs-r-target-session
            (let ((session (glassmacs-sessions-find glassmacs-r-target-session)))
              (and session (glassmacs-sessions--process-live-p
@@ -54,7 +56,15 @@
                  (and (eq (glassmacs-session-state session) 'ready)
                       (glassmacs-sessions--process-live-p
                        (glassmacs-session-process session))))
-               glassmacs-sessions--list)))
+               glassmacs-sessions--list)
+      (and (boundp 'ess-process-name-list)
+           (cl-some
+            (lambda (entry)
+              (let* ((name (if (consp entry) (car entry) entry))
+                     (process (and (stringp name) (get-process name))))
+                (and (glassmacs-sessions--process-live-p process)
+                     (glassmacs-sessions--r-process-p process))))
+            ess-process-name-list))))
 
 (defvar glassmacs-r-ui-context-menu
   (let ((menu (make-sparse-keymap "Glassmacs R")))
@@ -86,30 +96,87 @@
     menu)
   "Context menu shared by R source buffers and ESS R consoles.")
 
-(defun glassmacs-r-context-menu (event)
-  "Show the R context menu at mouse EVENT.
-Menu enablement only inspects Emacs buffer and process state."
-  (interactive "e")
-  (mouse-set-point event)
-  (popup-menu glassmacs-r-ui-context-menu))
+(defun glassmacs-r-ui--populate-context-menu (menu _click)
+  "Add Glassmacs R actions to MENU in an R source or console buffer."
+  (when (derived-mode-p 'ess-r-mode 'R-mode 'inferior-ess-r-mode)
+    (define-key-after menu [glassmacs-r-separator] menu-bar-separator)
+    (map-keymap
+     (lambda (key binding)
+       (when (consp binding)
+         (define-key-after
+           menu (vector (intern (format "glassmacs-%s" key)))
+           (copy-sequence binding))))
+     glassmacs-r-ui-context-menu))
+  menu)
 
-(defun glassmacs-r-ui--bind-context-menu ()
-  "Bind the Glassmacs R context menu in the current R mode."
-  (local-set-key [mouse-3] #'glassmacs-r-context-menu))
+(defun glassmacs-r-ui--enable-context-menu ()
+  "Enable Emacs' native context menu and add Glassmacs R actions locally."
+  (context-menu-mode 1)
+  (add-hook 'context-menu-functions
+            #'glassmacs-r-ui--populate-context-menu 20 t))
+
+(defun glassmacs-r-ui--source-buffer-p ()
+  "Return non-nil for an ESS R source buffer."
+  (derived-mode-p 'ess-r-mode 'R-mode))
+
+(defun glassmacs-r-ui--submit-region (start end operation)
+  "Queue source region START..END for the buffer's explicit target."
+  (glassmacs-queue-submit
+   (buffer-substring-no-properties start end) nil
+   (list :buffer (buffer-name) :start start :end end :operation operation)))
+
+(defun glassmacs-r-ui--around-ess-eval-region (original start end &rest arguments)
+  "Route ESS region evaluation through the queue when this buffer has a target."
+  (if (and (glassmacs-r-ui--source-buffer-p) glassmacs-r-target-session)
+      (glassmacs-r-ui--submit-region start end 'ess-region)
+    (apply original start end arguments)))
+
+(defun glassmacs-r-ui--around-ess-eval-line (original &rest arguments)
+  "Route ESS line evaluation through the queue when this buffer has a target."
+  (if (and (glassmacs-r-ui--source-buffer-p) glassmacs-r-target-session)
+      (glassmacs-r-ui--submit-region
+       (line-beginning-position) (line-end-position) 'ess-line)
+    (apply original arguments)))
+
+(defun glassmacs-r-ui--around-ess-eval-function (original &rest arguments)
+  "Route ESS function evaluation through the queue when this buffer has a target."
+  (if (and (glassmacs-r-ui--source-buffer-p) glassmacs-r-target-session)
+      (save-excursion
+        (condition-case nil
+            (progn
+              (end-of-defun)
+              (let ((end (point)))
+                (beginning-of-defun)
+                (glassmacs-r-ui--submit-region (point) end 'ess-function)))
+          (error (user-error "No R function found at point"))))
+    (apply original arguments)))
+
+(defun glassmacs-r-ui--around-ess-eval-buffer (original &rest arguments)
+  "Route ESS buffer evaluation through the queue when this buffer has a target."
+  (if (and (glassmacs-r-ui--source-buffer-p) glassmacs-r-target-session)
+      (glassmacs-r-ui--submit-region (point-min) (point-max) 'ess-buffer)
+    (apply original arguments)))
+
+(defun glassmacs-r-ui--install-ess-routing ()
+  "Route common ESS R evaluation entry points through the safe queue."
+  (dolist (entry '((ess-eval-region . glassmacs-r-ui--around-ess-eval-region)
+                   (ess-eval-line . glassmacs-r-ui--around-ess-eval-line)
+                   (ess-eval-function . glassmacs-r-ui--around-ess-eval-function)
+                   (ess-eval-buffer . glassmacs-r-ui--around-ess-eval-buffer)))
+    (when (and (fboundp (car entry))
+               (not (advice-member-p (cdr entry) (car entry))))
+      (advice-add (car entry) :around (cdr entry)))))
 
 (add-hook 'inferior-ess-r-mode-hook #'glassmacs-r-ui--configure-console)
-(add-hook 'ess-r-mode-hook #'glassmacs-r-ui--bind-context-menu)
-(add-hook 'R-mode-hook #'glassmacs-r-ui--bind-context-menu)
+(add-hook 'ess-r-mode-hook #'glassmacs-r-ui--enable-context-menu)
+(add-hook 'R-mode-hook #'glassmacs-r-ui--enable-context-menu)
 
 (with-eval-after-load 'ess-r-mode
-  (when (boundp 'ess-r-mode-map)
-    (define-key ess-r-mode-map [mouse-3] #'glassmacs-r-context-menu))
-  (when (boundp 'R-mode-map)
-    (define-key R-mode-map [mouse-3] #'glassmacs-r-context-menu)))
+  (glassmacs-r-ui--install-ess-routing))
 
 (with-eval-after-load 'ess-inf
+  (glassmacs-r-ui--install-ess-routing)
   (when (boundp 'inferior-ess-r-mode-map)
-    (define-key inferior-ess-r-mode-map [mouse-3] #'glassmacs-r-context-menu)
     (define-key inferior-ess-r-mode-map [up] #'glassmacs-r-ui-previous-input-or-line)
     (define-key inferior-ess-r-mode-map [down] #'glassmacs-r-ui-next-input-or-line)
     (define-key inferior-ess-r-mode-map (kbd "RET") #'comint-send-input)))

@@ -42,3 +42,16 @@ jobs:
           ess_dir=$(dirname "$(dpkg -L elpa-ess | grep '/ess-site.el$' | head -n 1)")
           test -n "$ess_dir"
           EMACSLOADPATH="$ess_dir:" ./scripts/test
+
+  macos-launcher:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test Swift launcher package
+        run: swift test --package-path macos
+      - name: Build unsigned app bundle
+        run: |
+          ./scripts/build-macos-app "$RUNNER_TEMP/Glassmacs.app"
+          test -x "$RUNNER_TEMP/Glassmacs.app/Contents/MacOS/GlassmacsLauncher"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' \
+            "$RUNNER_TEMP/Glassmacs.app/Contents/Info.plist" | grep -qx APPL

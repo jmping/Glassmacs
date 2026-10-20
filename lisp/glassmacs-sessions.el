@@ -12,6 +12,7 @@
 ;; `uncertain' and is never replayed automatically.
 
 (require 'cl-lib)
+(require 'project)
 (require 'subr-x)
 
 (defgroup glassmacs-sessions nil
@@ -53,7 +54,14 @@
 (defun glassmacs-r--target-lighter ()
   "Return the modeline indicator for the current buffer's R target."
   (when glassmacs-r-target-session
-    (format " R[%s]" glassmacs-r-target-session)))
+    (let ((session (glassmacs-sessions-find glassmacs-r-target-session)))
+      (format " R[%s%s]" glassmacs-r-target-session
+              (if (and session
+                       (eq (glassmacs-session-state session) 'ready)
+                       (glassmacs-sessions--process-live-p
+                        (glassmacs-session-process session)))
+                  ""
+                "!")))))
 
 (defvar ess-process-name-list)
 (defvar ess-local-process-name)
@@ -279,7 +287,7 @@ This command does not query R or contact a remote host."
                        (or project-dir
                            (if (file-remote-p default-directory)
                                "(remote; not queried)"
-                             "(not in a project)")))
+                             "(not in a project)"))))
        (insert (format "R session: %s\n"
                        (if session (glassmacs-session-id session) "(not selected)")))
        (insert (format "R process directory at registration: %s\n"
@@ -293,8 +301,8 @@ This command does not query R or contact a remote host."
   "Explicitly ask the selected R session to print its current getwd()."
   (interactive)
   (glassmacs-queue-submit
-  "cat(\"R getwd(): \", getwd(), \"\\n\", sep = \"\")" nil
-  (list :buffer (buffer-name) :operation 'working-directory)))
+   "cat(\"R getwd(): \", getwd(), \"\\n\", sep = \"\")" nil
+   (list :buffer (buffer-name) :operation 'working-directory)))
 
 (defun glassmacs-r-start-session ()
   "Start an ESS R session and register it; report missing R or ESS."

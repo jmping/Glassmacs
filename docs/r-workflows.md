@@ -131,19 +131,54 @@ Accidentally printing an enormous data frame or database result must not make th
 
 ## R sessions and execution queue (minimal subset implemented)
 
-Implemented in `lisp/glassmacs-sessions.el`; there are **no default
-keybindings or menu items yet** (they depend on the keyboard and menu
-architecture in [keybindings](keybindings.md) and [menu-architecture](menu-architecture.md)). Use `M-x`.
+Implemented in `lisp/glassmacs-sessions.el` and `lisp/glassmacs-r-ui.el`.
+Session operations are available through `M-x`; R source buffers and ESS
+consoles also have a right-click context menu.
 
 **Sessions.** ESS keeps owning the process, buffer and filters. Glassmacs
 observes ESS processes (`ess-process-name-list`, the process `busy` property
 ESS maintains) and gives each a stable identity (`R-1`, `R-2`, ...). Commands:
 `glassmacs-r-start-session` (reports missing ESS or R), `glassmacs-r-list-sessions`,
-`glassmacs-r-select-session` (buffer-local target). With several live sessions
-Glassmacs never guesses: it uses the buffer's selected session or ESS's
-`ess-local-process-name`, otherwise it prompts (and errors in batch use).
-Termination is detected by a sentinel added with `add-function :after` and by
-polling.
+`glassmacs-r-select-session` (buffer-local target),
+`glassmacs-r-clear-session-target`, and `glassmacs-r-inspect-session`. A selected
+target is shown as `R[R-n]` in the modeline. Common ESS region, line, function,
+and buffer evaluation commands retain their ESS keybindings and route through
+the immutable queue when a buffer has an explicit target; without an explicit
+target ESS behavior is unchanged. Queue submissions retain the exact session
+process identity resolved at submission. If that process exits or restarts,
+Glassmacs reports the stale target and does not fall through to a different
+session; clear or explicitly select a live target to continue.
+
+With no explicit target, Glassmacs uses the only live session or ESS's
+`ess-local-process-name`; with multiple unresolved choices it prompts (and
+errors in batch use). `glassmacs-r-submit-region-to-session` is a one-off
+selection that does not change the buffer target. Termination is detected by a
+sentinel added with `add-function :after` and by polling.
+
+**Editable console history.** Each ESS R process buffer uses its own comint
+history ring; history is not shared across R sessions and is in-memory only.
+`RET` submits the current input. `M-p` / `M-n` retain comint history navigation.
+`Up` recalls an older entry on the first line of the current prompt input;
+`Down` recalls a newer entry on its last line. Within a multiline input, Up/Down
+move vertically instead, so the body can be traversed. Left/Right, Home/End,
+mouse placement, and ordinary Emacs editing commands edit recalled text in
+place; submitting the edited command with Return runs the edited version.
+Source-buffer Up/Down retain ordinary cursor navigation.
+
+**Context menu.** Right-click an R source or ESS R console for session
+selection/clearing, associated console, run selection, one-off selection in
+another session, queue inspection, directory inspection, and an explicit
+`getwd()` request. Menu enablement reads current Emacs/process state only; it
+does not refresh sessions, connect over SSH, or execute R. The `getwd()` menu
+item is an explicit user action and queues a `getwd()` expression to the chosen
+session.
+
+`glassmacs-r-inspect-directories` distinguishes the document directory,
+buffer `default-directory`, local project root, and the R process buffer's
+directory recorded at session registration. It does not assume these paths
+share a host, translate paths, or run `setwd()`. A remote project root is
+reported as not queried. Use `glassmacs-r-show-r-working-directory` only when
+you explicitly want the live R process to print `getwd()`.
 
 **Queue.** `glassmacs-r-submit-region` / `glassmacs-r-submit-buffer` /
 `glassmacs-queue-submit` capture the text as an immutable snapshot and queue it
