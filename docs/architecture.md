@@ -4,7 +4,7 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-19  
+> **Last reviewed:** 2026-10-20
 > **Coverage:** Target technical architecture, invariants, security and integration contracts  
 > **Supersedes:** None
 
@@ -273,9 +273,29 @@ Architecture invariants:
 
 Evaluate feature proposals against these invariants. Reject designs whose main justification is parity with RStudio UI conventions rather than measurable benefits to cross-language research work.
 
+## Application, document and menu abstractions
+
+This section defines the small set of concepts needed for macOS document behavior. It extends the execution, SSH, ESS, LaTeX, Shiny and research boundaries above; it does not replace them or introduce a second UI framework.
+
+| Concept | Meaning and ownership | Preferred Emacs/platform mechanism |
+| --- | --- | --- |
+| Application lifecycle | Startup, file-open events, reopen/unhide, last-document close and quit. GNU Emacs remains the running application; native integration is only an adapter for a demonstrated Cocoa/LaunchServices gap. Batch/startup operations must not create graphical frames. | Emacs startup/frame hooks and Cocoa open events; optional narrow Swift bridge |
+| Document | A visited file identity or an untitled document, including whether it is modified and any recovery state. Identity respects local paths, TRAMP method/host and remote path; reopening an existing identity should focus/reuse it unless the user explicitly asks for another view. Do not create a separate document database. | `buffer-file-name`, `file-truename` only when safe, `file-remote-p`, buffer modified state and existing Emacs file visiting |
+| Buffer | The editable Emacs text object and source of mode, contents, undo history, local settings and process association. Multiple windows/frames may display the same buffer; killing a buffer is not the same as closing one of its views. | Native Emacs buffers and visited-file behavior |
+| Window, frame and tab | An Emacs window is a view/layout leaf; a graphical frame is a top-level Emacs frame / macOS window; a tab is a frame-local workspace/layout grouping, not a buffer or native document identity. Glassmacs' new-document preference selects new frame by default, while tabs/reuse remain options. `tab-bar-mode` and `tab-line-mode` are distinct features. | Emacs windows/frames and `tab-bar-mode`; do not invent replacements |
+| Editor session | Restorable document/frame/tab/window layout and optionally recent files. This is separate from a live ESS/R process, SSH connection, terminal, or durable remote job; layout restore must never imply process restore. | `desktop-save-mode` and native tab/frame state where suitable |
+| Command | An existing or narrowly wrapped Emacs `interactive` command. Keymaps, menu items and toolbars invoke the same command symbol; command semantics and major/minor-mode overrides remain Emacs-owned. | `interactive`, global/local maps, `menu-item`, `easy-menu`, built-in menu update hooks |
+| Context and capability | Facts derived at dispatch/menu-refresh time from the current buffer, region, file/host, project, mode, frame and already-live process. Capability asks whether an action is available; it must not initiate work to find out. | Buffer-local state, `project.el`, `file-remote-p`, `commandp`, `fboundp`, `executable-find`, `process-live-p` |
+| Appearance | Faces, themes, frame fonts and display modes, scoped to frame/buffer where needed. Existing Glassmacs light/dark themes are the current implementation; typography by mode and system appearance are future work. | Emacs faces, `load-theme`, frame parameters, display modes |
+| Preferences | User choices have stable names/types, safe defaults, scope, one persistence owner and immediate readback. Lisp-first settings should use Custom or equivalent Emacs variables stored under isolated `GLASSMACS_HOME`; Swift must not keep a competing cached authority. | `defcustom`, `custom-file`, buffer/frame parameters and isolated Glassmacs state |
+| Platform services | Finder reveal/open/reopen, Services, clipboard, print, accessibility and native app-menu placement. Use GNU Emacs Cocoa support first; a Swift/Cocoa bridge is optional and narrowly scoped, with Emacs retaining command and buffer ownership. | Emacs macOS backend; thin platform adapter only for proven gaps |
+| Research workflow | A context-appropriate command that delegates to ESS, AUCTeX, Quarto/R Markdown, Shiny or remote execution interfaces already specified above. Menu availability is observational and side-effect-free; execution still requires an explicit user command and host/session choice. | Existing ESS/AUCTeX/process/TRAMP interfaces and the architecture's shared execution boundary |
+
+These are contracts, not a required set of classes or a generic command/capability object model. Use existing Emacs state directly; introduce a small adapter or value only when a real boundary needs one. The menu-level state, enablement and extension rules are canonical in [menu architecture](menu-architecture.md). Historical-to-target status and acceptance coverage belong to the [Aquamacs compatibility inventory](aquamacs-compatibility.md), not here.
+
 ## Aquamacs behavioral compatibility: document and menu boundaries
 
-The [proposed behavioral inventory](aquamacs-compatibility.md) captures source-traced Aquamacs feature parity and settings, while the [proposed menu architecture](menu-architecture.md) specifies shared command/menu/key/toolbar behavior. Both are documentation proposals awaiting review, not proof of implementation.
+The [proposed behavioral inventory](aquamacs-compatibility.md) captures source-traced Aquamacs feature parity and settings, while the [proposed menu architecture](menu-architecture.md) specifies menu taxonomy and shared command/menu/key/toolbar behavior. Both are documentation proposals awaiting review, not proof of implementation.
 
 **Product requirement:** on macOS graphical frames, user-created or opened ordinary documents should by default appear in **independent native Emacs graphical frames (macOS windows)**, rather than new tabs. Users can opt into tabs or reuse. Treat internal ESS/Help/Completions/diagnostic buffers separately using context-aware display policies, and preserve buffer/frame semantics and unsaved-work safety. This is an intentional Glassmacs choice, not an assertion about Aquamacs 3's historical tabbar default.
 
