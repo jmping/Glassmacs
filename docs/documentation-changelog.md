@@ -51,3 +51,9 @@ Future entries should state date, affected document IDs, old/new coverage or aut
 - **Added GUI remote-document acceptance:** native frame-default policy applies to ordinary remote files; host identity, nonblocking status, disconnected unsaved edits, save retry, external-modification conflicts and remote large-file safeguards require actual macOS/SSH tests.
 - **Added terminal/headless acceptance:** single upstream GNU Emacs core without macOS/Cocoa requirements, optional daemon/client and tmux/Mosh workflows, and preserved ESS queue audit/confirmation semantics. Reconnection is not automatic command replay or durable-job proof.
 - No document status, owner, precedence, or supersession changed. These are target requirements and planned verification work, **not newly implemented features**.
+
+## 2026-10-19 — R graphics and plotting roadmap
+
+- **Expanded DOC-ROADMAP:** introduced a dogfood-priority R graphics workstream: native macOS R graphics first, explicit X11/XQuartz fallback rather than a dependency, session-aware integrated plot history/viewing, and remote artifact-based plotting.
+- **Clarified verification:** real ESS/R graphics tests and minimal maintainer dogfooding are distinct from mocks; no plot viewer or graphics-device integration is claimed as implemented.
+- No authority, status, owner or supersession changes.
