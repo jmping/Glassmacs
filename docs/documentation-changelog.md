@@ -4,7 +4,7 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-19  
+> **Last reviewed:** 2026-10-20
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
 
@@ -25,7 +25,15 @@ Future entries should state date, affected document IDs, old/new coverage or aut
 
 ## 2026-10-19 — Proposed Aquamacs feature, settings and menu audit (documentation PR)
 
-- **Added DOC-AQUA-COMPAT (Proposed):** source-traced historical feature inventory, intended replacement strategy, settings taxonomy, implementation priorities and test acceptance criteria. Establishes user-requested **separate graphical windows as the intended default for new documents**, with tabs/reuse optional and special buffers exempted by policy.
+- **Added DOC-AQUA-COMPAT (Proposed):** source-traced historical feature inventory, intended replacement strategy, settings taxonomy, implementation priorities and acceptance criteria. Establishes separate graphical windows as the intended default for new documents, with tabs/reuse optional and special buffers exempted by policy.
 - **Added DOC-MENU (Proposed):** first dedicated menu command/capability and dynamic-state specification spanning application, file, editing, display, keyboard, tools/research, window and help menus.
-- **Updated DOC-INDEX:** register proposed documents and explicit scope boundaries. These are not yet implemented features, and review/merge must establish canonical authority.
-- **Linked DOC-ARCH, DOC-KEYS and DOC-ROADMAP:** preserve original execution/ESS/research and governance coverage while pointing to detailed proposals. No document superseded; no functional code touched.
+- **Updated DOC-INDEX:** registered proposed documents and explicit scope boundaries. These are not implemented features; review/merge establishes canonical authority.
+- **Linked DOC-ARCH, DOC-KEYS and DOC-ROADMAP:** preserved execution/ESS/research and governance coverage while pointing to detailed proposals. No document superseded; no functional code touched.
+
+## 2026-10-20 — Aquamacs parity and menu architecture audit expanded
+
+- **Expanded DOC-AQUA-COMPAT:** converted the initial topic summary into a stable-ID matrix with source ranges, user-visible behavior, GNU Emacs equivalents, explicit dispositions, checkout status, priority and acceptance tests. Marked implementation gaps and modern macOS/GNU Emacs departures; documentation is not proof of implementation.
+- **Expanded DOC-MENU:** recorded source-verified File, Edit, Search/Go To, Options, Buffers, Tools, Help, application, toolbar and dynamic mode/package commands. Distinguished Aquamacs' Lisp Buffers additions from native Cocoa Window content. Added side-effect-free context/capability, checked/radio/shortcut, extension and Linux ERT versus macOS GUI contracts.
+- **Expanded DOC-ARCH and DOC-KEYS:** specified lifecycle/document/buffer/window/tab/frame/session/command/context/capability/appearance/preference/platform/research boundaries; documented existing Command bindings, conflicts, Option input, international layouts and left/right modifier gaps.
+- **Updated DOC-INDEX:** narrowed canonical coverage and cross-references; compatibility and menu documents remain Proposed pending review. The architecture and existing execution, SSH, ESS, LaTeX, Shiny and research boundaries remain authoritative for their existing scopes.
+- **No code changes:** this audit specifies future engineering and acceptance criteria; it does not implement frames, menus, settings persistence, native services or keyboard behavior.
