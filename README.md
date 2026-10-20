@@ -1,5 +1,14 @@
 # Glassmacs
 
+> **Document ID:** DOC-README  
+> **Status:** Canonical  
+> **Owner:** Glassmacs maintainers  
+> **Effective date:** 2026-10-19  
+> **Last reviewed:** 2026-10-19  
+> **Coverage:** Project identity, audience, vision and high-level getting started  
+> **Supersedes:** None
+
+
 **The power of Emacs. The elegance of macOS. Built for R and research.**
 
 Glassmacs is an open-source project to create a modern, Mac-native GNU Emacs experience, inspired by Aquamacs and designed for statistical computing, programming, and reproducible research.
@@ -19,6 +28,7 @@ Our goals are to:
 - **Make R a first-class language.** Excellent ESS integration, intelligent indentation, syntax highlighting, completion, diagnostics, and interactive R sessions.
 - **Support reproducible research.** Seamless editing, execution, rendering, and previewing of R Markdown, Quarto, Sweave, and knitr documents.
 - **Make Shiny development easier.** Integrated application execution, diagnostics, and preview workflows.
+- **Be a dependable plain text editor.** Open and edit ordinary text files without requiring R or research tooling, and provide safe, responsive inspection of very large text documents and logs.
 - **Remain true to GNU Emacs.** Preserve Emacs extensibility, existing packages, and conventional Emacs commands.
 - **Minimize maintenance overhead.** Prefer upstream GNU Emacs and actively maintained packages over custom forks and duplicated functionality.
 
@@ -63,6 +73,11 @@ Our goals are to:
 - Preserved ESS evaluation commands
 - Configurable keyboard profiles
 
+
+### Execution and remote research roadmap
+
+Glassmacs aims to support fast local direct execution, persistent terminal/PTY sessions, and SSH/TRAMP-based remote R and research workflows. The editor and computational host need not be the same machine. Planned capabilities include per-project execution profiles, remote ESS, asynchronous rendering, remote Shiny previews through secure SSH port forwarding, and detachable long-running server jobs. **These features are architectural goals, not part of the present prototype.** See [execution architecture](docs/architecture.md) and [R workflows](docs/r-workflows.md).
+
 ## Architecture
 
 Glassmacs is intended to use an upstream GNU Emacs release as its editing engine.
@@ -100,6 +115,7 @@ Run the automated tests with:
 ```
 
 See [development](docs/development.md), [architecture](docs/architecture.md),
+[roadmap](docs/roadmap.md),
 [keybindings](docs/keybindings.md), and [R workflows](docs/r-workflows.md)
 for details.
 
@@ -148,6 +164,21 @@ Glassmacs is inspired by Aquamacs and its philosophy of making GNU Emacs comfort
 It is an independent experimental project, not an official Aquamacs release or an affiliated GNU Emacs distribution.
 
 We intend to acknowledge and respect the contributions of the Aquamacs, GNU Emacs, ESS, and broader open-source communities.
+
+## Planned AI and remote terminal integration
+
+- **Support opt-in AI assistance.** Query local or remote agents about code, errors and documents with explicit context sharing, permissions and reviewed edits.
+- **Support resilient remote terminals.** Offer Mosh as an optional interactive transport alongside SSH/TRAMP and tmux for unstable connections.
+
+See [architecture](docs/architecture.md) and [roadmap](docs/roadmap.md) for proposed capabilities, trust boundaries and delivery stages. These integrations are not yet implemented.
+
+Glassmacs also plans **research application profiles**: lightweight support for imported or embedded model syntax, local or remote execution, diagnostics and output artifacts. Early candidates include `lavaan`, JAGS/BUGS and Stan, with an extensible route to other installed statistical applications. Profiles reuse the execution infrastructure and remain optional; opening a file never implicitly executes it.
+
+## Who Glassmacs is for
+
+Glassmacs is designed for **experienced base R, ESS and Emacs users who work across languages, applications and remote computers**. It is not an RStudio clone or a project to impose RStudio-style workflows on established researchers. R is a first-class language, not the owner of the workspace. Files, buffers, terminals, external tools and reproducible scripts come first; integrations remain optional, transparent and composable.
+
+See the [canonical documentation index](docs/index.md) for document authority, [governance policy](docs/documentation-governance.md) for updates, and [change register](docs/documentation-changelog.md) for changes in coverage.
 
 ## License
 

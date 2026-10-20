@@ -1,5 +1,14 @@
 # Development
 
+> **Document ID:** DOC-DEV  
+> **Status:** Canonical  
+> **Owner:** Glassmacs maintainers  
+> **Effective date:** 2026-10-19  
+> **Last reviewed:** 2026-10-19  
+> **Coverage:** Contributor setup, testing and verification workflow  
+> **Supersedes:** None
+
+
 ## Requirements
 
 - GNU Emacs 29 or newer is recommended. Emacs Lisp tests use ERT.
@@ -45,3 +54,11 @@ preferences.
 The package archives are not version-locked in this initial milestone. Tests
 should be run with the project's supported Emacs version and with optional
 dependencies absent as well as installed when practical.
+
+## Execution architecture verification plan
+
+Future execution backends are specified in [architecture](architecture.md), not yet implemented. Extend CI to test routing selection, session identity, process lifecycle, argv handling and cwd mapping with no real SSH credentials. Add opt-in integration tests using an explicitly provisioned SSH test host for TRAMP/ESS; distinguish those results from Linux mocks and native macOS GUI checks.
+
+Benchmark against equivalent local Terminal and remote SSH workflows using matched R versions, packages, input and environment. Measure Emacs/Glassmacs startup, R process startup, first versus subsequent ESS round trips, direct Rscript, large-output handling, SSH connection/setup, warmed remote evaluation, rendering and responsiveness under load. Separate wall-clock R computation from GUI/process/network overhead and report repeat counts and variance. Do not claim a performance improvement until measured.
+
+Security test cases must cover paths with whitespace, Unicode and shell metacharacters, SSH failures, host-key validation behavior, port conflicts and cleanup. Do not run tests against an implicit server or require secrets in public CI.
