@@ -18,6 +18,7 @@ Glassmacs is an R-first, modern macOS GNU Emacs distribution inspired by Aquamac
 ## Existing implementation (Milestone 1)
 
 - `init.el`: isolated entry point into the `lisp/` configuration.
+- `glassmacs-remote.el`: opt-in SSH/TRAMP file and shell workflows, remote context inspection, connection cleanup, and optional Mosh launcher.
 - `glassmacs-core.el`: package initialization under `GLASSMACS_HOME`, basic direct process invocation and R string quoting.
 - `glassmacs-keys.el`: macOS graphical Command-key shortcuts with Control/Meta preserved.
 - `glassmacs-r.el`: ESS/R modes and evaluation helpers.
@@ -25,7 +26,7 @@ Glassmacs is an R-first, modern macOS GNU Emacs distribution inspired by Aquamac
 - `glassmacs-shiny.el`: local Shiny subprocess management.
 - `glassmacs-appearance.el`: dark/light themes.
 
-These are an experimental foundation. Remote backends, unified execution profiles, remote Shiny forwarding, durable jobs and macOS GUI validation **are design requirements, not implemented features**. Dependencies currently come from GNU ELPA, NonGNU ELPA and MELPA, without lockfiles. No changes to existing user Emacs or Aquamacs configuration are permitted.
+These are an experimental foundation. Basic SSH/TRAMP file access and interactive shells are implemented; remote execution profiles, remote ESS, remote Shiny forwarding, durable jobs and macOS GUI validation **remain unimplemented**. Dependencies currently come from GNU ELPA, NonGNU ELPA and MELPA, without lockfiles. No changes to existing user Emacs or Aquamacs configuration are permitted.
 
 ## Execution architecture: components and responsibilities
 
@@ -57,6 +58,14 @@ Introduce a small `glassmacs-execution.el` interface when implementation begins.
 | Local direct | Direct argument-vector subprocesses and asynchronous processes | Avoid shell startup where unnecessary; keep interactive R in a persistent ESS session |
 | Local terminal | PTY-backed persistent shell or R session | Reuse Emacs `comint`, `term` or justified upstream alternatives; distinguish this from ESS |
 | Remote SSH | SSH transport, TRAMP file access, remote ESS where supported | Reuse OpenSSH, `~/.ssh/config`, authentication agents and host-key verification; no custom SSH protocol |
+
+### Implemented SSH/TRAMP foundation
+
+`glassmacs-remote.el` uses upstream TRAMP filename and connection APIs. Users can use ordinary Emacs remote file names or `M-x glassmacs-remote-open`, start a TRAMP-backed Emacs shell with `M-x glassmacs-remote-shell`, inspect a current remote context, and explicitly clean up its TRAMP connection. `glassmacs-remote-context` is a read-only plist interface for later integrations; it does not select or manage an ESS session.
+
+The wrappers require a simple SSH host name or alias and an absolute remote path. OpenSSH applies the user's existing host aliases, authentication, agent and host-key settings. Startup does not initiate a connection, and opening a project does not run project configuration. Failures are surfaced through Emacs/TRAMP; cleanup is explicit, preserves TRAMP's password cache, and does not retry or replay commands. Standard TRAMP commands remain available independently of the wrappers.
+
+`M-x glassmacs-remote-mosh` is an opt-in terminal launcher that passes the host alias as an argument to the local `mosh` executable through Emacs `term`. It does not provide file access, forwarding, durable jobs, or exactly-once command delivery. tmux remains an external multiplexer; Glassmacs neither launches nor configures it. These entry points do not implement remote R/ESS dispatch or job/session recovery.
 
 Each job/session should expose an explicit identity and state: backend, host (if any), project root, remote/local working directory, executable, environment policy, process or session ID, lifecycle state, output/log buffers and whether it survives disconnection. Distinguish interactive persistent sessions from one-off batch jobs and durable detached jobs. Do not imply that all modes provide the same capabilities.
 
@@ -235,7 +244,7 @@ Support **Mosh (Mobile Shell)** as an optional transport for interactive remote 
 - Do not equate terminal screen reconciliation with exactly-once delivery of R queue entries. After disconnection, unacknowledged evaluation requests remain uncertain until explicitly reconciled; never replay them automatically.
 - Test Wi-Fi interruptions, host changes, reconnect, terminal state, output floods and session recovery on opt-in remote infrastructure.
 
-**Status:** optional future transport; not currently implemented.
+**Status:** a minimal opt-in Mosh terminal launcher is implemented; remote server availability, roaming and recovery remain unverified.
 
 ## Research application profiles: external syntax and tools
 

@@ -14,6 +14,7 @@
 - GNU Emacs 29 or newer is recommended. Emacs Lisp tests use ERT.
 - R, Quarto, and optional Emacs packages are only needed for their respective
   integrations.
+- SSH/TRAMP uses built-in TRAMP and local OpenSSH; Mosh is optional, and tmux remains external.
 
 ## Test and compile
 
@@ -23,7 +24,7 @@ Run ERT in isolated batch mode:
 ./scripts/test
 ```
 
-GitHub Actions runs the ERT suite and byte-compiles all Lisp modules on Ubuntu
+GitHub Actions runs the ERT suite, including remote-workflow stubs, and byte-compiles all Lisp modules on Ubuntu
 24.04 with its `emacs-nox` package. The CI environment does not install R, ESS,
 Quarto, or TeX; integration tests requiring optional tools are skipped when
 those dependencies are unavailable. CI verifies batch behavior only.
@@ -52,6 +53,8 @@ which skips unless R and ESS are discoverable (`GLASSMACS_SKIP_INTEGRATION=1`
 forces a skip). To run it against a system ESS, add `-L <ess directory>` to the
 `emacs` command in `scripts/test`.
 
+Remote tests use constructed TRAMP paths and mocked commands, not a real SSH server. See the optional manual SSH procedure in [R workflows](r-workflows.md).
+
 For a real ESS/R integration check, install ESS and R, start Glassmacs, open an
 R file, run `M-x glassmacs-r-start`, and evaluate `1 + 1`. Rendering tests
 likewise require R packages or the Quarto CLI. GUI key behavior must be checked
@@ -77,7 +80,7 @@ dependencies absent as well as installed when practical.
 
 ## Execution architecture verification plan
 
-Future execution backends are specified in [architecture](architecture.md), not yet implemented. Extend CI to test routing selection, session identity, process lifecycle, argv handling and cwd mapping with no real SSH credentials. Add opt-in integration tests using an explicitly provisioned SSH test host for TRAMP/ESS; distinguish those results from Linux mocks and native macOS GUI checks.
+Basic SSH/TRAMP file/shell operations are implemented; remote execution backends and remote ESS remain planned in [architecture](architecture.md). Extend CI to test routing selection, session identity, process lifecycle, argv handling and cwd mapping with no real SSH credentials. Add opt-in integration tests using an explicitly provisioned SSH test host for TRAMP/ESS; distinguish those results from Linux mocks and native macOS GUI checks.
 
 Benchmark against equivalent local Terminal and remote SSH workflows using matched R versions, packages, input and environment. Measure Emacs/Glassmacs startup, R process startup, first versus subsequent ESS round trips, direct Rscript, large-output handling, SSH connection/setup, warmed remote evaluation, rendering and responsiveness under load. Separate wall-clock R computation from GUI/process/network overhead and report repeat counts and variance. Do not claim a performance improvement until measured.
 

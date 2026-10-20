@@ -54,9 +54,38 @@ Output and startup errors appear in `*Glassmacs Shiny*`. Set
 R, the Shiny R package, Quarto, and document packages are external
 dependencies; their presence is not guaranteed by installing Glassmacs.
 
+## SSH/TRAMP remote files and terminals
+
+Remote files remain ordinary Emacs buffers and use upstream TRAMP/OpenSSH:
+
+- Use `C-x C-f` with a standard path such as `/ssh:research:/home/me/project/file.R`, or run `M-x glassmacs-remote-open` and enter an SSH host name/alias plus an absolute remote path. Directories open through Emacs' normal directory handling.
+- `M-x glassmacs-remote-shell` opens an Emacs shell with a TRAMP remote working directory. Commands entered there are explicit user actions.
+- `M-x glassmacs-remote-inspect` reports the current remote method, host, user, port and whether an existing TRAMP connection buffer has a live process. It does not connect.
+- `M-x glassmacs-remote-cleanup-connection` explicitly cleans up the current TRAMP connection while preserving TRAMP's password cache. Accessing the remote path again can establish a new connection; Glassmacs does not replay commands or retry uncertain operations.
+- `M-x glassmacs-remote-check-tools` reports local `ssh`, `mosh` and `tmux` executable availability. It does not probe remote hosts.
+- `M-x glassmacs-remote-mosh` optionally starts an interactive Mosh terminal. Local `ssh` and `mosh` executables, a configured SSH host, a remote `mosh-server`, and suitable UDP network access are required. Mosh does not replace TRAMP or OpenSSH file access.
+
+The wrappers accept simple host names/aliases (not `user@host` or wildcard patterns) and absolute remote paths. OpenSSH continues to read the user's existing SSH configuration and use its configured authentication and host-key checks. Glassmacs configuration does not store SSH credentials or private keys and does not edit SSH configuration, agents, or remote hosts. Startup and project opening do not initiate network connections or run remote/project configuration. Native TRAMP error reporting is retained for unavailable hosts, authentication failures and timeouts.
+
+tmux remains an external terminal multiplexer. Glassmacs does not launch, install, or configure it; use it explicitly in a remote shell if it is already available on the host. Local tool detection cannot establish whether remote tmux or `mosh-server` is installed.
+
+The read-only `glassmacs-remote-context` function returns a plist with the method, user, host, port and remote path for a TRAMP path, or nil for a local path. It is an integration point only; it does not create or manage ESS sessions.
+
+### Optional manual SSH verification
+
+Use a host alias already configured by the user; Glassmacs does not create or modify it. Confirm that the alias is trusted and usable with the user's normal OpenSSH setup, then:
+
+1. Launch Glassmacs offline and confirm ordinary local files still open, edit and save.
+2. Run `M-x glassmacs-remote-open`, enter the alias and an existing absolute remote test path, edit it, save it, and verify the saved content from a separate SSH client.
+3. Run `M-x glassmacs-remote-shell` for the same host/directory and explicitly inspect `pwd` or another harmless command.
+4. Run `M-x glassmacs-remote-inspect`, then `M-x glassmacs-remote-cleanup-connection`; access the remote file again and confirm TRAMP reconnects when requested.
+5. Optionally test `M-x glassmacs-remote-mosh` only on a host where Mosh is already configured. Do not treat terminal reconnection as proof of exactly-once command delivery.
+
+Do not run this procedure in public CI or use private credentials in tests. Remote ESS, remote R execution, execution queues, durable jobs, remote Shiny and artifact transfer are not provided by this foundation.
+
 ## Planned execution routing: local, terminal and SSH
 
-The current commands above run locally; remote execution and unified project backend selection are **not implemented**. The target architecture is described in [architecture](architecture.md).
+Existing R/document commands run locally. SSH/TRAMP file and interactive shell workflows are implemented; remote execution and unified project backend selection are **not implemented**. The target architecture is described in [architecture](architecture.md).
 
 - **Local direct:** Rscript, Quarto and rendering with direct process arguments; use persistent ESS for interactive evaluation rather than spawning an R process per command.
 - **Terminal/PTY:** project-associated persistent shell or R sessions, keeping the console independent from source buffers. Generic terminal text injection must not replace ESS evaluation APIs.
