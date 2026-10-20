@@ -25,6 +25,8 @@ Glassmacs is an R-first, modern macOS GNU Emacs distribution inspired by Aquamac
 - `glassmacs-documents.el`: document-mode selection and local rendering/knitting.
 - `glassmacs-shiny.el`: local Shiny subprocess management.
 - `glassmacs-appearance.el`: dark/light themes.
+- `glassmacs-frames.el`: configurable interactive document opening in graphical frames/tabs.
+- `glassmacs-diagnostics.el`: local platform and optional dependency diagnostics.
 
 These are an experimental foundation. Basic SSH/TRAMP file access and interactive shells are implemented; remote execution profiles, remote ESS, remote Shiny forwarding, durable jobs and macOS GUI validation **remain unimplemented**. Dependencies currently come from GNU ELPA, NonGNU ELPA and MELPA, without lockfiles. No changes to existing user Emacs or Aquamacs configuration are permitted.
 

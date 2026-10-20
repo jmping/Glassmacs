@@ -6,7 +6,8 @@
   :group 'glassmacs)
 
 (defconst glassmacs-hybrid-keybindings
-  '(([super-o] . find-file)
+  '(([super-o] . glassmacs-open-file)
+    ([super-n] . glassmacs-new-document)
     ([super-s] . save-buffer)
     ([super-S] . write-file)
     ([super-w] . delete-frame)

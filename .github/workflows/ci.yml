@@ -28,3 +28,17 @@ jobs:
                                                temporary-file-directory))))
                       (dolist (file (directory-files "lisp" t "\\.el$"))
                         (byte-compile-file file)))'
+
+  ess-r-integration:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Emacs, R and ESS
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes emacs-nox r-base-core elpa-ess
+      - name: Run ERT with real ESS and R
+        run: |
+          ess_dir=$(dirname "$(dpkg -L elpa-ess | grep '/ess-site.el$' | head -n 1)")
+          test -n "$ess_dir"
+          EMACSLOADPATH="$ess_dir:" ./scripts/test
