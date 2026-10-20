@@ -163,6 +163,8 @@ We intend to acknowledge and respect the contributions of the Aquamacs, GNU Emac
 
 See [architecture](docs/architecture.md) and [roadmap](docs/roadmap.md) for proposed capabilities, trust boundaries and delivery stages. These integrations are not yet implemented.
 
+Glassmacs also plans **research application profiles**: lightweight support for imported or embedded model syntax, local or remote execution, diagnostics and output artifacts. Early candidates include `lavaan`, JAGS/BUGS and Stan, with an extensible route to other installed statistical applications. Profiles reuse the execution infrastructure and remain optional; opening a file never implicitly executes it.
+
 ## License
 
 License selection and third-party code obligations will be documented before redistribution. Components derived from GNU Emacs or Aquamacs must comply with their applicable GNU GPL terms.
