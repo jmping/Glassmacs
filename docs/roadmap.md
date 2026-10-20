@@ -75,6 +75,16 @@ This roadmap translates the [architecture](architecture.md) into staged, testabl
 
 **Exit criteria:** reproducible packaging and installation, documented compatibility, stable R/LaTeX/remote workflows, and measured GUI performance with transparent limitations.
 
+## Plain text and large-file acceptance track
+
+This is a **core product requirement**, not an optional R feature. Glassmacs must remain a useful general-purpose plain text editor even when no statistical packages are installed.
+
+- **Milestone 2:** verify normal plain-text editing and isolation from R dependencies; add conservative large-file detection and safe open/read-only behavior where feasible; test long-line safeguards and prohibit accidental writes from partial views.
+- **Milestone 3:** implement or integrate a validated chunked large-file inspection path, including remote-file handling and clear partial-view indicators; test search/navigation and failure/cancellation behavior.
+- **Milestone 4 and later:** improve large-file editing only where correctness and save integrity can be guaranteed; benchmark open time, peak memory and interactive responsiveness on representative text and log files.
+
+Acceptance tests must include ordinary `.txt` and extensionless files, multi-megabyte documents, long single-line files, large logs, non-UTF-8/invalid encoding cases, read-only and permission-restricted files, and remote large files when a test host is available. Do not require all large files to load into a normal Emacs buffer. Never write back a partial view as a complete file. See [architecture](architecture.md) for safety constraints.
+
 ## Verification matrix
 
 | Capability | Unit / CI | Local macOS integration | Opt-in remote integration |
