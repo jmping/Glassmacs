@@ -4,7 +4,7 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-19  
+> **Last reviewed:** 2026-10-20  
 > **Coverage:** Delivery milestones, priorities, dependencies and acceptance criteria  
 > **Supersedes:** None
 
@@ -122,6 +122,8 @@ The execution queue is a major usability requirement and should be introduced al
 - **Milestone 2:** define per-session job identity and state machine; prototype safe nonblocking FIFO submission using supported ESS completion/readiness signals; expose inspect, pause, cancel pending, interrupt current and resume actions. Preserve conventional ESS commands and add tests for rapid submissions, multiline code and output floods.
 - **Milestone 3:** add editable/reorderable pending snapshots and a dedicated queue buffer; connect queue selection to local terminal and remote ESS sessions. Explicitly handle interactive prompts, SSH disconnects and uncertain execution status without automatic retries.
 - **Milestone 4:** refine diagnostics, bounded history, cancellation and project/session observability; validate performance and failure recovery with real R sessions.
+
+**Status (2026-10-20):** a minimal subset (session registry, per-session FIFO, inspect, pause/resume, confirmed removal with history, interrupt, orphaning on termination) is implemented; see [R workflows](r-workflows.md). Pending-command removal always requires explicit confirmation. Editing/reordering, a queue buffer, output floods and remote sessions remain planned.
 
 Acceptance: rapidly submitting multiple R expressions leaves editing responsive; only one command at a time is dispatched to a single ESS session; users can pause or delete work not yet sent; interrupting the current evaluation does not silently delete or run the rest; edits to source buffers do not mutate queued snapshots; a reconnect never silently replays potentially executed work. See [architecture](architecture.md).
 

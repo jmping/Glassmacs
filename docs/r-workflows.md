@@ -4,7 +4,7 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-19  
+> **Last reviewed:** 2026-10-20  
 > **Coverage:** Current and explicitly proposed R and research document workflows  
 > **Supersedes:** None
 
@@ -78,7 +78,49 @@ See the [development roadmap](roadmap.md) for planned delivery and test mileston
 Accidentally printing an enormous data frame or database result must not make the editor unusable. The design calls for a configurable output budget, visible suppression/truncation status, and three separate commands: **stop displaying**, **interrupt the current R computation**, and **terminate the R session**. The first action does not guarantee that R stops producing output; Glassmacs must continue safely handling the stream or use explicit process control to avoid pipe/PTY/SSH backpressure. Preserve ESS prompts and evaluation state, and make it possible to resume normal evaluation afterward. These protections are **planned, not implemented**; see [architecture](architecture.md) and [roadmap](roadmap.md).
 
 
-## Pending R evaluation queue (planned)
+## R sessions and execution queue (minimal subset implemented)
 
-Glassmacs should offer a per-R-session **execution queue** so multiple evaluation requests do not block editing. Pending entries contain captured code snapshots and target-session information, with a dedicated interface to inspect, edit, reorder, pause, resume or remove work **before** it reaches R. Distinct actions should interrupt the currently running evaluation, clear future pending work, or terminate the session. One complete region is a safe initial queue unit; splitting by source lines is not generally valid R parsing. Interactive prompts, ESS readiness, output suppression and SSH disconnections require explicit state handling. This feature is **not implemented**; see [architecture](architecture.md) and [roadmap](roadmap.md).
+Implemented in `lisp/glassmacs-sessions.el`; there are **no default
+keybindings or menu items yet** (they depend on the keyboard and menu
+architecture in [keybindings](keybindings.md) and [menu-architecture](menu-architecture.md)). Use `M-x`.
 
+**Sessions.** ESS keeps owning the process, buffer and filters. Glassmacs
+observes ESS processes (`ess-process-name-list`, the process `busy` property
+ESS maintains) and gives each a stable identity (`R-1`, `R-2`, ...). Commands:
+`glassmacs-r-start-session` (reports missing ESS or R), `glassmacs-r-list-sessions`,
+`glassmacs-r-select-session` (buffer-local target). With several live sessions
+Glassmacs never guesses: it uses the buffer's selected session or ESS's
+`ess-local-process-name`, otherwise it prompts (and errors in batch use).
+Termination is detected by a sentinel added with `add-function :after` and by
+polling.
+
+**Queue.** `glassmacs-r-submit-region` / `glassmacs-r-submit-buffer` /
+`glassmacs-queue-submit` capture the text as an immutable snapshot and queue it
+as one unit (never split by line) on a per-session FIFO. Only one entry is
+dispatched at a time via `ess-send-string`, only when ESS reports the process
+idle; a timer polls, so Emacs is never blocked. Inspect with
+`glassmacs-queue-show` / `glassmacs-queue-pending`; `glassmacs-queue-pause`,
+`glassmacs-queue-resume`. States: `pending`, `running`, `completed`, `failed`
+(the send itself failed; the queue pauses and nothing is retried),
+`uncertain`, `orphaned`, `removed`.
+
+**Removing pending commands.** `glassmacs-queue-remove`,
+`glassmacs-queue-remove-entries` and `glassmacs-queue-clear` all go through one
+confirmation that shows session, queue position and source preview, warns that
+later results may change (order, dependencies, RNG state), and defaults to
+**Keep command**. There is no preference to disable it, and non-interactive
+calls keep the command. Confirmed removals stay as `removed` records and in
+`glassmacs-sessions-history` with timestamp, original position, id and source.
+`glassmacs-queue-interrupt` is a separate operation: it interrupts the running
+command, marks it `uncertain`, pauses the queue and keeps pending work.
+
+**Termination.** A running entry becomes `uncertain`, pending entries become
+`orphaned`; records are kept, the queue is paused and nothing is replayed.
+
+**Limitations.** `completed` means ESS saw R return to its primary prompt, not
+that the code succeeded; R errors are not parsed. An incomplete expression
+leaves R at a continuation prompt and is marked `uncertain`. Entries typed
+directly in the console are not tracked, and a busy console delays dispatch.
+History is in memory only. Not implemented: editing or reordering entries, a
+queue buffer UI, persistence across Emacs restarts, output-flood protection,
+SSH/remote sessions. See [architecture](architecture.md) and [roadmap](roadmap.md).
