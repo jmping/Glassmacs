@@ -76,7 +76,21 @@ Maintain ESS as the owner of editing, syntax highlighting, completion, help and 
 
 R Markdown, Quarto, Sweave/knitr, LaTeX/AUCTeX, and Rd editing must respect backend choice. Rendering is potentially slow and must not freeze the GUI. Retain direct argv invocation locally, preserve structured argument boundaries, and use carefully specified, safely quoted remote invocation instead of interpolating filenames into shell fragments. Track job state, errors, output, generated artifacts, and which filesystem owns them. A preview may require an explicit copy, remote file access, or SSH tunnel. Never assume a local browser can open a server-side path.
 
-### Shiny
+#
+## LaTeX and PDF integration (shared execution architecture)
+
+LaTeX is a first-class research workflow, **not** a fourth execution backend. AUCTeX and established Emacs/TeX facilities should own editing, compilation commands, error navigation and source/PDF synchronization. The execution layer should supply the same local-direct, terminal/PTY and SSH job/session capabilities used for R, Quarto and Sweave. Avoid a separate LaTeX-specific process framework.
+
+- Support project-selected TeX toolchains and engines such as `latexmk`, `pdflatex`, `xelatex`, `lualatex`, BibTeX and Biber through established AUCTeX/TeX integrations, with asynchronous execution and clear log/error handling.
+- Keep source location, TeX working directory, auxiliary/output directories, generated PDF location and viewer location distinct; resolve dependencies and relative `\\input`/bibliography paths in the selected project context.
+- Reuse the same remote path-mapping, artifact transfer/access, cancellation and process-status mechanisms as document rendering generally. Never assume a PDF built remotely exists at a corresponding local path.
+- Provide a local macOS PDF preview workflow and design SyncTeX forward/inverse search with explicit source/PDF path translation for remote compilation. This is a specific integration requirement, not something generic SSH execution provides automatically.
+- Preserve AUCTeX and ESS mode-specific keymaps, especially in Sweave and embedded-document buffers. Treat R Markdown/Quarto/Sweave-to-PDF as multi-stage workflows that may invoke R, Pandoc, LaTeX and bibliography tools on the same selected execution host.
+- Test a basic local AUCTeX/LaTeX build first; remote builds, artifact preview and remote SyncTeX require separate opt-in integration tests.
+
+These are target requirements; the current prototype does not yet verify an end-to-end LaTeX workflow.
+
+## Shiny
 
 Support existing loopback-only local Shiny operation. For remote Shiny, plan SSH local port forwarding from an explicit selected server-side loopback port to a controlled local port, with collision handling, readiness/error reporting, cleanup, and an explicit local preview URL. Do not bind a remote development app to a public interface by default. Clearly identify local vs remote processes and tunnels; stopping a preview must not silently kill an unrelated remote process.
 
@@ -115,6 +129,8 @@ Upstream GNU Emacs owns editing, buffers, modes and ESS processes. The optional 
 Run isolated batch tests with `./scripts/test`; add CI for Emacs startup, dependency handling, syntax/byte compilation, routing precedence, session identity, file/working-directory mapping, processes, argument safety, and cancellation. Mock SSH configuration and remote invocations; never require credentials or a private host in public CI. Provide opt-in remote integration tests with an explicit controlled test host, plus macOS graphical checks for Cocoa and actual keyboard delivery. Test dependency-absent and installed scenarios, as well as large-output and failed-network cases.
 
 For any claimed remote-R workflow, demonstrate: open a TRAMP project, start supported remote ESS R, evaluate into the intended session, retrieve output/errors, and disconnect/reconnect with documented expected behavior. For any claimed remote Shiny workflow, verify tunnel teardown and non-public binding. Maintain an implemented/tested/planned matrix; CI green does not prove a GUI or remote workload was tested.
+
+See the [development roadmap](roadmap.md) for milestones, acceptance criteria and verification coverage.
 
 ## Delivery order and decisions to record
 
