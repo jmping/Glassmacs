@@ -165,6 +165,10 @@ See [architecture](docs/architecture.md) and [roadmap](docs/roadmap.md) for prop
 
 Glassmacs also plans **research application profiles**: lightweight support for imported or embedded model syntax, local or remote execution, diagnostics and output artifacts. Early candidates include `lavaan`, JAGS/BUGS and Stan, with an extensible route to other installed statistical applications. Profiles reuse the execution infrastructure and remain optional; opening a file never implicitly executes it.
 
+## Who Glassmacs is for
+
+Glassmacs is designed for **experienced base R, ESS and Emacs users who work across languages, applications and remote computers**. It is not an RStudio clone or a project to impose RStudio-style workflows on established researchers. R is a first-class language, not the owner of the workspace. Files, buffers, terminals, external tools and reproducible scripts come first; integrations remain optional, transparent and composable.
+
 ## License
 
 License selection and third-party code obligations will be documented before redistribution. Components derived from GNU Emacs or Aquamacs must comply with their applicable GNU GPL terms.
