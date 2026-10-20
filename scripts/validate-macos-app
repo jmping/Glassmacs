@@ -34,15 +34,18 @@ check_dependencies() {
         return 1
         ;;
     esac
-  done < <(/usr/bin/otool -L "$binary" | awk 'NR > 1 {
-    sub(/^[[:space:]]*/, "")
-    sub(/[[:space:]]+\(.*/, "")
-    print
-  }')
+  done < <(/usr/bin/otool -L "$binary" | awk -v binary="$binary" '
+    NR == 1 { next }
+    {
+      sub(/^[[:space:]]*/, "")
+      sub(/[[:space:]]+\(.*/, "")
+      if ($0 != binary) print
+    }
+  ')
 
   while IFS= read -r rpath; do
     case "$rpath" in
-      /System/Library/*|/usr/lib/*|@loader_path/*|@executable_path/*) ;;
+      /System/Library/*|/usr/lib/*|@loader_path|@loader_path/*|@executable_path|@executable_path/*|@rpath|@rpath/*) ;;
       *)
         printf 'Non-relocatable runtime search path in %s: %s\n' "$binary" "$rpath" >&2
         return 1
