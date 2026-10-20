@@ -44,9 +44,12 @@ This roadmap translates the [architecture](architecture.md) into staged, testabl
 
 ## Milestone 3 — Terminal and SSH research execution
 
+**Implemented foundation (partial; this does not complete the milestone):** normal TRAMP file access, an opt-in remote shell, a small read-only remote-context interface, connection inspection/cleanup, and a minimal optional Mosh terminal launcher. Unit tests do not use a real SSH server. Remote ESS and execution routing remain planned.
+
+
 - Implement a minimal execution selection interface for local direct, local PTY and opt-in SSH.
 - Integrate persistent project terminal sessions with established Emacs facilities; preserve ESS evaluation semantics.
-- Open remote project files through TRAMP and establish supported remote ESS R sessions.
+- Establish supported remote ESS R sessions.
 - Define session identity, project-root and working-directory selection, path mapping, environment handling and disconnect/reconnect expectations.
 - Benchmark cold and warm SSH connection, remote evaluation and terminal equivalents.
 - Add mocked SSH tests and opt-in integration tests using an explicitly configured test host.
@@ -132,7 +135,7 @@ Acceptance: rapidly submitting multiple R expressions leaves editing responsive;
 - **Milestone 2 (design):** specify an opt-in provider-neutral AI adapter contract, context/permission model and UI prototype. No AI dependency may delay reliable ESS, plain-text editing or safe output handling.
 - **Milestone 3:** implement a minimal local-agent interface and a remote/API adapter with streaming, cancellation, visible context selection and read-only querying. Validate separate editor/compute/agent host identities and graceful operation when offline.
 - **Milestone 4:** add diff-based proposed edits with explicit approval; optionally expose reviewed R snippets to the execution queue. Add error/log explanation for R and LaTeX with bounded context and response handling.
-- **Milestone 5:** add optional Mosh terminal integration alongside SSH/TRAMP and `tmux`; verify reconnect behavior and ensure queue entries are never silently replayed.
+- **Milestone 5:** extend the minimal Mosh launcher alongside SSH/TRAMP and external `tmux`; verify reconnect behavior and ensure queue entries are never silently replayed.
 - **Milestone 6:** refine native macOS AI interaction and credentials UX without hardwiring a vendor or exposing research data by default.
 
 Acceptance: Glassmacs starts and edits normally without AI; the user can ask a configured local or remote agent about a selected region, see the transmitted context and cancel a streaming response; agents cannot silently run commands or change files; proposed edits require diff approval; Mosh can reconnect a terminal without claiming to replace SSH or guaranteeing exactly-once command delivery. See [architecture](architecture.md).

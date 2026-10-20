@@ -4,4 +4,5 @@ set -eu
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 exec emacs -Q --batch -l "$root/init.el" -l "$root/tests/test-glassmacs.el" \
   -l "$root/tests/test-glassmacs-sessions.el" \
+  -l "$root/tests/test-glassmacs-remote.el" \
   -f ert-run-tests-batch-and-exit

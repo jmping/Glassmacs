@@ -4,6 +4,7 @@
 (require 'glassmacs-keys)
 (require 'glassmacs-r)
 (require 'glassmacs-sessions)
+(require 'glassmacs-remote)
 (require 'glassmacs-documents)
 (require 'glassmacs-shiny)
 (require 'glassmacs-appearance)
