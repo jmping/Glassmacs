@@ -141,7 +141,8 @@ ESS maintains) and gives each a stable identity (`R-1`, `R-2`, ...). Commands:
 `glassmacs-r-start-session` (reports missing ESS or R), `glassmacs-r-list-sessions`,
 `glassmacs-r-select-session` (buffer-local target),
 `glassmacs-r-clear-session-target`, and `glassmacs-r-inspect-session`. A selected
-target is shown as `R[R-n]` in the modeline. Common ESS region, line, function,
+target is shown as `R[R-n]` in the modeline; a trailing `!` marks a stale or
+terminated process incarnation. Common ESS region, line, function,
 and buffer evaluation commands retain their ESS keybindings and route through
 the immutable queue when a buffer has an explicit target; without an explicit
 target ESS behavior is unchanged. Queue submissions retain the exact session
@@ -174,11 +175,13 @@ item is an explicit user action and queues a `getwd()` expression to the chosen
 session.
 
 `glassmacs-r-inspect-directories` distinguishes the document directory,
-buffer `default-directory`, local project root, and the R process buffer's
-directory recorded at session registration. It does not assume these paths
-share a host, translate paths, or run `setwd()`. A remote project root is
-reported as not queried. Use `glassmacs-r-show-r-working-directory` only when
-you explicitly want the live R process to print `getwd()`.
+document host, buffer `default-directory`, local project root, R process host,
+and ESS console `default-directory` recorded at session registration. The
+console directory is not guaranteed to equal a live R `getwd()` or a changing
+shell cwd. This inspection does not assume these paths share a host, translate
+paths, or run `setwd()`. A remote project root is reported as not queried. Use
+`glassmacs-r-show-r-working-directory` only when you explicitly want the live R
+process to print `getwd()`.
 
 **Queue.** `glassmacs-r-submit-region` / `glassmacs-r-submit-buffer` /
 `glassmacs-queue-submit` capture the text as an immutable snapshot and queue it

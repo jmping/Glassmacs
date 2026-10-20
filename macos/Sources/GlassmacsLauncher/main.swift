@@ -27,6 +27,16 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
         open(urls.filter(\.isFileURL))
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard let process = emacsProcess, process.isRunning else {
+            launchEmacsIfNeeded()
+            return false
+        }
+        NSRunningApplication(processIdentifier: process.processIdentifier)?
+            .activate(options: [.activateIgnoringOtherApps])
+        return false
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if emacsProcess?.isRunning == true {
             showError("Glassmacs is still running in Emacs. Quit from Emacs so its unsaved-document prompts are honored.")
@@ -83,12 +93,16 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
             }
             process.environment = childEnvironment
             process.terminationHandler = { [weak self] terminatedProcess in
+                let processID = ObjectIdentifier(terminatedProcess)
+                let exitStatus = terminatedProcess.terminationStatus
                 Task { @MainActor in
-                    if terminatedProcess.terminationStatus != 0 {
-                        self?.showError("Emacs exited with status \(terminatedProcess.terminationStatus). Check the selected executable and Glassmacs configuration.")
+                    guard let self, let activeProcess = self.emacsProcess,
+                          ObjectIdentifier(activeProcess) == processID else { return }
+                    if exitStatus != 0 {
+                        self.showError("Emacs exited with status \(exitStatus). Check the selected executable and Glassmacs configuration.")
                     }
-                    self?.emacsProcess = nil
-                    self?.serverAvailable = false
+                    self.emacsProcess = nil
+                    self.serverAvailable = false
                     NSApp.terminate(nil)
                 }
             }
@@ -127,20 +141,21 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
         return process
     }
 
-    private func forwardToExistingServer(_ configuration: LaunchConfiguration, files: [URL]) -> Bool {
-        do {
-            let clientProcess = try makeClientProcess(
-                configuration,
-                arguments: files.isEmpty
-                    ? configuration.emacsServerProbeArguments
-                    : configuration.emacsClientArguments(opening: files)
-            )
-            try clientProcess.run()
-            clientProcess.waitUntilExit()
-            return clientProcess.terminationStatus == 0
-        } catch {
-            return false
+    private func forwardToExistingServer(_ configuration: LaunchConfiguration, files: [URL]) throws -> Bool {
+        let socketPath = configuration.emacsServerSocketPath
+        guard FileManager.default.fileExists(atPath: socketPath) else { return false }
+        let clientProcess = try makeClientProcess(
+            configuration,
+            arguments: files.isEmpty
+                ? configuration.emacsServerProbeArguments
+                : configuration.emacsClientArguments(opening: files)
+        )
+        try clientProcess.run()
+        clientProcess.waitUntilExit()
+        guard clientProcess.terminationStatus == 0 else {
+            throw LauncherError.serverSocketUnavailable(socketPath)
         }
+        return true
     }
 
     private func forward(_ files: [URL], attemptsRemaining: Int) {
@@ -179,11 +194,23 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
               !checkout.isEmpty else {
             throw LauncherError.missingSetting("Set the Glassmacs checkout path in Glassmacs Launcher Preferences.")
         }
+        let emacsPath = (emacs as NSString).expandingTildeInPath
+        let checkoutPath = (checkout as NSString).expandingTildeInPath
+        guard (emacsPath as NSString).isAbsolutePath else {
+            throw LauncherError.missingSetting("The Emacs executable must be an absolute path.")
+        }
+        guard (checkoutPath as NSString).isAbsolutePath else {
+            throw LauncherError.missingSetting("The Glassmacs checkout must be an absolute path.")
+        }
+        let configuredHome = environment["GLASSMACS_HOME"] ?? defaults.string(forKey: "homePath")
+        let homePath = configuredHome.map { ($0 as NSString).expandingTildeInPath }
+        guard homePath.map({ ($0 as NSString).isAbsolutePath }) ?? true else {
+            throw LauncherError.missingSetting("GLASSMACS_HOME must be an absolute path.")
+        }
         return LaunchConfiguration(
-            emacsExecutable: (emacs as NSString).expandingTildeInPath,
-            checkoutPath: (checkout as NSString).expandingTildeInPath,
-            homePath: (environment["GLASSMACS_HOME"] ?? defaults.string(forKey: "homePath"))
-                .map { ($0 as NSString).expandingTildeInPath },
+            emacsExecutable: emacsPath,
+            checkoutPath: checkoutPath,
+            homePath: homePath,
             emacsClientExecutable: (environment["GLASSMACS_EMACSCLIENT"] ?? defaults.string(forKey: "emacsClientExecutable"))
                 .flatMap { $0.isEmpty ? nil : ($0 as NSString).expandingTildeInPath }
         )
@@ -278,12 +305,15 @@ enum LauncherError: LocalizedError {
     case missingSetting(String)
     case invalidExecutable(String)
     case invalidCheckout(String)
+    case serverSocketUnavailable(String)
 
     var errorDescription: String? {
         switch self {
         case .missingSetting(let message): return message
         case .invalidExecutable(let path): return "Emacs executable is not executable: \(path)"
         case .invalidCheckout(let path): return "No init.el was found in the Glassmacs checkout: \(path)"
+        case .serverSocketUnavailable(let path):
+            return "A Glassmacs server socket exists but is not reachable: \(path). Check its Emacs process and configured emacsclient; no second instance was launched."
         }
     }
 }

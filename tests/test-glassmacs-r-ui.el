@@ -40,6 +40,61 @@
     (should (eq (key-binding [down]) #'glassmacs-r-ui-next-input-or-line))
     (should (eq (key-binding (kbd "RET")) #'comint-send-input))))
 
+(ert-deftest glassmacs-r-ui-ess-region-entrypoint-uses-selected-target ()
+  (unless (locate-library "ess-site")
+    (ert-skip "ESS is not installed"))
+  (require 'ess-site)
+  (gs-test--with-env
+   (let* ((session (glassmacs-sessions-register (gs-test--proc "R-real-entrypoint")))
+          (buffer (generate-new-buffer " *glassmacs-ess-routing*")))
+     (unwind-protect
+         (with-current-buffer buffer
+           (ess-r-mode)
+           (setq-local glassmacs-r-target-session (glassmacs-session-id session))
+           (insert "x <- 23")
+           (let ((entry (ess-eval-region (point-min) (point-max))))
+             (should (equal (glassmacs-entry-session-id entry)
+                            (glassmacs-session-id session)))
+             (should (equal (glassmacs-entry-source entry) "x <- 23"))))
+       (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-r-ui-ess-function-entrypoint-queues-current-function ()
+  (unless (locate-library "ess-site")
+    (ert-skip "ESS is not installed"))
+  (require 'ess-site)
+  (gs-test--with-env
+   (let* ((session (glassmacs-sessions-register (gs-test--proc "R-function-entrypoint")))
+          (buffer (generate-new-buffer " *glassmacs-ess-function*")))
+     (unwind-protect
+         (with-current-buffer buffer
+           (ess-r-mode)
+           (setq-local glassmacs-r-target-session (glassmacs-session-id session))
+           (insert "f <- function(x) {\n  x + 1\n}\n")
+           (goto-char (point-min))
+           (search-forward "x + 1")
+           (let ((entry (ess-eval-function)))
+             (should (equal (glassmacs-entry-session-id entry)
+                            (glassmacs-session-id session)))
+             (should (equal (glassmacs-entry-source entry)
+                            "f <- function(x) {\n  x + 1\n}\n"))))
+       (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-r-ui-recalled-history-remains-editable ()
+  (with-temp-buffer
+    (comint-mode)
+    (setq-local comint-prompt-regexp "^> ")
+    (insert "> ")
+    (setq-local comint-accum-marker (copy-marker (point-max))
+                comint-get-old-input (lambda () ""))
+    (ring-insert comint-input-ring "result <- 1")
+    (goto-char (point-max))
+    (cl-letf (((symbol-function 'comint-after-pmark-p) (lambda () t)))
+      (glassmacs-r-ui-previous-input-or-line))
+    (should (equal (buffer-string) "> result <- 1"))
+    (goto-char (+ (point-min) 9))
+    (insert "edited ")
+    (should (equal (buffer-string) "> result edited <- 1"))))
+
 (ert-deftest glassmacs-r-ui-adds-to-emacs-native-context-menu ()
   (with-temp-buffer
     (setq major-mode 'ess-r-mode)
@@ -119,6 +174,52 @@
                       (format " R[%s!]" (glassmacs-session-id old-session))))
        (should (eq (glassmacs-session-state other-session) 'ready))))))
 
+(ert-deftest glassmacs-r-target-isolation-across-ten-projects ()
+  (gs-test--with-env
+   (let (project-buffers results)
+     (unwind-protect
+         (progn
+           (dotimes (index 10)
+             (let ((project (1+ index)))
+               (dotimes (process-index 2)
+                 (let* ((process-number (1+ process-index))
+                        (process (gs-test--proc
+                                  (format "R-project-%d-process-%d"
+                                          project process-number)))
+                        (session (glassmacs-sessions-register process))
+                        (buffer (generate-new-buffer "analysis.R"))
+                        (object-value (+ (* project 10) process-number)))
+                   (push buffer project-buffers)
+                   (with-current-buffer buffer
+                     (setq buffer-file-name
+                           (format "/research/project-%d/analysis.R" project))
+                     (setq-local glassmacs-r-target-session
+                                 (glassmacs-session-id session))
+                     (let ((entry (glassmacs-queue-submit
+                                   (format "object <- %d" object-value))))
+                       (push (list object-value session entry) results))))))
+           (setq results (nreverse results))
+           (should (= 20 (length (glassmacs-sessions-live))))
+           (dolist (result results)
+             (let ((object-value (nth 0 result))
+                   (session (nth 1 result))
+                   (entry (nth 2 result)))
+               (should (equal (glassmacs-entry-session-id entry)
+                              (glassmacs-session-id session)))
+               (should (equal (glassmacs-entry-source entry)
+                              (format "object <- %d" object-value)))
+               (should
+                (cl-some (lambda (sent)
+                           (eq (car sent) (glassmacs-session-process session)))
+                         gs-test--sent))))
+           (should (= 10 (length (delete-dups
+                                  (mapcar (lambda (result)
+                                            (glassmacs-session-id (nth 1 result)))
+                                          results))))))
+       (mapc (lambda (buffer)
+               (when (buffer-live-p buffer) (kill-buffer buffer)))
+             project-buffers)))))
+
 (ert-deftest glassmacs-r-one-off-region-routes-to-chosen-session ()
   (gs-test--with-env
    (let* ((first (glassmacs-sessions-register (gs-test--proc "R-one-off-1")))
@@ -153,6 +254,22 @@
          (should (eq (caar gs-test--sent)
                      (glassmacs-session-process session))))))))
 
+(ert-deftest glassmacs-r-ess-function-evaluation-does-not-cross-function-boundaries ()
+  (gs-test--with-env
+   (let* ((session (glassmacs-sessions-register (gs-test--proc "R-function-boundary")))
+          (glassmacs-r-target-session (glassmacs-session-id session)))
+     (with-temp-buffer
+       (setq major-mode 'ess-r-mode)
+       (insert "first <- function() 1\n\nsecond <- function() 2\n")
+       (goto-char (point-min))
+       (search-forward "first")
+       (search-forward "\n")
+       (should-error
+        (glassmacs-r-ui--around-ess-eval-function
+         (lambda (&rest _) (ert-fail "No function should be queued"))
+         nil))
+       (should-not gs-test--sent)))))
+
 (ert-deftest glassmacs-r-directory-inspection-does-not-query-r ()
   (let ((buffer-file-name "/tmp/project/source.R")
         (default-directory "/tmp/project/"))
@@ -164,6 +281,19 @@
         (should (search-forward "/tmp/project/" nil t))
         (goto-char (point-min))
         (should (search-forward "No live R getwd() query was made" nil t)))
+      (kill-buffer "*Glassmacs R Directories*"))))
+
+(ert-deftest glassmacs-r-directory-inspection-distinguishes-remote-hosts ()
+  (let ((buffer-file-name "/ssh:research:/home/user/project/analysis.R")
+        (default-directory "/ssh:research:/home/user/project/"))
+    (cl-letf (((symbol-function 'glassmacs-sessions-resolve)
+               (lambda (&rest _) (user-error "No selected session"))))
+      (glassmacs-r-inspect-directories)
+      (with-current-buffer "*Glassmacs R Directories*"
+        (goto-char (point-min))
+        (should (search-forward "Document host: /ssh:research:" nil t))
+        (goto-char (point-min))
+        (should (search-forward "Project root: (remote; not queried)" nil t)))
       (kill-buffer "*Glassmacs R Directories*"))))
 
 (provide 'test-glassmacs-r-ui)

@@ -30,6 +30,9 @@ and does not launch a second Emacs instance. The helper requests single-instance
 LaunchServices behavior. It blocks its own Quit action while the Emacs child is
 running; quit from Emacs so Emacs can preserve its normal save prompts. If the
 helper is terminated externally, the Emacs child is not killed.
+Reopening the helper activates its Emacs child when managed; an existing
+server-only Emacs receives forwarded files without the helper taking over its
+process lifecycle.
 
 The Emacs server is enabled only when the helper launches Emacs, by setting
 `GLASSMACS_LAUNCHER_SERVER=1`. It uses the isolated Glassmacs home and a local

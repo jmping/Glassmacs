@@ -142,13 +142,17 @@
   "Route ESS function evaluation through the queue when this buffer has a target."
   (if (and (glassmacs-r-ui--source-buffer-p) glassmacs-r-target-session)
       (save-excursion
-        (condition-case nil
-            (progn
-              (end-of-defun)
-              (let ((end (point)))
+        (let ((origin (point)))
+          (condition-case nil
+              (progn
                 (beginning-of-defun)
-                (glassmacs-r-ui--submit-region (point) end 'ess-function)))
-          (error (user-error "No R function found at point"))))
+                (let ((start (point)))
+                  (end-of-defun)
+                  (let ((end (point)))
+                    (unless (<= start origin end)
+                      (user-error "No R function at point"))
+                    (glassmacs-r-ui--submit-region start end 'ess-function))))
+            (error (user-error "No R function found at point")))))
     (apply original arguments)))
 
 (defun glassmacs-r-ui--around-ess-eval-buffer (original &rest arguments)

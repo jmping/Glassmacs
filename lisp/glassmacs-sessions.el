@@ -261,6 +261,13 @@ session, the only live session, or the session matching ESS's
                  (glassmacs-session-id session)))
    (pop-to-buffer (glassmacs-session-buffer session))))
 
+(defun glassmacs-r--host-description (directory)
+  "Describe the host represented by DIRECTORY without contacting it."
+  (cond
+   ((null directory) "(unknown)")
+   ((file-remote-p directory))
+   (t "local Emacs host")))
+
 (defun glassmacs-r-inspect-directories ()
   "Display source, buffer, project, and selected R session directories.
 This command does not query R or contact a remote host."
@@ -282,6 +289,8 @@ This command does not query R or contact a remote host."
        (erase-buffer)
        (insert (format "Document directory: %s\n"
                        (or source "(untitled)")))
+       (insert (format "Document host: %s\n"
+                       (glassmacs-r--host-description buffer-dir)))
        (insert (format "Buffer default-directory: %s\n" buffer-dir))
        (insert (format "Project root: %s\n"
                        (or project-dir
@@ -290,7 +299,9 @@ This command does not query R or contact a remote host."
                              "(not in a project)"))))
        (insert (format "R session: %s\n"
                        (if session (glassmacs-session-id session) "(not selected)")))
-       (insert (format "R process directory at registration: %s\n"
+       (insert (format "R process host at registration: %s\n"
+                       (glassmacs-r--host-description session-dir)))
+       (insert (format "ESS console default-directory at registration: %s\n"
                        (or session-dir "(unknown)")))
        (insert "\nNo live R getwd() query was made. Use "
                "`M-x glassmacs-r-show-r-working-directory' to request it explicitly.\n")
