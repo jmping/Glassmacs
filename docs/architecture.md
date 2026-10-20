@@ -187,6 +187,16 @@ from the visible buffer until its primary prompt. This does not stop R from
 producing output or establish backpressure safety, and it has not been verified
 for terminal/PTY or remote streams.
 
+Recovery additionally requires ESS to report an idle process and the primary
+prompt to begin the chunk or follow a newline. A plain suffix such as
+`"ordinary text> "` is not sufficient. ESS 24.01.1 itself matches prompts
+against each raw process-output chunk; if a prompt is split so neither chunk
+matches, ESS can remain busy. Glassmacs cannot repair that readiness transition
+without interfering with ESS's process filter. A complete output line identical
+to the configured prompt is likewise indistinguishable to ESS. These unresolved
+cases are simulated/documented limitations; the local real-ESS tests cover
+complete prompt chunks and recovery after output suppression.
+
 **Transport/backpressure constraint:** suppressing buffer insertion does not automatically suppress R's printing. The consumer must continue draining or explicitly interrupt/stop the producer where appropriate; otherwise full pipes/PTYs or SSH channel windows can block R. Design bounded queues and nonblocking draining with careful flow control. For a local subprocess, it may be possible to drain and discard after a threshold; for ESS/comint, integrate with supported process filters and their prompt/session bookkeeping rather than replacing them with a filter that breaks ESS state. Remote SSH and PTY behavior requires independent validation. Avoid unbounded in-memory buffering or unbounded temporary logging as a supposed fix.
 
 Preserve command boundaries, prompts, ESS markers, error messages and session state when output is suppressed; an output flood must not leave evaluation permanently marked busy or route subsequent commands to the wrong session. Expose clear status for *output suppressed*, *interrupt requested*, *process still running*, and *session terminated*. Automatic limits should be conservative and configurable, with an explicit opt-in path for genuinely large output.

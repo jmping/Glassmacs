@@ -131,10 +131,17 @@ Treat a line-start primary prompt as a boundary only when ESS reports the
 process idle. A prompt-like suffix in ordinary output is not enough."
   (let* ((process (get-buffer-process (current-buffer)))
          (primary-ready (and process (not (process-get process 'busy))))
-         (prompt (and primary-ready
-                      (boundp 'inferior-ess-primary-prompt)
-                      (glassmacs-r--output-prompt-suffix
+         (primary-prompt
+          (and primary-ready
+               (boundp 'inferior-ess-primary-prompt)
+               (glassmacs-r--output-prompt-suffix
                 inferior-ess-primary-prompt string)))
+         (secondary-prompt
+          (and process (process-get process 'sec-prompt)
+               (boundp 'inferior-ess-secondary-prompt)
+               (glassmacs-r--output-prompt-suffix
+                inferior-ess-secondary-prompt string)))
+         (prompt (or primary-prompt secondary-prompt))
          (prompt-length (length (or prompt "")))
          (output-length (max 0 (- (length string) prompt-length)))
          (output (if prompt (substring string 0 output-length) string))
@@ -154,7 +161,7 @@ process idle. A prompt-like suffix in ordinary output is not enough."
                     prompt))
            (t string))))
     (cond
-     (prompt
+     (primary-prompt
       (setq glassmacs-r--output-count 0
             glassmacs-r--output-suppressed nil
             glassmacs-r--output-marker-pending nil))

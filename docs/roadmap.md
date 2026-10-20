@@ -201,6 +201,13 @@ per-command display budget, visible suppression marker, and separate
 stop-display, interrupt, and terminate-session commands. Real ESS/R tests cover
 prompt recovery and subsequent evaluation. Terminal/PTY and SSH output,
 backpressure behavior, and native GUI responsiveness remain unverified.
+The current reliability follow-up verifies idle-state/line-boundary checks,
+process-incarnation isolation, and concurrent local sessions. It does not close
+the acceptance gate: ESS prompt detection is chunk-local, so a split primary
+prompt may leave ESS busy; Glassmacs deliberately does not replace or override
+that readiness handling. A complete output line identical to the configured
+prompt also remains ambiguous. Keep this workstream in draft until a safe
+upstream-compatible resolution or an explicit accepted limitation is agreed.
 
 Acceptance: printing a large object does not cause unbounded Emacs buffer growth or an unresponsive UI; the user can suppress further display without unintentionally killing R; interrupts remain independently available; output truncation is visible; subsequent R evaluation works after the flood ends. Confirm process behavior and transport backpressure under test rather than assuming suppressed display means printing has stopped.
 

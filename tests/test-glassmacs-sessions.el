@@ -45,9 +45,10 @@
 (defun gs-test--finish-running (process)
   (process-put process 'busy nil))
 
-(defun gs-test--filter-output (process string &optional primary-end)
+(defun gs-test--filter-output (process string &optional primary-end secondary-prompt)
   "Run Glassmacs' preoutput filter for STRING and insert its result."
   (process-put process 'busy (not primary-end))
+  (process-put process 'sec-prompt secondary-prompt)
   (with-current-buffer (process-buffer process)
     (let ((filtered (glassmacs-r--filter-output string)))
       (goto-char (process-mark process))
@@ -330,7 +331,7 @@
            (should glassmacs-r--output-suppressed)
            (should (equal (gs-test--filter-output process "ordinary > " t) ""))
            (should glassmacs-r--output-suppressed)
-           (should (equal (gs-test--filter-output process "+ ") ""))
+           (should (equal (gs-test--filter-output process "+ " nil t) "+ "))
            (should glassmacs-r--output-suppressed)
            (should (equal (gs-test--filter-output process ">" ) ""))
            (should glassmacs-r--output-suppressed)
@@ -339,6 +340,23 @@
            (should (= glassmacs-r--output-count 0))
            (should (equal (gs-test--filter-output process "é漢") "é漢"))
            (should (equal (gs-test--filter-output process "") "")))
+       (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-r-output-multiple-primary-prompts-in-one-chunk ()
+  (gs-test--with-env
+   (let* ((glassmacs-r-output-budget 1)
+         (console (gs-test--console "glassmacs-multiple-prompts"))
+         (process (car console))
+         (buffer (cdr console)))
+     (unwind-protect
+        (with-current-buffer buffer
+          (should (string-match-p
+                   (regexp-quote glassmacs-r-output-suppressed-marker)
+                   (gs-test--filter-output process "overflow")))
+          (should (equal (gs-test--filter-output process "> \n> " t)
+                         "> \n> "))
+          (should-not glassmacs-r--output-suppressed)
+          (should (= glassmacs-r--output-count 0)))
        (kill-buffer buffer)))))
 
 (ert-deftest glassmacs-r-output-suppression-preserves-continuation-prompt ()
@@ -378,6 +396,64 @@
            (should glassmacs-r--output-suppressed)
            (should (equal (gs-test--filter-output process "R> " t) "R> "))
            (should-not glassmacs-r--output-suppressed))
+       (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-r-output-boundary-honors-anchored-primary-regexp ()
+  (gs-test--with-env
+   (let* ((glassmacs-r-output-budget 1)
+         (console (gs-test--console "glassmacs-anchored-prompt-regexp"))
+         (process (car console))
+         (buffer (cdr console)))
+     (unwind-protect
+        (with-current-buffer buffer
+          (setq-local inferior-ess-primary-prompt "^\\(R>\\|>\\) $")
+          (should (string-match-p
+                   (regexp-quote glassmacs-r-output-suppressed-marker)
+                   (gs-test--filter-output process "too much")))
+          (should (equal
+                   (gs-test--filter-output process "output\nR> " t)
+                   (concat glassmacs-r-output-suppressed-marker "R> ")))
+          (should-not glassmacs-r--output-suppressed))
+       (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-r-output-split-prompt-follows-ess-readiness ()
+  (unless (locate-library "ess-inf")
+    (ert-skip "ESS is not installed"))
+  (require 'ess-inf)
+  (gs-test--with-env
+   (let* ((glassmacs-r-output-budget 1)
+         (console (gs-test--console "glassmacs-split-prompt"))
+         (process (car console))
+         (buffer (cdr console)))
+     (unwind-protect
+        (with-current-buffer buffer
+          (process-put process 'busy t)
+          (should (string-match-p
+                   (regexp-quote glassmacs-r-output-suppressed-marker)
+                   (gs-test--filter-output process "large output")))
+          (should-not (inferior-ess--set-status process ">"))
+          (should (equal (gs-test--filter-output process ">") ""))
+          (should-not (inferior-ess--set-status process " "))
+          (should (equal (gs-test--filter-output process " ") ""))
+          (should glassmacs-r--output-suppressed)
+          (should (process-get process 'busy)))
+       (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-r-output-flood-hides-error-text-but-keeps-recovery-prompt ()
+  (gs-test--with-env
+   (let* ((glassmacs-r-output-budget 4)
+         (console (gs-test--console "glassmacs-error-output"))
+         (process (car console))
+         (buffer (cdr console)))
+     (unwind-protect
+        (with-current-buffer buffer
+          (should (equal (gs-test--filter-output process "warn") "warn"))
+          (should (string-match-p
+                   (regexp-quote glassmacs-r-output-suppressed-marker)
+                   (gs-test--filter-output process "ing: error")))
+          (should (equal (gs-test--filter-output process "> " t) "> "))
+          (should-not glassmacs-r--output-suppressed)
+          (should (= glassmacs-r--output-count 0)))
        (kill-buffer buffer)))))
 
 (ert-deftest glassmacs-r-output-buffer-retention-is-bounded-by-lines ()
@@ -509,6 +585,42 @@
        (kill-buffer first-buffer)
        (kill-buffer second-buffer)))))
 
+(ert-deftest glassmacs-r-controls-reject-stale-source-targets ()
+  (gs-test--with-env
+   (let* ((old-process (gs-test--proc "R-stale-control"))
+          (old-session (glassmacs-sessions-register old-process))
+          (live-process (gs-test--proc "R-live-control"))
+          (live-session (glassmacs-sessions-register live-process)))
+     (delete-process old-process)
+     (glassmacs-sessions-refresh)
+     (with-temp-buffer
+       (setq-local glassmacs-r-target-session (glassmacs-session-id old-session))
+       (should-error (glassmacs-r-stop-displaying-output) :type 'user-error)
+       (should-error (glassmacs-r-interrupt) :type 'user-error)
+       (should-error (glassmacs-r-terminate-session) :type 'user-error))
+     (should (process-live-p live-process))
+     (should (eq (glassmacs-session-state live-session) 'ready)))))
+
+(ert-deftest glassmacs-r-explicit-source-targets-stay-on-process-incarnation ()
+  (gs-test--with-env
+   (let* ((process-a (gs-test--proc "R-source-a"))
+          (process-b (gs-test--proc "R-source-b"))
+          (session-a (glassmacs-sessions-register process-a))
+          (session-b (glassmacs-sessions-register process-b))
+          entry-a entry-b)
+     (with-temp-buffer
+       (setq-local glassmacs-r-target-session (glassmacs-session-id session-a))
+       (setq entry-a (glassmacs-queue-submit "a()")))
+     (with-temp-buffer
+       (setq-local glassmacs-r-target-session (glassmacs-session-id session-b))
+       (setq entry-b (glassmacs-queue-submit "b()")))
+     (should (equal (glassmacs-entry-session-id entry-a)
+                    (glassmacs-session-id session-a)))
+     (should (equal (glassmacs-entry-session-id entry-b)
+                    (glassmacs-session-id session-b)))
+     (should (eq (caar gs-test--sent) process-b))
+     (should (eq (car (car (last gs-test--sent))) process-a)))))
+
 (ert-deftest glassmacs-r-termination-orphans-pending-without-final-prompt ()
   (gs-test--with-env
    (let* ((console (gs-test--console "glassmacs-terminate-output"))
@@ -533,6 +645,24 @@
                (should-not glassmacs-r--output-suppressed))
              (glassmacs-sessions--tick)
              (should (= 1 (length gs-test--sent)))))
+       (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-r-output-buffer-truncates-retained-history ()
+  (gs-test--with-env
+   (let* ((glassmacs-r-output-buffer-maximum-lines 4)
+          (console (gs-test--console "glassmacs-output-line-retention"))
+          (process (car console))
+          (buffer (cdr console)))
+     (unwind-protect
+         (with-current-buffer buffer
+           (dotimes (index 12)
+             (goto-char (process-mark process))
+             (insert (format "output-%d\n" index))
+             (set-marker (process-mark process) (point)))
+           (comint-truncate-buffer)
+           (should (<= (count-lines (point-min) (point-max)) 5))
+           (should (string-match-p "output-11" (buffer-string)))
+           (should-not (string-match-p "output-0\\b" (buffer-string))))
        (kill-buffer buffer)))))
 
 ;;; Optional real R/ESS integration
@@ -624,6 +754,11 @@
             (let* ((process (glassmacs-session-process session))
                  (large (glassmacs-queue-submit
                          "cat(paste(rep('x', 10000), collapse=''), '\\n')" session))
+                 (empty (glassmacs-queue-submit "invisible(NULL)" session))
+                 (warning (glassmacs-queue-submit
+                           "warning('glassmacs-test-warning')" session))
+                 (error (glassmacs-queue-submit
+                         "stop('glassmacs-test-error')" session))
                  (after (glassmacs-queue-submit
                          "cat('glassmacs-after-flood\\n')" session))
                  (deadline (+ (float-time) 30)))
@@ -635,6 +770,9 @@
                 (accept-process-output process 0.1)
                 (glassmacs-sessions--tick))
               (should (eq (glassmacs-entry-state large) 'completed))
+              (should (eq (glassmacs-entry-state empty) 'completed))
+              (should (eq (glassmacs-entry-state warning) 'completed))
+              (should (eq (glassmacs-entry-state error) 'completed))
               (should (eq (glassmacs-entry-state after) 'completed))
               (with-current-buffer buffer
                 (should (string-match-p
@@ -643,6 +781,152 @@
                 (should (string-match-p "glassmacs-after-flood" (buffer-string)))
                 (should (< (buffer-size) 2000))
                 (should-not (process-get process 'busy))))))
+      (glassmacs-sessions--cancel-timer)
+      (when (buffer-live-p buffer)
+        (let ((kill-buffer-query-functions nil)) (kill-buffer buffer))))))
+
+(ert-deftest glassmacs-r-output-integration-real-ess-concurrent-sessions ()
+  (skip-unless (gs-test--ess-and-r-p))
+  (require 'ess-site)
+  (let ((glassmacs-r-output-budget 64)
+        (glassmacs-sessions--list nil)
+        (glassmacs-sessions--history nil)
+        (default-directory temporary-file-directory)
+        (ess-ask-for-ess-directory nil) (ess-history-file nil)
+        (inhibit-message t)
+        buffer-a buffer-b session-a session-b process-a process-b)
+    (unwind-protect
+        (progn
+          (save-window-excursion
+            (setq buffer-a (R))
+            (setq buffer-b (R)))
+          (setq process-a (get-buffer-process buffer-a)
+                process-b (get-buffer-process buffer-b)
+                session-a (glassmacs-sessions-register process-a)
+                session-b (glassmacs-sessions-register process-b))
+          (should (not (eq process-a process-b)))
+          (should-not (equal (process-name process-a) (process-name process-b)))
+          (let* ((flood (glassmacs-queue-submit
+                         "cat(paste(rep('a', 50000), collapse=''), '\\n')"
+                         session-a))
+                 (other (glassmacs-queue-submit
+                         "cat('session-b-output\\n')" session-b))
+                 (next (glassmacs-queue-submit
+                        "cat('session-a-next\\n')" session-a))
+                 (deadline (+ (float-time) 30))
+                 recovery-seconds)
+            (while (and (< (float-time) deadline)
+                        (not (and (eq (glassmacs-entry-state next) 'completed)
+                                  (eq (glassmacs-entry-state other) 'completed))))
+              (accept-process-output nil 0.05)
+              (glassmacs-sessions--tick))
+            (should (eq (glassmacs-entry-state flood) 'completed))
+            (should (eq (glassmacs-entry-state next) 'completed))
+            (should (eq (glassmacs-entry-state other) 'completed))
+            (setq recovery-seconds
+                  (- (float-time (glassmacs-entry-started-at next))
+                     (float-time (glassmacs-entry-submitted-at next))))
+            (with-current-buffer buffer-a
+              (should (string-match-p
+                       (regexp-quote glassmacs-r-output-suppressed-marker)
+                       (buffer-string)))
+              (should (string-match-p "session-a-next" (buffer-string)))
+              (should-not glassmacs-r--output-suppressed)
+              (should (< (buffer-size) 5000)))
+            (with-current-buffer buffer-b
+              (should (string-match-p "session-b-output" (buffer-string)))
+              (should-not glassmacs-r--output-suppressed))
+            (princ (format "ESS/R concurrent output queue wait: %.6f seconds\n"
+                           recovery-seconds))))
+      (glassmacs-sessions--cancel-timer)
+      (dolist (process (list process-a process-b))
+        (when (and process (process-live-p process))
+          (delete-process process)))
+      (dolist (buffer (list buffer-a buffer-b))
+        (when (buffer-live-p buffer)
+          (let ((kill-buffer-query-functions nil)) (kill-buffer buffer)))))))
+
+(ert-deftest glassmacs-r-output-interrupt-integration-real-ess ()
+  (skip-unless (gs-test--ess-and-r-p))
+  (require 'ess-site)
+  (let ((glassmacs-r-output-budget 64)
+        (glassmacs-sessions--list nil)
+        (glassmacs-sessions--history nil)
+        (default-directory temporary-file-directory)
+        (ess-ask-for-ess-directory nil) (ess-history-file nil)
+        (inhibit-message t) buffer)
+    (unwind-protect
+        (progn
+          (save-window-excursion (setq buffer (R)))
+          (let* ((session (car (glassmacs-sessions-refresh))))
+            (should session)
+            (let* ((process (glassmacs-session-process session))
+                   (running (glassmacs-queue-submit
+                             "repeat { cat(strrep('x', 1000), '\\n'); flush.console() }"
+                             session))
+                   (pending (glassmacs-queue-submit "cat('must-not-replay\\n')" session))
+                   (deadline (+ (float-time) 10)))
+              (while (and (< (float-time) deadline)
+                          (not (with-current-buffer buffer
+                                 glassmacs-r--output-suppressed)))
+                (accept-process-output process 0.05))
+              (should (with-current-buffer buffer glassmacs-r--output-suppressed))
+              (glassmacs-r-interrupt session)
+              (setq deadline (+ (float-time) 15))
+              (while (and (< (float-time) deadline)
+                          (or (process-get process 'busy)
+                              (with-current-buffer buffer
+                                glassmacs-r--output-suppressed)))
+                (accept-process-output process 0.05)
+                (glassmacs-sessions--tick))
+              (should (process-live-p process))
+              (should (eq (glassmacs-entry-state running) 'uncertain))
+              (should (eq (glassmacs-entry-state pending) 'pending))
+              (should (glassmacs-session-paused session))
+              (should-not (with-current-buffer buffer
+                            glassmacs-r--output-suppressed)))))
+      (glassmacs-sessions--cancel-timer)
+      (when (buffer-live-p buffer)
+        (let ((process (get-buffer-process buffer)))
+          (when (and process (process-live-p process))
+            (delete-process process)))
+        (let ((kill-buffer-query-functions nil)) (kill-buffer buffer))))))
+
+(ert-deftest glassmacs-r-output-termination-integration-real-ess ()
+  (skip-unless (gs-test--ess-and-r-p))
+  (require 'ess-site)
+  (let ((glassmacs-r-output-budget 64)
+        (glassmacs-sessions--list nil)
+        (glassmacs-sessions--history nil)
+        (default-directory temporary-file-directory)
+        (ess-ask-for-ess-directory nil) (ess-history-file nil)
+        (inhibit-message t) buffer)
+    (unwind-protect
+        (progn
+          (save-window-excursion (setq buffer (R)))
+          (let* ((session (car (glassmacs-sessions-refresh))))
+            (should session)
+            (let* ((process (glassmacs-session-process session))
+                   (running (glassmacs-queue-submit
+                             "repeat { cat(strrep('x', 1000), '\\n'); flush.console() }"
+                             session))
+                   (pending (glassmacs-queue-submit "cat('must-not-replay\\n')" session))
+                   (deadline (+ (float-time) 10)))
+              (while (and (< (float-time) deadline)
+                          (not (with-current-buffer buffer
+                                 glassmacs-r--output-suppressed)))
+                (accept-process-output process 0.05))
+              (should (with-current-buffer buffer glassmacs-r--output-suppressed))
+              (let ((noninteractive nil))
+                (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t)))
+                  (glassmacs-r-terminate-session session)))
+              (glassmacs-sessions-refresh)
+              (should-not (process-live-p process))
+              (should (eq (glassmacs-entry-state running) 'uncertain))
+              (should (eq (glassmacs-entry-state pending) 'orphaned))
+              (should (eq (glassmacs-session-state session) 'terminated))
+              (with-current-buffer buffer
+                (should-not glassmacs-r--output-suppressed)))))
       (glassmacs-sessions--cancel-timer)
       (when (buffer-live-p buffer)
         (let ((kill-buffer-query-functions nil)) (kill-buffer buffer))))))
