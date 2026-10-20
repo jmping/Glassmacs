@@ -15,7 +15,7 @@ This is the **canonical index** for maintained project documentation. If a docum
 | Document | ID | Authority / status | Canonical coverage | Exclusions |
 | --- | --- | --- | --- | --- |
 | [README](../README.md) | DOC-README | Canonical for project identity | Vision, intended audience, high-level feature promises, getting started | Detailed design, delivery schedule |
-| [Architecture](architecture.md) | DOC-ARCH | Canonical for target design | Invariants, boundaries, security, execution and integration contracts | Proof features are implemented, milestone status |
+| [Architecture](architecture.md) | DOC-ARCH | Canonical for target design | Invariants, boundaries, lifecycle/document abstractions, security, execution and integration contracts | Proof features are implemented, milestone status |
 | [Aquamacs compatibility inventory](aquamacs-compatibility.md) | DOC-AQUA-COMPAT | Proposed, target for canonical after review | Source-traced feature matrix, dispositions, implementation status, priorities and acceptance tests | General execution architecture, menu taxonomy, proof of current implementation |
 | [Menu architecture](menu-architecture.md) | DOC-MENU | Proposed, target for canonical after review | Historical menu inventory, proposed taxonomy, Emacs command dispatch, context/state, extensions and menu test strategy | Keyboard binding authority, per-feature parity status |
 | [Roadmap](roadmap.md) | DOC-ROADMAP | Canonical for planned delivery | Milestones, priorities, acceptance criteria, dependencies | Actual implemented state without verification |
