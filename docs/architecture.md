@@ -158,7 +158,10 @@ Repeated source evaluation must never make the Glassmacs GUI wait synchronously 
 
 Test rapid repeated submissions, multiline regions, queued edits/reordering/deletion, pause/resume, ESS readiness and error prompts, R interrupts, process death, output flooding, remote disconnection, and multiple concurrent sessions. Verify that the editor remains responsive and no command is silently duplicated, lost or sent to the wrong R session. Measure dispatch overhead and latency against direct ESS and Terminal baselines. Mark any guarantees that cannot be established in the test environment as unverified.
 
-**Status:** This queue is a planned capability; no queue UI or dispatcher exists in the current prototype.
+**Status:** A conservative local ESS subset is implemented: per-session FIFO
+dispatch, immutable source snapshots, queue inspection and lifecycle controls.
+It has no dedicated queue editor, output-flood protection, or remote-session
+support; see [R workflows](r-workflows.md) and the [roadmap](roadmap.md).
 
 ## Bounded R console output and output-flood recovery
 
@@ -202,7 +205,15 @@ Latency, throughput, compute duration, remote network delay and perceived GUI re
 
 ## macOS and user-interface boundary
 
-Upstream GNU Emacs owns editing, buffers, modes and ESS processes. The optional future Swift/AppKit layer may provide lifecycle, preferences, Cocoa window/document integration, application packaging and preview coordination through supported Emacs-client/process interfaces; it must **not** reimplement execution or become a compute proxy. Modern Cocoa appearance and Aquamacs-like keyboard behavior are design requirements, not verified properties. Command-key shortcuts must not shadow Emacs Control/Meta or ESS mode maps. Preserve a conventional Emacs profile and test frames created after startup.
+Upstream GNU Emacs owns editing, buffers, modes and ESS processes. The optional Swift/AppKit layer may provide lifecycle, preferences, Cocoa window/document integration, application packaging and preview coordination through supported Emacs-client/process interfaces; it must **not** reimplement execution or become a compute proxy. Modern Cocoa appearance and Aquamacs-like keyboard behavior are design requirements, not verified properties. Command-key shortcuts must not shadow Emacs Control/Meta or ESS mode maps. Preserve a conventional Emacs profile and test frames created after startup.
+
+**Current prototype (issue #12):** `macos/` contains an optional launcher/helper
+that starts upstream Cocoa Emacs as a child and forwards later file opens through
+the Emacs server/client protocol. The helper does not own Emacs windows or
+`NSApplication`; the Lisp configuration remains authoritative for editor state.
+The R session target, context menu, and editable comint history also live in
+Emacs Lisp. This is not a signed distribution and has not had macOS GUI testing;
+see [the launcher guide](macos-launcher.md).
 
 ## Testability and acceptance gates
 

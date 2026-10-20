@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+output=${1:-"$root/build/Glassmacs.app"}
+package_build="$root/macos/.build/release"
+
+swift build --package-path "$root/macos" -c release
+mkdir -p "$output/Contents/MacOS" "$output/Contents/Resources"
+cp "$package_build/GlassmacsLauncher" "$output/Contents/MacOS/GlassmacsLauncher"
+cp "$root/macos/Info.plist" "$output/Contents/Info.plist"
+printf 'Built unsigned development app at %s\n' "$output"

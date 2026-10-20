@@ -32,6 +32,12 @@ Neither job verifies a native macOS graphics device; the real ESS/R check only
 establishes Linux process/evaluation behavior. Quarto and TeX remain optional
 and are skipped unless available.
 
+The `macos-launcher` job runs `swift test --package-path macos`, builds an
+unsigned development `.app`, and checks its executable and plist on a macOS
+runner. This is compile/package validation only; it does not exercise Finder,
+LaunchServices, Cocoa windows, native menus, or interactive Emacs behavior. See
+[the launcher guide](macos-launcher.md) for local build and manual dogfood steps.
+
 For PR #4, the workflow was created but the GitHub Actions run ended with
 `action_required` before any jobs were created. This is an approval/permissions
 gate outside the workflow definition, not a passing or failing test result.

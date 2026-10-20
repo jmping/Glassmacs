@@ -9,7 +9,7 @@
 
 (ert-deftest glassmacs-configuration-loads ()
   (dolist (feature '(glassmacs glassmacs-core glassmacs-keys glassmacs-r
-                     glassmacs-sessions glassmacs-remote
+                     glassmacs-sessions glassmacs-r-ui glassmacs-remote
                      glassmacs-documents glassmacs-frames
                      glassmacs-diagnostics glassmacs-shiny
                      glassmacs-appearance))
@@ -72,6 +72,21 @@
                 'glassmacs-open-file))
     (should (eq (lookup-key global-map [menu-bar file new-file])
                 'glassmacs-open-file))))
+
+(ert-deftest glassmacs-server-open-files-use-document-policy ()
+  (let* ((file (make-temp-file "glassmacs-server-open-"))
+         (shown nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p)
+                   (lambda (&optional _) t))
+                  ((symbol-function 'glassmacs--show-document-buffer)
+                   (lambda (buffer action)
+                     (push (cons buffer action) shown))))
+          (should (equal (glassmacs-open-files-from-client (list file))
+                         (list file)))
+          (should (= 1 (length shown)))
+          (should (eq (cdar shown) glassmacs-document-opening-policy)))
+      (delete-file file))))
 
 (ert-deftest glassmacs-visible-document-is-not-opened-in-an-extra-frame ()
   (let ((buffer (generate-new-buffer "glassmacs-visible-document"))

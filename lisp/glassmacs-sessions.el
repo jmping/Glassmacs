@@ -12,6 +12,7 @@
 ;; `uncertain' and is never replayed automatically.
 
 (require 'cl-lib)
+(require 'project)
 (require 'subr-x)
 
 (defgroup glassmacs-sessions nil
@@ -45,6 +46,22 @@
 (defvar glassmacs-sessions--timer nil)
 (defvar-local glassmacs-r-target-session nil
   "Session id explicitly selected for this buffer, or nil.")
+
+(define-minor-mode glassmacs-r-target-indicator-mode
+  "Show this buffer's explicitly selected R execution target."
+  :lighter (:eval (glassmacs-r--target-lighter)))
+
+(defun glassmacs-r--target-lighter ()
+  "Return the modeline indicator for the current buffer's R target."
+  (when glassmacs-r-target-session
+    (let ((session (glassmacs-sessions-find glassmacs-r-target-session)))
+      (format " R[%s%s]" glassmacs-r-target-session
+              (if (and session
+                       (eq (glassmacs-session-state session) 'ready)
+                       (glassmacs-sessions--process-live-p
+                        (glassmacs-session-process session)))
+                  ""
+                "!")))))
 
 (defvar ess-process-name-list)
 (defvar ess-local-process-name)
@@ -192,9 +209,12 @@ session, the only live session, or the session matching ESS's
                    (if (glassmacs-session-p session)
                        (glassmacs-session-id session) session))
                   (user-error "Unknown R session: %s" session)))
-     ((and glassmacs-r-target-session
-           (cl-find glassmacs-r-target-session live
-                    :key #'glassmacs-session-id :test #'equal)))
+     (glassmacs-r-target-session
+      (let ((target (glassmacs-sessions-find glassmacs-r-target-session)))
+        (if (and target (memq target live))
+            target
+          (user-error "Selected R session %s is no longer live; clear or select its target explicitly"
+                     glassmacs-r-target-session))))
      ((null live) (user-error "No live R session; start one with M-x glassmacs-r-start"))
      ((null (cdr live)) (car live))
      ((and (boundp 'ess-local-process-name) ess-local-process-name
@@ -216,9 +236,85 @@ session, the only live session, or the session matching ESS's
    (list (let ((live (glassmacs-sessions-refresh)))
            (unless live (user-error "No live R session"))
            (glassmacs-session-id (glassmacs-sessions--prompt live)))))
-  (unless (glassmacs-sessions-find id) (user-error "Unknown R session: %s" id))
+  (let ((session (glassmacs-sessions-find id)))
+    (unless (and session (eq (glassmacs-session-state session) 'ready)
+                 (glassmacs-sessions--process-live-p
+                  (glassmacs-session-process session)))
+      (user-error "R session %s is not live" id)))
   (setq glassmacs-r-target-session id)
+  (glassmacs-r-target-indicator-mode 1)
   (message "Buffer targets R session %s" id))
+
+(defun glassmacs-r-clear-session-target ()
+  "Clear the current buffer's explicit R target."
+  (interactive)
+  (setq glassmacs-r-target-session nil)
+  (glassmacs-r-target-indicator-mode -1)
+  (message "Cleared this buffer's R session target"))
+
+(defun glassmacs-r-inspect-session ()
+  "Display the selected or unambiguously resolved R session terminal."
+  (interactive)
+  (let ((session (glassmacs-sessions-resolve)))
+   (unless (buffer-live-p (glassmacs-session-buffer session))
+     (user-error "The terminal for R session %s no longer exists"
+                 (glassmacs-session-id session)))
+   (pop-to-buffer (glassmacs-session-buffer session))))
+
+(defun glassmacs-r--host-description (directory)
+  "Describe the host represented by DIRECTORY without contacting it."
+  (cond
+   ((null directory) "(unknown)")
+   ((file-remote-p directory))
+   (t "local Emacs host")))
+
+(defun glassmacs-r-inspect-directories ()
+  "Display source, buffer, project, and selected R session directories.
+This command does not query R or contact a remote host."
+  (interactive)
+  (let* ((source (and buffer-file-name (file-name-directory buffer-file-name)))
+        (buffer-dir default-directory)
+        (project-dir
+         (and (not (file-remote-p default-directory))
+              (fboundp 'project-current)
+              (let ((project (project-current nil)))
+                (and project (project-root project)))))
+        (session (condition-case nil
+                    (glassmacs-sessions-resolve)
+                  (user-error nil)))
+        (session-dir (and session (glassmacs-session-directory session)))
+        (buffer (get-buffer-create "*Glassmacs R Directories*")))
+   (with-current-buffer buffer
+     (let ((inhibit-read-only t)
+           (after-change-major-mode-hook nil))
+       (special-mode)
+       (erase-buffer)
+       (insert (format "Document directory: %s\n"
+                       (or source "(untitled)")))
+       (insert (format "Document host: %s\n"
+                       (glassmacs-r--host-description buffer-dir)))
+       (insert (format "Buffer default-directory: %s\n" buffer-dir))
+       (insert (format "Project root: %s\n"
+                       (or project-dir
+                           (if (file-remote-p default-directory)
+                               "(remote; not queried)"
+                             "(not in a project)"))))
+       (insert (format "R session: %s\n"
+                       (if session (glassmacs-session-id session) "(not selected)")))
+       (insert (format "R process host at registration: %s\n"
+                       (glassmacs-r--host-description session-dir)))
+       (insert (format "ESS console default-directory at registration: %s\n"
+                       (or session-dir "(unknown)")))
+       (insert "\nNo live R getwd() query was made. Use "
+               "`M-x glassmacs-r-show-r-working-directory' to request it explicitly.\n")))
+   (display-buffer buffer)))
+
+(defun glassmacs-r-show-r-working-directory ()
+  "Explicitly ask the selected R session to print its current getwd()."
+  (interactive)
+  (glassmacs-queue-submit
+   "cat(\"R getwd(): \", getwd(), \"\\n\", sep = \"\")" nil
+   (list :buffer (buffer-name) :operation 'working-directory)))
 
 (defun glassmacs-r-start-session ()
   "Start an ESS R session and register it; report missing R or ESS."
@@ -523,6 +619,16 @@ nothing further runs until you resume it."
   "Queue the whole buffer for an R session as one command."
   (interactive)
   (glassmacs-r-submit-region (point-min) (point-max)))
+
+(defun glassmacs-r-submit-region-to-session (start end)
+  "Queue region START..END to an explicitly chosen live R session."
+  (interactive "r")
+  (let* ((live (glassmacs-sessions-refresh))
+         (session (or (and live (glassmacs-sessions--prompt live))
+                      (user-error "No live R session"))))
+    (glassmacs-queue-submit
+     (buffer-substring-no-properties start end) session
+     (list :buffer (buffer-name) :start start :end end :one-off t))))
 
 (provide 'glassmacs-sessions)
 ;;; glassmacs-sessions.el ends here

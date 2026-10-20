@@ -60,6 +60,12 @@ This roadmap translates the [architecture](architecture.md) into staged, testabl
 
 **Implemented foundation (partial; this does not complete the milestone):** normal TRAMP file access, an opt-in remote shell, a small read-only remote-context interface, connection inspection/cleanup, and a minimal optional Mosh terminal launcher. Unit tests do not use a real SSH server. Remote ESS and execution routing remain planned.
 
+**Issue #12 local-session slice (partial):** buffer-local R target selection,
+stale process-incarnation rejection, one-off region routing, visible modeline
+state, side-effect-free Emacs context menus, and editable per-console comint
+history are implemented. Common ESS evaluation entry points use the immutable
+queue when a source buffer has an explicit target. This is local ESS routing,
+not remote execution, host/path mapping, or full multi-project acceptance.
 
 - Implement a minimal execution selection interface for local direct, local PTY and opt-in SSH.
 - Integrate persistent project terminal sessions with established Emacs facilities; preserve ESS evaluation semantics.
@@ -107,11 +113,17 @@ Exit conditions require **actual macOS GUI tests** for window/tab behavior, not 
 ## Milestone 6 — Native macOS refinement and packaging
 
 - Refine Cocoa window/frame behavior, typography, dark/light appearance, shortcuts, file associations and application conventions.
-- Assess an optional thin Swift/AppKit layer for lifecycle, preferences, document integration, preview coordination, packaging and updates; never replace Emacs editing or execution engines.
+- **Issue #12 prototype:** an optional unsigned Swift/AppKit launcher/helper supports Finder file-open events, configurable upstream Emacs/checkout/home paths, emacsclient forwarding, and a local status-menu preferences surface. It does not replace Emacs editing, native menus, or process ownership.
+- Continue assessing lifecycle, document integration, preview coordination, packaging and updates; never replace Emacs editing or execution engines.
 - Package a standalone macOS application only after isolation, dependencies, licensing and signing/distribution strategy are defined.
 - Test on supported macOS and hardware combinations; compare against Aquamacs workflows and Terminal baselines.
 
 **Exit criteria:** reproducible packaging and installation, documented compatibility, stable R/LaTeX/remote workflows, and measured GUI performance with transparent limitations.
+
+Issue #12 does **not** satisfy this milestone's exit criteria: the launcher is
+unsigned, macOS CI is compile/package-only, and Finder/Cocoa/ESS GUI flows remain
+unverified on a real Mac. The build and known boundaries are documented in
+[the macOS launcher guide](macos-launcher.md).
 
 ## Integrated distribution and remote editing workstream (next release gate)
 

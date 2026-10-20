@@ -23,6 +23,12 @@ This log records changes in document **scope, ownership, status and authority**.
 
 Future entries should state date, affected document IDs, old/new coverage or authority, rationale, successor (if any), and associated PR/ADR.
 
+## 2026-10-20 — Issue #12 R routing and macOS launcher prototype
+
+- **Added DOC-MAC-LAUNCHER (Informational):** documented the optional Swift/AppKit launcher, upstream GNU Emacs/Cocoa ownership boundary, server/client file handoff, build/configuration steps, and macOS verification limits; registered its scope in DOC-INDEX.
+- **Updated DOC-R-WORKFLOWS:** documented per-buffer R targets, stale-session protection, editable per-console comint history, native Emacs context menus, and distinct source/project/session working directories.
+- **Updated DOC-ARCH and DOC-ROADMAP:** distinguish the local R/session and unsigned launcher prototypes from unimplemented remote routing and unverified macOS GUI behavior. No existing document was superseded.
+
 ## 2026-10-19 — Proposed Aquamacs feature, settings and menu audit (documentation PR)
 
 - **Added DOC-AQUA-COMPAT (Proposed):** source-traced historical feature inventory, intended replacement strategy, settings taxonomy, implementation priorities and acceptance criteria. Establishes separate graphical windows as the intended default for new documents, with tabs/reuse optional and special buffers exempted by policy.

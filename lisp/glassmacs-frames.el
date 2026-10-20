@@ -1,5 +1,7 @@
 ;;; glassmacs-frames.el --- Document and frame behavior -*- lexical-binding: t; -*-
 
+(require 'cl-lib)
+
 (defgroup glassmacs-frames nil
   "Document opening behavior for Glassmacs."
   :group 'glassmacs)
@@ -60,6 +62,19 @@
           (glassmacs--show-document-buffer buffer action)
         (switch-to-buffer buffer))
       buffer)))
+
+(defun glassmacs-open-files-from-client (filenames)
+  "Open FILENAMES through the configured Glassmacs document policy.
+This is the Emacs-server entry point used by the optional macOS launcher."
+  (unless (and (listp filenames) (cl-every #'stringp filenames))
+    (user-error "Invalid document list from Glassmacs Launcher"))
+  (dolist (filename filenames)
+    (let* ((buffer (find-file-noselect filename))
+           (action (glassmacs--document-opening-action buffer)))
+      (if action
+          (glassmacs--show-document-buffer buffer action)
+        (switch-to-buffer buffer))))
+  filenames)
 
 (defun glassmacs-new-document ()
   "Create an untitled document using the configured opening policy."
