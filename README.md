@@ -41,7 +41,7 @@ Our goals are to:
 - Customizable fonts and syntax highlighting
 - Mac-style application and document shortcuts
 - Familiar Aquamacs editing behavior
-- Optional Swift-based application integration
+- A standalone Cocoa application bundle with a thin Swift process bootstrap
 
 ### R and Statistical Computing
 - Modern Emacs Speaks Statistics (ESS)
@@ -80,43 +80,41 @@ Glassmacs aims to support fast local direct execution, persistent terminal/PTY s
 
 ## Architecture
 
-Glassmacs is intended to use an upstream GNU Emacs release as its editing engine.
+Glassmacs uses upstream Cocoa GNU Emacs as its editing engine, with a modular
+Emacs Lisp configuration for macOS behavior, appearance, and research workflows.
 
-The project will provide a modular Emacs Lisp configuration layer for macOS behavior, appearance, language integration, and research workflows.
+The macOS app build packages the upstream Emacs bundle as the top-level
+`Glassmacs.app`; its Swift bootstrap replaces itself with Emacs rather than
+spawning a second editor/application. The project avoids modifying GNU Emacs.
 
-Where necessary, lightweight Swift components may provide additional macOS application integration.
+## Build and launch
 
-The project will avoid modifying the GNU Emacs core unless a specific limitation makes such changes necessary.
-
-## Install and launch the development distribution
-
-Glassmacs is a development distribution layered on upstream GNU Emacs, not a
-standalone application. Install GNU Emacs 29 or newer (recommended) and make its
-`emacs` executable available on `PATH`. From a checkout of Glassmacs, start the
-graphical editor with:
+For development on macOS or Linux, install GNU Emacs and run the checkout's
+launcher:
 
 ```sh
 ./scripts/glassmacs
 ```
 
-Use `./scripts/glassmacs -nw` for terminal Emacs, and pass ordinary Emacs
-arguments or file paths after the launcher, for example
-`./scripts/glassmacs some-file.R` or
-`./scripts/glassmacs /ssh:research:/home/user/project/analysis.R`. The same
-terminal command works on Linux with a terminal-capable GNU Emacs. Glassmacs
-forwards these arguments to upstream Emacs; no separate argument syntax is
-introduced. Set `GLASSMACS_EMACS` if the executable is not named `emacs` or is
-not on `PATH`.
-
-On macOS, point `GLASSMACS_EMACS` at a graphical Cocoa Emacs executable if one
-is not available on the launching shell's `PATH`, for example:
+For a standalone macOS build, use macOS 13 or newer with Swift 6 and the
+standard tools documented in the [macOS application guide](docs/macos-launcher.md):
 
 ```sh
-GLASSMACS_EMACS="/Applications/Emacs.app/Contents/MacOS/Emacs" ./scripts/glassmacs
+./scripts/build-macos-app
+./scripts/validate-macos-app build/Glassmacs.app
 ```
 
-This launches upstream Emacs with the Glassmacs configuration; there is no
-standalone `.app` or Swift wrapper.
+The builder downloads the pinned Cocoa Emacs bundle and verifies its checksum.
+Drag `build/Glassmacs.app` into `/Applications`, then launch it from Finder,
+Spotlight, or the Dock. No separate Emacs installation or Glassmacs checkout is
+needed at runtime. The app is unsigned and not notarized; its Dock identity,
+Finder integration, and other GUI behavior still require macOS manual testing.
+
+For terminal use or development, `./scripts/glassmacs -nw` starts terminal
+Emacs. File arguments are forwarded directly, for example
+`./scripts/glassmacs some-file.R` or
+`./scripts/glassmacs /ssh:research:/home/user/project/analysis.R`. Set
+`GLASSMACS_EMACS` to select a non-default Emacs executable.
 
 Core editing requires only GNU Emacs. ESS, R, Quarto, TeX/AUCTeX, SSH and Mosh
 are optional integrations; ordinary text editing does not require them. To
@@ -127,30 +125,36 @@ install the optional Emacs packages for research/document workflows, run:
 ```
 
 This explicit first-run step needs network access when packages are missing.
-Normal Glassmacs startup does not install packages or refresh package archives,
-so it can run offline after any desired packages have been installed. Package
-versions are not locked or reproducible yet. Packages and Glassmacs settings
-are kept under `~/.config/glassmacs` by default; set `GLASSMACS_HOME` to use a
-different directory. The launcher starts Emacs with `-Q` and does not modify
-`~/.emacs`, `~/.emacs.d`, or Aquamacs preferences. Start ordinary GNU Emacs
-with `emacs` (not the Glassmacs launcher) to return to its normal configuration.
+For the installed macOS app, run its bundled bootstrap:
+
+```sh
+GLASSMACS_EMACS="/Applications/Glassmacs.app/Contents/MacOS/Emacs" \
+  "/Applications/Glassmacs.app/Contents/Resources/Glassmacs/scripts/bootstrap"
+```
+
+Normal startup does not install packages or refresh archives. App state and
+packages live in `~/Library/Application Support/Glassmacs`; the development
+launcher uses `~/.config/glassmacs`. Set `GLASSMACS_HOME` to override either
+location. The app launches with `-Q` and does not modify `~/.emacs`,
+`~/.emacs.d`, or Aquamacs preferences. R, ESS, Quarto, TeX and other optional
+tools are not bundled. See [R workflows](docs/r-workflows.md) for R setup.
 
 Install R, Quarto, TeX and remote tools separately when needed, and ensure their
 executables are available on `PATH`. Missing optional integrations do not block
 startup; the relevant command reports what is missing.
 
-For installation details and a manual smoke test, see
-[development](docs/development.md). Linux batch/terminal checks do not validate
-macOS Cocoa behavior. A native macOS graphical build, its hybrid shortcuts and
-appearance still require manual verification; no standalone app packaging,
-signing or notarization is provided.
+For installation, diagnostics, manual macOS GUI checks, and limitations, see
+the [macOS application guide](docs/macos-launcher.md). Linux batch/terminal
+checks do not validate Cocoa behavior. CI builds and validates the app bundle
+but does not perform interactive GUI verification. Signing and notarization
+are not provided.
 
 Interactive document opens on a graphical macOS session default to a separate
 frame, with configurable new-tab and reuse-current policies. Special buffers
-and command-line startup file arguments are not redirected. The Lisp policy is
-covered by tests, but native macOS frame behavior remains unverified. Run
-`M-x glassmacs-diagnostics` for local dependency and platform information. For
-the optional R graphics smoke check, see [R workflows](docs/r-workflows.md).
+and non-graphical sessions are not redirected. Cocoa file-open events use the
+same Lisp policy, but the GUI event path and frame behavior remain unverified.
+Run `M-x glassmacs-diagnostics` for local dependency and platform information.
+For the optional R graphics smoke check, see [R workflows](docs/r-workflows.md).
 
 Run the automated tests with:
 
@@ -180,12 +184,11 @@ The first milestone introduces:
   CI also runs a real ESS/R integration job.
 
 **Not yet verified:** Native macOS Cocoa behavior and full Aquamacs
-keybinding compatibility. Copilot developed this milestone in a Linux
-environment. ESS, R, document rendering, and Shiny functionality require
-the relevant Emacs packages, R packages, and external executables.
-Package versions are not pinned to a reproducible snapshot.
-A native Swift integration layer, standalone application packaging,
-and polished previews remain future work.
+keybinding compatibility. The standalone app build and packaging CI are
+implemented, but the GUI app has not yet been exercised on macOS. ESS, R,
+document rendering, and Shiny functionality require the relevant Emacs
+packages, R packages, and external executables. Optional Emacs package
+versions are not pinned to a reproducible snapshot.
 
 Issue #10 adds an interactive document-opening policy and local diagnostics.
 The default separate-frame behavior, `new-tab` and `reuse-current` choices,
@@ -195,7 +198,7 @@ owned by the installed R device; Glassmacs has no managed plot viewer.
 
 ## Development Status
 
-**Early prototype available for testing; not yet a production-ready macOS application.**
+**Early prototype available for testing; not yet a production-ready macOS application.** A relocatable app bundle is built in macOS CI, while interactive macOS GUI, ESS/R and native graphics verification remain outstanding.
 
 The initial development priorities are:
 
@@ -204,7 +207,7 @@ The initial development priorities are:
 3. Configure and test modern ESS and R.
 4. Integrate R Markdown, Quarto, Sweave, and Shiny workflows.
 5. Develop the visual theme and native application experience.
-6. Package and test a standalone macOS application.
+6. Complete interactive validation and refinement of the standalone macOS application.
 
 The first milestone implements part of this foundation, as described above. The complete feature set remains a development goal.
 

@@ -26,7 +26,8 @@ cleanup() {
   fi
   rm -rf -- "$tmp"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
 
 if [ -n "${GLASSMACS_UPSTREAM_EMACS_APP:-}" ]; then
   upstream_app=$(CDPATH='' cd -- "$GLASSMACS_UPSTREAM_EMACS_APP" && pwd)
@@ -38,7 +39,7 @@ else
   mkdir "$tmp/mount"
   hdiutil attach "$archive" -quiet -nobrowse -readonly -mountpoint "$tmp/mount"
   mounted="$tmp/mount"
-  upstream_app=$(find "$mounted" -maxdepth 3 -type d -name Emacs.app -print -quit)
+  upstream_app=$(find "$mounted" -type d -name Emacs.app -prune -print -quit)
   if [ -z "$upstream_app" ]; then
     printf 'No Emacs.app was found in the pinned Cocoa Emacs archive.\n' >&2
     exit 1

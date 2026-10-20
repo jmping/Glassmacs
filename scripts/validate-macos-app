@@ -55,6 +55,6 @@ check_dependencies() {
 
 check_dependencies "$bootstrap"
 check_dependencies "$emacs"
-"$emacs" --batch --eval '(princ emacs-version)' >/dev/null
+"$emacs" -Q --batch --eval '(princ emacs-version)' >/dev/null
 
 printf 'Validated Glassmacs.app structure and direct executable dependencies: %s\n' "$app"

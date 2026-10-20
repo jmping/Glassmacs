@@ -229,13 +229,43 @@ Latency, throughput, compute duration, remote network delay and perceived GUI re
 
 Upstream GNU Emacs owns editing, buffers, modes and ESS processes. The optional Swift/AppKit layer may provide lifecycle, preferences, Cocoa window/document integration, application packaging and preview coordination through supported Emacs-client/process interfaces; it must **not** reimplement execution or become a compute proxy. Modern Cocoa appearance and Aquamacs-like keyboard behavior are design requirements, not verified properties. Command-key shortcuts must not shadow Emacs Control/Meta or ESS mode maps. Preserve a conventional Emacs profile and test frames created after startup.
 
-**Current prototype (issue #12):** `macos/` contains an optional launcher/helper
-that starts upstream Cocoa Emacs as a child and forwards later file opens through
-the Emacs server/client protocol. The helper does not own Emacs windows or
-`NSApplication`; the Lisp configuration remains authoritative for editor state.
-The R session target, context menu, and editable comint history also live in
-Emacs Lisp. This is not a signed distribution and has not had macOS GUI testing;
-see [the launcher guide](macos-launcher.md).
+### Standalone Cocoa application packaging
+
+**Decision:** make the upstream Cocoa GNU Emacs bundle the top-level
+`Glassmacs.app`, rather than nesting an `Emacs.app` under a second Swift app.
+The Cocoa bundle carries the executable, runtime resources, and essential
+macOS application metadata; GNU's self-contained build can be moved after
+installation. Preserve its standard `Contents` layout and Emacs executable,
+then overlay Glassmacs's bundle ID, display name, and document declarations.
+The reproducible build pins a specific Cocoa Emacs archive and checksum,
+bundles `init.el` and `lisp/`, and places mutable state in the user's
+Application Support directory. See the [macOS application guide](macos-launcher.md)
+for inputs, build checks, and the exact verification boundary.
+
+`GlassmacsBootstrap` is the outer bundle executable. It initializes
+`GLASSMACS_HOME`, then replaces its own process with the bundled Cocoa Emacs
+using `-Q` and the bundled Glassmacs entry point. The intended result is one
+LaunchServices bundle and one Cocoa application process with Emacs as the sole
+editor/window/process owner. A wrapper that spawns a second app process or
+opens a nested Emacs bundle is not an equivalent design: the child may retain
+GNU Emacs's distinct application identity and create a second Dock entry.
+Whether process replacement preserves Glassmacs identity and correct Finder,
+Dock, reopen, and document-open behavior is a macOS GUI verification gate.
+
+For Cocoa open-file events, Emacs 31.1 binds the `[ns-open-file]` event to
+`ns-find-file`, which consumes the NS port's `ns-input-file` queue. Glassmacs
+adds narrow advice around that command to route event paths through the same
+new-frame/new-tab/reuse policy as interactive document opens. The NS queue and
+command are upstream implementation details rather than a stable public
+callback API; the pinned Emacs version and ERT coverage make that dependency
+visible, but real Finder delivery and event ordering must still be tested.
+Command-line and Finder file arguments remain data paths, not generated Lisp
+source. Cocoa menu, buffer, and ESS ownership remains entirely in Emacs Lisp.
+
+The current CI validates bundle construction, direct binary dependencies,
+startup, Lisp tests and relocation; it does not validate app activation,
+LaunchServices registration, Dock identity, GUI menu delivery, native Quartz
+graphics, or interactive R/ESS. The app is unsigned and not notarized.
 
 ## Testability and acceptance gates
 
@@ -250,7 +280,7 @@ See the [development roadmap](roadmap.md) for milestones, acceptance criteria an
 1. **Milestone 2:** stabilize local R/ESS, macOS keybindings, dependency isolation, CI; define the minimal execution profile contract and validate architectural boundaries.
 2. **Milestone 3:** persistent terminal integration and opt-in SSH/TRAMP + remote ESS workflow, path mapping, performance instrumentation.
 3. **Milestone 4:** remote rendering, artifact handling, Shiny SSH forwarding and durable job lifecycle as separately testable capabilities.
-4. **Later:** refined native macOS appearance, Swift/AppKit optional wrapper and standalone packaging.
+4. **Milestone 6:** refine native macOS appearance and complete interactive GUI validation of the standalone Cocoa bundle.
 
 Before implementation, record design decisions for session ownership, profile trust, local-to-remote file mapping, remote command construction, process cancellation, credential handling, performance test methodology and remote preview lifecycle. Prefer small ADRs under `docs/adr/` for decisions that constrain multiple modules.
 

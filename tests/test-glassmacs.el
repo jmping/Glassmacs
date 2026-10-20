@@ -73,19 +73,28 @@
     (should (eq (lookup-key global-map [menu-bar file new-file])
                 'glassmacs-open-file))))
 
-(ert-deftest glassmacs-server-open-files-use-document-policy ()
-  (let* ((file (make-temp-file "glassmacs-server-open-"))
+(ert-deftest glassmacs-cocoa-file-open-event-uses-document-policy ()
+  (let* ((file (make-temp-file "glassmacs macOS ñ " nil ".R"))
+         (ns-input-file (list file))
+         (command-line-default-directory temporary-file-directory)
+         (glassmacs-document-opening-policy 'new-tab)
          (shown nil))
     (unwind-protect
         (cl-letf (((symbol-function 'display-graphic-p)
                    (lambda (&optional _) t))
+                  ((symbol-function 'ns-hide-emacs)
+                   (lambda (&rest _) nil))
                   ((symbol-function 'glassmacs--show-document-buffer)
                    (lambda (buffer action)
                      (push (cons buffer action) shown))))
-          (should (equal (glassmacs-open-files-from-client (list file))
-                         (list file)))
+          (let ((buffer
+                 (glassmacs--ns-find-file
+                  (lambda (&rest _) (ert-fail "Cocoa file event was not intercepted")))))
+            (should (buffer-live-p buffer))
+            (should (equal (buffer-file-name buffer) file)))
           (should (= 1 (length shown)))
-          (should (eq (cdar shown) glassmacs-document-opening-policy)))
+          (should (eq (cdar shown) 'new-tab))
+          (should-not ns-input-file))
       (delete-file file))))
 
 (ert-deftest glassmacs-visible-document-is-not-opened-in-an-extra-frame ()

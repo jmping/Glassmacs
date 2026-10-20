@@ -23,9 +23,15 @@ This log records changes in document **scope, ownership, status and authority**.
 
 Future entries should state date, affected document IDs, old/new coverage or authority, rationale, successor (if any), and associated PR/ADR.
 
+## 2026-10-20 — Standalone macOS app packaging
+
+- **Replaced DOC-MAC-LAUNCHER coverage:** documents the one-bundle Cocoa Emacs architecture, pinned app build, install/bootstrap/configuration, runtime checks, and explicit GUI verification requirements; it no longer describes the superseded child-process launcher.
+- **Updated DOC-ARCH and DOC-ROADMAP:** record the process-replacing bootstrap decision and mark package/build validation implemented while keeping Dock, LaunchServices, Finder, GUI, ESS/R, and Quartz checks unverified.
+- **Updated DOC-README and DOC-INDEX:** distinguish the standalone macOS app from checkout-based terminal/development launch and register the updated application guide. No document was superseded.
+
 ## 2026-10-20 — Issue #12 R routing and macOS launcher prototype
 
-- **Added DOC-MAC-LAUNCHER (Informational):** documented the optional Swift/AppKit launcher, upstream GNU Emacs/Cocoa ownership boundary, server/client file handoff, build/configuration steps, and macOS verification limits; registered its scope in DOC-INDEX.
+- **Added DOC-MAC-LAUNCHER (Informational):** documented the former optional Swift/AppKit launcher, upstream GNU Emacs/Cocoa ownership boundary, server/client file handoff, build/configuration steps, and macOS verification limits; registered its scope in DOC-INDEX. The guide's current scope is recorded in the later standalone-app entry.
 - **Updated DOC-R-WORKFLOWS:** documented per-buffer R targets, stale-session protection, editable per-console comint history, native Emacs context menus, and distinct source/project/session working directories.
 - **Updated DOC-ARCH and DOC-ROADMAP:** distinguish the local R/session and unsigned launcher prototypes from unimplemented remote routing and unverified macOS GUI behavior. No existing document was superseded.
 

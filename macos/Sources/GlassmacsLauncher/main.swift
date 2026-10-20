@@ -43,8 +43,9 @@ enum GlassmacsBootstrap {
             }
             throw BootstrapError.cannotLaunchEmacs(String(cString: strerror(errno)))
         } catch {
-            "Glassmacs: \(error.localizedDescription)\n".withCString {
-                fputs($0, stderr)
+            let message = "Glassmacs: \(error.localizedDescription)\n"
+            message.withCString {
+                _ = write(STDERR_FILENO, $0, strlen($0))
             }
             exit(EXIT_FAILURE)
         }

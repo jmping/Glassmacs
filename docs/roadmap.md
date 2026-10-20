@@ -113,17 +113,21 @@ Exit conditions require **actual macOS GUI tests** for window/tab behavior, not 
 ## Milestone 6 — Native macOS refinement and packaging
 
 - Refine Cocoa window/frame behavior, typography, dark/light appearance, shortcuts, file associations and application conventions.
-- **Issue #12 prototype:** an optional unsigned Swift/AppKit launcher/helper supports Finder file-open events, configurable upstream Emacs/checkout/home paths, emacsclient forwarding, and a local status-menu preferences surface. It does not replace Emacs editing, native menus, or process ownership.
-- Continue assessing lifecycle, document integration, preview coordination, packaging and updates; never replace Emacs editing or execution engines.
-- Package a standalone macOS application only after isolation, dependencies, licensing and signing/distribution strategy are defined.
+- **Standalone app build implemented:** a reproducible macOS build starts from a pinned, checksum-verified Cocoa GNU Emacs bundle, installs Glassmacs Lisp/configuration, uses one top-level `Glassmacs.app` bundle identity, and stores mutable state under `~/Library/Application Support/Glassmacs`. A process-replacing Swift bootstrap loads the bundled Emacs; the app is not an Emacs child-process helper.
+- **Build validation implemented:** macOS CI checks bundle metadata and direct executable dependencies, runs Swift and ERT tests with the bundled Emacs, tests the bundled configuration and relocation, and uploads a ZIP artifact.
+- Complete actual GUI validation of Finder/Dock activation, reopen, document-open dispatch and frame policy, save prompts, keyboard shortcuts, menus, interactive ESS/R, and Quartz graphics. Do not mark these verified based only on CI or ERT.
+- Continue assessing lifecycle, document integration, preview coordination and updates; never replace Emacs editing or execution engines.
+- Signing, notarization, default-handler registration, and package-version locking remain future distribution work.
 - Test on supported macOS and hardware combinations; compare against Aquamacs workflows and Terminal baselines.
 
-**Exit criteria:** reproducible packaging and installation, documented compatibility, stable R/LaTeX/remote workflows, and measured GUI performance with transparent limitations.
+**Status:** the package-build and relocation-validation slices are implemented. The milestone is **not complete**: macOS GUI lifecycle and document integration, R/ESS and native graphics remain explicitly unverified, and signing/notarization are out of scope for this first build.
 
-Issue #12 does **not** satisfy this milestone's exit criteria: the launcher is
-unsigned, macOS CI is compile/package-only, and Finder/Cocoa/ESS GUI flows remain
+**Exit criteria:** reproducible packaging and installation; successful interactive macOS GUI lifecycle/document tests; verified local ESS/R and native graphics workflows; documented compatibility and limitations; and measured GUI performance with transparent evidence.
+
+The standalone bundle build is implemented, but this milestone's exit criteria
+remain open: the app is unsigned, and Finder/Cocoa/ESS GUI flows remain
 unverified on a real Mac. The build and known boundaries are documented in
-[the macOS launcher guide](macos-launcher.md).
+[the macOS application guide](macos-launcher.md).
 
 ## Integrated distribution and remote editing workstream (next release gate)
 
@@ -143,7 +147,7 @@ The second mode does **not** require a remote GUI Emacs, and the third does **no
 
 - Provide a documented, reproducible installation and launch path for an upstream-GNU-Emacs-based Glassmacs distribution, with isolated configuration/package storage and no mutation of the user's other Emacs/Aquamacs profiles.
 - Make GUI, terminal (`-nw`) and batch startup robust, graceful when optional R/ESS/TeX/Quarto/Mosh tools are missing, and usable offline after required dependencies have been installed. Record Emacs/ESS/version assumptions and dependency resolution; avoid unsupported claims of fully reproducible packages without pinning.
-- Establish a macOS runnable release candidate and diagnostics; define app packaging/signing as a subsequent, explicit gate rather than blocking basic startup on Swift/AppKit or a GNU Emacs fork.
+- Validate the standalone bundle as a macOS release candidate through interactive lifecycle/document and diagnostics checks; treat signing/notarization as a separate distribution gate rather than blocking basic startup on a GNU Emacs fork.
 - Run merged-main ERT and byte compilation; test the integrated startup paths and preserve local plain-text editing without R or network access.
 - Coordinate `init.el`, startup loading and scripts with the terminal and GUI-remote agents rather than letting parallel PRs overwrite one another.
 
@@ -176,7 +180,7 @@ The second mode does **not** require a remote GUI Emacs, and the third does **no
 
 Develop A (distribution/startup), B (remote terminal) and C (GUI remote documents) in separate, rebased PRs with disjoint modules and coordinated entry-point edits; D is the consolidated real-environment validation and stabilization gate. The earlier proposed PR numbers 9–12 are **workstream placeholders**, not reserved GitHub PR numbers. Do not claim features implemented simply because they appear here.
 
-**Exit criteria:** a researcher can launch Mac GUI Glassmacs, edit/save local and remote documents in the intended frame policy, run terminal Glassmacs on a remote host with ordinary upstream Emacs facilities, use and inspect real ESS/R sessions and conservative queues where dependencies are installed, and recover safely from representative disconnects and execution failures. Evidence must distinguish unit/CI mocks from actual macOS GUI, terminal Linux, R/ESS and SSH tests. Native standalone packaging, remote ESS dispatch, remote durable jobs, shared live buffer synchronization and AI integrations may remain later milestones if explicitly documented.
+**Exit criteria:** a researcher can launch Mac GUI Glassmacs, edit/save local and remote documents in the intended frame policy, run terminal Glassmacs on a remote host with ordinary upstream Emacs facilities, use and inspect real ESS/R sessions and conservative queues where dependencies are installed, and recover safely from representative disconnects and execution failures. Evidence must distinguish unit/CI mocks from actual macOS GUI, terminal Linux, R/ESS and SSH tests. Remote ESS dispatch, remote durable jobs, shared live buffer synchronization, and AI integrations may remain later milestones if explicitly documented; signing/notarization remain distribution gates.
 
 ## Plain text and large-file acceptance track
 

@@ -52,9 +52,12 @@
   "Open FILENAME interactively using Glassmacs' document policy."
   (interactive (find-file-read-args "Find file: "
                                     confirm-nonexistent-file-or-buffer))
-  (if (or (not (called-interactively-p 'interactive))
-          wildcards
-          (not (display-graphic-p)))
+  (glassmacs--open-file-with-policy
+   filename wildcards (called-interactively-p 'interactive)))
+
+(defun glassmacs--open-file-with-policy (filename &optional wildcards apply-policy)
+  "Open FILENAME with Glassmacs document policy when APPLY-POLICY is non-nil."
+  (if (or (not apply-policy) wildcards (not (display-graphic-p)))
       (find-file filename wildcards)
     (let* ((buffer (find-file-noselect filename))
            (action (glassmacs--document-opening-action buffer)))
@@ -63,18 +66,32 @@
         (switch-to-buffer buffer))
       buffer)))
 
-(defun glassmacs-open-files-from-client (filenames)
-  "Open FILENAMES through the configured Glassmacs document policy.
-This is the Emacs-server entry point used by the optional macOS launcher."
-  (unless (and (listp filenames) (cl-every #'stringp filenames))
-    (user-error "Invalid document list from Glassmacs Launcher"))
-  (dolist (filename filenames)
-    (let* ((buffer (find-file-noselect filename))
-           (action (glassmacs--document-opening-action buffer)))
-      (if action
-          (glassmacs--show-document-buffer buffer action)
-        (switch-to-buffer buffer))))
-  filenames)
+(defvar ns-input-file)
+(defvar command-line-default-directory)
+(declare-function ns-hide-emacs "nsfns.m" (on))
+
+(defun glassmacs--ns-find-file (original &rest arguments)
+  "Route Cocoa's ORIGINAL file-open event through Glassmacs' policy."
+  (if (and (boundp 'ns-input-file) ns-input-file)
+      (let ((filename
+             (file-truename
+              (expand-file-name (pop ns-input-file)
+                                command-line-default-directory))))
+        (when (fboundp 'ns-hide-emacs)
+          (ns-hide-emacs 'activate))
+        (glassmacs--open-file-with-policy filename nil t))
+    (apply original arguments)))
+
+(defun glassmacs--install-ns-file-open-policy ()
+  "Route Cocoa file-open events through Glassmacs' document policy."
+  (when (and (eq system-type 'darwin)
+             (fboundp 'ns-find-file)
+             (not (advice-member-p #'glassmacs--ns-find-file 'ns-find-file)))
+    (advice-add 'ns-find-file :around #'glassmacs--ns-find-file)))
+
+(when (eq system-type 'darwin)
+  (with-eval-after-load 'ns-win
+    (glassmacs--install-ns-file-open-policy)))
 
 (defun glassmacs-new-document ()
   "Create an untitled document using the configured opening policy."

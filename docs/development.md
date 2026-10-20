@@ -41,11 +41,14 @@ process-filter throughput, backpressure, GUI responsiveness, or physical
 allocation peaks. The real ESS/R ERT tests separately exercise process recovery
 and queued-command dispatch.
 
-The `macos-launcher` job runs `swift test --package-path macos`, builds an
-unsigned development `.app`, and checks its executable and plist on a macOS
-runner. This is compile/package validation only; it does not exercise Finder,
-LaunchServices, Cocoa windows, native menus, or interactive Emacs behavior. See
-[the launcher guide](macos-launcher.md) for local build and manual dogfood steps.
+The `macos-launcher` job runs Swift tests, builds the standalone bundle from a
+pinned Cocoa Emacs archive, validates bundle structure and direct executable
+dependencies, runs ERT with the bundled Emacs, starts the bundled Glassmacs
+configuration, verifies relocation, and uploads an app ZIP. These are build and
+batch checks only; they do not exercise Finder, LaunchServices, Dock identity,
+Cocoa windows, native menus, or interactive Emacs behavior. See the
+[macOS application guide](macos-launcher.md) for build inputs and manual GUI
+verification steps.
 
 For PR #4, the workflow was created but the GitHub Actions run ended with
 `action_required` before any jobs were created. This is an approval/permissions
@@ -138,10 +141,12 @@ or set it in `$GLASSMACS_HOME/custom.el`, for example:
 ```
 
 Use `reuse-current` instead of `new-tab` to keep opening in the current frame/tab.
-Special-mode and Dired buffers, non-graphical sessions, and command-line
-startup file arguments are not redirected. Existing visible document views are
-focused instead of duplicated. This Lisp policy has ERT coverage, but Cocoa
-frame behavior has not been manually verified on macOS.
+Special-mode and Dired buffers and non-graphical sessions are not redirected.
+Cocoa `[ns-open-file]` events use the same policy through a narrow adapter around
+Emacs `ns-find-file`; this depends on the pinned Cocoa Emacs NS event interface.
+Existing visible document views are focused instead of duplicated. ERT covers
+the Lisp policy and a simulated NS event, but Finder delivery, startup ordering,
+and Cocoa frame behavior have not been manually verified on macOS.
 
 Run `M-x glassmacs-diagnostics` for a local report of Emacs/OS/window-system,
 Glassmacs home, ESS/R/Rscript availability and graphics guidance. It does not
@@ -185,19 +190,20 @@ the Linux development environment used for this change.
   is on `PATH`; Glassmacs does not install R, Quarto, TeX, SSH or Mosh.
 - If package installation fails offline, plain-text startup remains available;
   retry bootstrap when network access is available.
-- If macOS GUI startup fails, verify `GLASSMACS_EMACS` names the graphical
-  executable inside the Emacs app bundle, not a terminal-only `emacs-nox`
-  binary. Use `M-x glassmacs-diagnostics` to check the active window system and
-  whether ESS, R and Rscript are discoverable.
+- If the standalone app fails to start, run
+  `./scripts/validate-macos-app /path/to/Glassmacs.app`, check Console for
+  bootstrap errors, and inspect the bundled Emacs binary with `otool -L`.
+  `M-x glassmacs-diagnostics` reports the active window system and whether ESS,
+  R and Rscript are discoverable after Emacs starts.
 - If `plot(cars)` does not open a native graphics window, check the R build's
   native graphics capability from the ESS console. Only try `X11()` when
   XQuartz and its display are installed and configured; Glassmacs does not
   select X11 or install XQuartz automatically.
-- Linux ERT and batch checks do not establish Cocoa behavior. Native macOS GUI
-  startup, Finder/LaunchServices integration, hybrid shortcut event handling,
-  appearance, and actual frame behavior have not been verified by Linux tests and
-  require a graphical macOS Emacs smoke test. This distribution does not
-  include a packaged/signed/notarized macOS application.
+- Linux ERT and batch checks do not establish Cocoa behavior. The app bundle is
+  built and batch-validated in macOS CI, but Finder/Dock startup,
+  LaunchServices integration, hybrid shortcut event handling, appearance, and
+  actual frame behavior still require a graphical macOS smoke test. The app is
+  not signed or notarized.
 
 ## Execution architecture verification plan
 

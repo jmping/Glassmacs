@@ -1,145 +1,167 @@
-# macOS Swift launcher
+# Standalone macOS application
 
-> **Document ID:** DOC-MAC-LAUNCHER  
-> **Status:** Informational  
-> **Owner:** Glassmacs maintainers  
-> **Effective date:** 2026-10-20  
-> **Last reviewed:** 2026-10-20  
-> **Coverage:** Development build and operation of the optional AppKit launcher  
-> **Supersedes:** None
+> **Document ID:** DOC-MAC-LAUNCHER<br>
+> **Status:** Informational<br>
+> **Owner:** Glassmacs maintainers<br>
+> **Effective date:** 2026-10-20<br>
+> **Last reviewed:** 2026-10-20<br>
+> **Coverage:** Building and operating the standalone Cocoa application<br>
+> **Supersedes:** Optional Swift launcher guide
 
-## Architecture boundary
+## Architecture decision
 
-The optional `macos/` Swift package builds a small unsigned AppKit **launcher and
-document-open helper**. It is not the Glassmacs editor application: the helper
-does not own Emacs frames, text buffers, editing, R processes, or native Emacs
-menus. It launches upstream Cocoa GNU Emacs as a separate process with this
-checkout's `init.el`; Cocoa Emacs continues to own rendering, documents and
-Emacs-native menu/context behavior. This avoids an in-process `NSApplication`
-ownership conflict and avoids a second editor.
+Glassmacs is assembled as one top-level `Glassmacs.app` using the complete
+upstream Cocoa GNU Emacs application bundle as its base. The build preserves
+Emacs's `Contents/MacOS/Emacs`, Cocoa resources, Lisp runtime, and upstream
+bundle metadata, then applies the Glassmacs bundle identifier, display name,
+and document declarations. Glassmacs Lisp and its bootstrap are copied into
+`Contents/Resources/Glassmacs`.
 
-Finder/LaunchServices document-open events for `.R`, `.r`, `.Rmd`, `.qmd`, and
-`.Rnw` are received by the helper. It starts Emacs with this checkout's `init.el`
-using separate `Process` arguments, then sends file paths to the Emacs server
-through `emacsclient --eval`. Paths are UTF-8/base64 encoded inside one
-fixed-form Lisp expression; Lisp decodes them and calls
-`glassmacs-open-files-from-client`, which uses Glassmacs' document-opening
-policy. No filenames are interpolated into shell or Lisp source. Events received
-while Emacs starts are retried against the server; a failed handoff is reported
-and does not launch a second Emacs instance. The helper requests single-instance
-LaunchServices behavior. It blocks its own Quit action while the Emacs child is
-running; quit from Emacs so Emacs can preserve its normal save prompts. If the
-helper is terminated externally, the Emacs child is not killed.
-Reopening the helper activates its Emacs child when managed; an existing
-server-only Emacs receives forwarded files without the helper taking over its
-process lifecycle.
+`GlassmacsBootstrap` is the bundle's LaunchServices executable. It sets the
+Glassmacs data directory, then calls `execv` on the bundled Emacs executable
+with `-Q --load <bundle>/Contents/Resources/Glassmacs/init.el`. This replaces
+the bootstrap process rather than keeping a Swift parent and an Emacs child.
+Emacs remains the only editor and owns the Cocoa event loop, frames, buffers,
+menus, document state, and ESS processes. This avoids the unresolved
+two-application identity of an AppKit helper that launches a nested
+`Emacs.app`; it does **not** by itself prove how LaunchServices, Dock, or open
+document events behave after process replacement. Those behaviors require GUI
+verification on macOS.
 
-The Emacs server is enabled only when the helper launches Emacs, by setting
-`GLASSMACS_LAUNCHER_SERVER=1`. It uses the isolated Glassmacs home and a local
-authenticated Emacs server socket at
-`$GLASSMACS_HOME/server-sockets/glassmacs`. The home-specific socket path
-prevents collisions between different Glassmacs homes. The helper probes for
-that compatible server before launching another Emacs, so subsequent helper
-launches can forward files to an existing instance. Direct uses of
-`scripts/glassmacs` do not start this server. The helper does not search for or
-take over unrelated Emacs processes started without the Glassmacs server. If
-the helper is killed externally, it does not monitor or terminate the Emacs
-child.
+This decision is informed by GNU Emacs's Cocoa bundle structure and
+self-contained installation instructions: the app bundle includes the
+executable, runtime resources, and application metadata, and a self-contained
+bundle can be moved. Renaming only `Emacs.app` would retain GNU's bundle ID;
+nesting it would leave the inner Emacs app identity. The build therefore
+customizes the outer bundle metadata and validates the concrete executable's
+Mach-O dependencies rather than assuming that every Emacs build is
+self-contained. References:
 
-The R right-click menu is implemented using Emacs Lisp mode maps and shared
-interactive commands. No Swift bridge is needed for that behavior, and no
-remote or R operation occurs merely to draw the menu. The native AppKit helper
-does not replace Cocoa Emacs menus or register duplicate command state.
+- [GNU Emacs macOS build/install instructions](https://github.com/emacs-mirror/emacs/blob/master/nextstep/INSTALL)
+- [GNU Emacs Cocoa application Info.plist template](https://github.com/emacs-mirror/emacs/blob/master/nextstep/templates/Info.plist.in)
+- [GNU Emacs Cocoa application bundle Makefile](https://github.com/emacs-mirror/emacs/blob/master/nextstep/Makefile.in)
+- [Pinned Cocoa Emacs release source and checksum](../macos/upstream-emacs.env), mirrored by [Homebrew Cask `emacs-app`](https://github.com/Homebrew/homebrew-cask/blob/HEAD/Casks/e/emacs-app.rb)
 
-## Upstream integration audit
+The configured document types are `.R`, `.r`, `.Rmd`, `.qmd`, and `.Rnw`, with
+alternate handler rank. The app does not silently become a user's default
+handler. Finder registration, Dock identity, reopen behavior, file event
+routing, and activation remain manual macOS GUI checks.
 
-The GNU Emacs manual documents Cocoa-specific `ns-open-file` events and
-Emacs-owned handling of Finder file-open requests; the Cocoa port implements
-its own `NSApplication` subclass and accesses `NSApp` for native menu state.
-This supports treating Emacs as the owner of its windows, menus and event loop,
-not an in-process view controlled by the Swift launcher. The manual documents
-`server-start`/`emacsclient` as the supported way to send file requests to an
-existing Emacs server. It does not promise that a separate Swift app can adopt
-the child Emacs `NSApplication`, register itself as a transparent Emacs
-document bridge, or take over the child's unsaved-document lifecycle.
+## Build and install
 
-Emacs also provides `context-menu-mode` and buffer-local
-`context-menu-functions`; Glassmacs uses that extension point rather than
-building a parallel Swift context menu. These upstream capabilities motivated
-the helper boundary above. They do not establish that LaunchServices will
-register this unsigned app automatically or that Finder forwarding behaves
-correctly without macOS testing.
-
-References:
-
-- [GNU Emacs manual: Emacs and macOS / GNUstep](https://www.gnu.org/software/emacs/manual/html_node/emacs/Mac-OS-_002f-GNUstep.html)
-- [GNU Emacs manual: macOS / GNUstep events](https://www.gnu.org/software/emacs/manual/html_node/emacs/Mac-_002f-GNUstep-Events.html)
-- [GNU Emacs manual: invoking `emacsclient`](https://www.gnu.org/software/emacs/manual/html_node/emacs/Invoking-emacsclient.html)
-- [GNU Emacs manual: mouse clicks for menus](https://www.gnu.org/software/emacs/manual/html_node/emacs/Menu-Mouse-Clicks.html)
-- [GNU Emacs Cocoa app class](https://github.com/emacs-mirror/emacs/blob/f6742561d0a9b0ee9e896aa1432d01b9251a9d0d/src/nsterm.h)
-- [GNU Emacs Cocoa menu implementation](https://github.com/emacs-mirror/emacs/blob/f6742561d0a9b0ee9e896aa1432d01b9251a9d0d/src/nsmenu.m)
-
-## Build and configure
-
-Requirements: macOS 13 or newer, Swift 6 toolchain, and an upstream graphical
-Cocoa Emacs build. Xcode is not required for ordinary Glassmacs Lisp/terminal
-use.
+Build prerequisites: macOS 13 or newer, Swift 6, Python 3, and standard macOS
+tools `curl`, `shasum`, `hdiutil`, `ditto`, `plutil`, `PlistBuddy`, and `otool`.
+The default build downloads a pinned Cocoa GNU Emacs release archive and checks
+its SHA-256 before copying it. To build from a separately obtained compatible
+Cocoa Emacs bundle instead, set `GLASSMACS_UPSTREAM_EMACS_APP` to its absolute
+`.app` path; the build does not modify that source bundle.
 
 ```sh
-swift test --package-path macos
-./scripts/build-macos-app "$HOME/Applications/Glassmacs.app"
+./scripts/build-macos-app
+./scripts/validate-macos-app build/Glassmacs.app
 ```
 
-The app is unsigned and intended for local development. Open it once to configure
-the Emacs executable and checkout in its Preferences status menu. Optional
-fields select `GLASSMACS_HOME` and `emacsclient`. Values are stored in this
-launcher app's user defaults and contain paths only; Emacs Lisp and Custom
-remain authoritative for Glassmacs editor preferences.
+The result is `build/Glassmacs.app`. The build copies only `init.el`, `lisp/`,
+and the package bootstrap into the bundle; it does not depend on the source
+checkout at runtime. The validation script checks bundle metadata, document
+extensions, required files, direct executable dependencies, and a batch startup
+of the bundled Emacs. It rejects absolute non-system library dependencies and
+non-relocatable runtime search paths. CI additionally runs Swift tests and ERT,
+tests the bundled configuration, relocates the app, and produces a downloadable
+ZIP artifact.
 
-Environment values override launcher preferences:
+Drag `Glassmacs.app` into `/Applications` (or another location) to install.
+Signing and notarization are not included in this milestone. Gatekeeper may
+require the user to explicitly approve this unsigned app; the workflow does
+not set it as a default handler.
 
-- `GLASSMACS_EMACS`: executable path for upstream Cocoa Emacs.
-- `GLASSMACS_ROOT`: Glassmacs checkout containing `init.el`.
-- `GLASSMACS_HOME`: isolated Glassmacs configuration/package directory.
-- `GLASSMACS_EMACSCLIENT`: optional `emacsclient` path or command name.
+## User data and R setup
 
-The launcher starts Emacs with `-Q --load <checkout>/init.el`, then uses the
-authenticated server handoff for Finder files. The file arguments are encoded
-as data and passed through a `Process` argument array, not shell command
-strings; spaces, quotes, newlines, Unicode and shell metacharacters remain
-ordinary filename characters. Use absolute paths in Preferences or environment
-settings. The normal `scripts/glassmacs` command remains available independently.
+The app's default writable state is
+`~/Library/Application Support/Glassmacs`. Package downloads, `custom.el`, and
+generated state are written there, never into the app bundle. Setting
+`GLASSMACS_HOME` to an absolute path overrides this location. The development
+launcher `scripts/glassmacs` retains its existing default,
+`~/.config/glassmacs`.
 
-For remote or unusual macOS launch environments where `emacsclient` is not on
-the inherited `PATH`, configure its absolute path in Preferences or with
-`GLASSMACS_EMACSCLIENT`. File events arriving while Emacs is starting are
-forwarded with retries; failure remains visible and does not fall back to a
-second Emacs process.
+On first use, install the optional ESS and document packages explicitly:
 
-## Verification and boundaries
+```sh
+GLASSMACS_HOME="$HOME/Library/Application Support/Glassmacs" \
+GLASSMACS_EMACS="/Applications/Glassmacs.app/Contents/MacOS/Emacs" \
+  "/Applications/Glassmacs.app/Contents/Resources/Glassmacs/scripts/bootstrap"
+```
 
-The Swift package tests argument construction on Linux and macOS. The
-`macos-launcher` CI job compiles the package and checks basic `.app` bundle
-structure on a macOS runner; this is **compile/package validation only**, not a
-Finder, LaunchServices, Cocoa GUI, native R graphics or interactive ESS test.
-No macOS host was available for this change, so app activation, Finder Open With,
-multiple open events, process shutdown, unsaved-document prompts, menus and
-mouse history behavior remain unverified in a real GUI.
+This step requires network access when packages are missing. It uses the
+isolated Glassmacs package directory; startup itself does not install packages.
+R, Quarto, TeX, and other command-line tools remain separate dependencies. Set
+`glassmacs-r-executable` in
+`~/Library/Application Support/Glassmacs/custom.el` if R is not found on the
+app's inherited `PATH`, for example:
 
-Manual macOS dogfood:
+```elisp
+(setq glassmacs-r-executable "/opt/homebrew/bin/R")
+```
 
-1. Build the app, configure the Cocoa Emacs executable and checkout, then launch
-   it and verify Emacs starts with this checkout.
-2. Use Finder Open With for two R files and confirm they reach the same Emacs
-   instance; verify an open file with spaces in its name.
-3. Use an ESS console to recall/edit multiline history, run `plot(cars)`, select
-   a different R target and verify the modeline and queue.
-4. Quit from Emacs with an unsaved buffer and confirm Emacs' save prompt appears;
-   verify the helper status menu does not terminate Emacs.
+`GLASSMACS_HOME` can also be set in the environment used to launch the app.
+Native Quartz graphics are supplied by the installed R build; Glassmacs does
+not add a graphics device or R execution backend. ESS remains responsible for
+process readiness and evaluation. The documented split-prompt limitation is
+unchanged.
 
-Known limits: the helper is not signed/notarized, has no automatic installation
-or default-handler setup, and does not provide a drag-and-drop window. Finder
-document events require the app to be registered by LaunchServices. It does not
-find or take over unrelated Emacs processes that were started without the
-Glassmacs launcher server. GUI delivery must be validated on macOS; Linux
-package tests cannot establish it.
+## Launch and diagnostics
+
+Launch `Glassmacs.app` from Finder, Spotlight, or the Dock. For terminal
+diagnostics, the bundle bootstrap forwards its command-line arguments:
+
+```sh
+"/Applications/Glassmacs.app/Contents/MacOS/GlassmacsBootstrap" \
+  --batch --eval '(princ emacs-version)'
+```
+
+Once Emacs starts, use `M-x glassmacs-diagnostics`, inspect `*Messages*` and
+`*Warnings*`, and check package initialization errors. Bootstrap failures are
+written to standard error; when launched from Finder, inspect them in Console
+if available. To debug a build, run
+`./scripts/validate-macos-app /path/to/Glassmacs.app` and inspect the Emacs
+binary with `otool -L`.
+
+## Verification and limitations
+
+The macOS CI job validates build inputs, bundle structure and metadata, direct
+Mach-O dependencies, Swift tests, batch startup, existing ERT tests, and app
+relocation. These are **build and batch checks, not interactive GUI tests**.
+This repository change has not been exercised on a macOS GUI. Therefore none of
+the following are claimed as verified: Finder or Dock launch, one coherent
+Dock/application-switcher identity after `execv`, reopening, LaunchServices
+document delivery, multiple document opens, policy-aware new-frame/new-tab
+behavior for Finder opens, save prompts, menus/shortcuts, interactive ESS,
+multiple R sessions, source-buffer targets/queues, editable history, local
+output suppression, or native Quartz `plot(cars)`.
+
+Before calling those behaviors verified, manually test on supported macOS:
+
+1. Copy the app to `/Applications`, launch from Finder, Dock, and Spotlight,
+   and confirm one Glassmacs identity and a working reopen.
+2. Open `.R`, `.Rmd`, `.qmd`, and `.Rnw` files from Finder, including paths with
+   spaces and Unicode; open several documents and confirm no unintended
+   duplicate Emacs instance and that the configured frame/tab policy is used.
+3. Edit an unsaved file and quit through Emacs; confirm the save prompt appears.
+   Check that launching/opening another document does not terminate Emacs.
+4. With R and ESS installed, start multiple sessions, verify explicit
+   source-buffer execution targets and queued commands, edit command history,
+   exercise output suppression, and evaluate `plot(cars)` using the installed
+   R's native Quartz device.
+5. Check native menus and keyboard shortcuts, plus app startup after moving the
+   bundle to a different directory.
+
+Known limitations: the app is unsigned and not notarized; LaunchServices may
+not select it as the default document handler; package versions are not locked;
+R and optional command-line programs are not bundled; and GUI behavior remains
+unverified until the manual checks above are completed. This milestone does
+not add remote ESS, PTY output protection, or a new R backend.
+
+The pinned input is a third-party Cocoa build of GNU Emacs. The builder retains
+its bundle resources and license notices, but this CI artifact is not a formal
+release: before broader redistribution, audit that exact build's patches and
+provide the corresponding source and notices required by its licenses.
