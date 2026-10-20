@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  emacs-batch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Emacs
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes emacs-nox
+          emacs --version
+      - name: Run ERT tests
+        run: ./scripts/test
+      - name: Byte-compile Lisp modules
+        run: |
+          emacs -Q --batch -l init.el \
+            --eval '(let ((byte-compile-dest-file-function
+                           (lambda (file)
+                             (expand-file-name (file-name-nondirectory file)
+                                               temporary-file-directory))))
+                      (dolist (file (directory-files "lisp" t "\\.el$"))
+                        (byte-compile-file file)))'

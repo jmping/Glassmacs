@@ -12,6 +12,46 @@
   (should (featurep 'glassmacs-core))
   (should (featurep 'glassmacs-r)))
 
+(ert-deftest glassmacs-package-state-is-isolated ()
+  (should (equal user-emacs-directory
+                 (file-name-as-directory (expand-file-name glassmacs-home))))
+  (should (equal package-user-dir
+                 (expand-file-name "elpa" glassmacs-home))))
+
+(ert-deftest glassmacs-plain-text-files-open-and-save-without-research-tools ()
+  (let* ((directory (make-temp-file "glassmacs-plain-text-" t))
+         (text-file (expand-file-name "notes.txt" directory))
+         (extensionless-file (expand-file-name "NOTES" directory))
+         buffers)
+    (unwind-protect
+        (progn
+          (with-temp-file text-file
+            (insert "plain text\n"))
+          (with-temp-file extensionless-file
+            (insert "extensionless text\n"))
+          (push (find-file-noselect text-file) buffers)
+          (push (find-file-noselect extensionless-file) buffers)
+          (with-current-buffer (car (last buffers))
+            (should (derived-mode-p 'text-mode))
+            (goto-char (point-max))
+            (insert "edited\n")
+            (save-buffer))
+          (with-current-buffer (car buffers)
+            (should (eq major-mode 'fundamental-mode))
+            (goto-char (point-max))
+            (insert "edited\n")
+            (save-buffer))
+          (with-temp-buffer
+            (insert-file-contents text-file)
+            (should (equal (buffer-string) "plain text\nedited\n")))
+          (with-temp-buffer
+            (insert-file-contents extensionless-file)
+            (should (equal (buffer-string) "extensionless text\nedited\n"))))
+      (dolist (buffer buffers)
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer)))
+      (delete-directory directory t))))
+
 (ert-deftest glassmacs-hybrid-bindings-are-defined ()
   (dolist (binding glassmacs-hybrid-keybindings)
     (should (commandp (cdr binding))))
