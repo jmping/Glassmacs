@@ -285,7 +285,9 @@ This command does not query R or contact a remote host."
         (session-dir (and session (glassmacs-session-directory session)))
         (buffer (get-buffer-create "*Glassmacs R Directories*")))
    (with-current-buffer buffer
-     (let ((inhibit-read-only t))
+     (let ((inhibit-read-only t)
+           (after-change-major-mode-hook nil))
+       (special-mode)
        (erase-buffer)
        (insert (format "Document directory: %s\n"
                        (or source "(untitled)")))
@@ -304,8 +306,7 @@ This command does not query R or contact a remote host."
        (insert (format "ESS console default-directory at registration: %s\n"
                        (or session-dir "(unknown)")))
        (insert "\nNo live R getwd() query was made. Use "
-               "`M-x glassmacs-r-show-r-working-directory' to request it explicitly.\n")
-       (special-mode)))
+               "`M-x glassmacs-r-show-r-working-directory' to request it explicitly.\n")))
    (display-buffer buffer)))
 
 (defun glassmacs-r-show-r-working-directory ()

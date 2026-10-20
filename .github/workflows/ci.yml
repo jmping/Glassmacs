@@ -44,7 +44,7 @@ jobs:
           EMACSLOADPATH="$ess_dir:" ./scripts/test
 
   macos-launcher:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Test Swift launcher package

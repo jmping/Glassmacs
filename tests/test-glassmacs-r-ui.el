@@ -197,7 +197,7 @@
                                  (glassmacs-session-id session))
                      (let ((entry (glassmacs-queue-submit
                                    (format "object <- %d" object-value))))
-                       (push (list object-value session entry) results))))))
+                       (push (list object-value session entry) results)))))))
            (setq results (nreverse results))
            (should (= 20 (length (glassmacs-sessions-live))))
            (dolist (result results)
@@ -212,7 +212,7 @@
                 (cl-some (lambda (sent)
                            (eq (car sent) (glassmacs-session-process session)))
                          gs-test--sent))))
-           (should (= 10 (length (delete-dups
+           (should (= 20 (length (delete-dups
                                   (mapcar (lambda (result)
                                             (glassmacs-session-id (nth 1 result)))
                                           results))))))
