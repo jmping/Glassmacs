@@ -63,3 +63,8 @@ Project execution configuration must be opt-in and non-executable; never run com
 LaTeX should use the **same** local/terminal/SSH execution routing as R and document rendering, with AUCTeX and established TeX tooling supplying LaTeX-specific behavior. A separate LaTeX execution backend is not needed. Planned supported engines include `latexmk`, `pdflatex`, `xelatex` and `lualatex`, with BibTeX/Biber where appropriate. Local compilation, log/error navigation and PDF preview must be verified with installed dependencies; remote builds additionally require explicit PDF artifact access and source-to-output path mapping. SyncTeX forward/inverse search across a remote boundary requires dedicated integration and testing. These capabilities are not yet validated in Glassmacs.
 
 See the [development roadmap](roadmap.md) for planned delivery and test milestones.
+
+## R console output floods (planned safeguards)
+
+Accidentally printing an enormous data frame or database result must not make the editor unusable. The design calls for a configurable output budget, visible suppression/truncation status, and three separate commands: **stop displaying**, **interrupt the current R computation**, and **terminate the R session**. The first action does not guarantee that R stops producing output; Glassmacs must continue safely handling the stream or use explicit process control to avoid pipe/PTY/SSH backpressure. Preserve ESS prompts and evaluation state, and make it possible to resume normal evaluation afterward. These protections are **planned, not implemented**; see [architecture](architecture.md) and [roadmap](roadmap.md).
+
