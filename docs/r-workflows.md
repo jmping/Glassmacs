@@ -68,3 +68,8 @@ See the [development roadmap](roadmap.md) for planned delivery and test mileston
 
 Accidentally printing an enormous data frame or database result must not make the editor unusable. The design calls for a configurable output budget, visible suppression/truncation status, and three separate commands: **stop displaying**, **interrupt the current R computation**, and **terminate the R session**. The first action does not guarantee that R stops producing output; Glassmacs must continue safely handling the stream or use explicit process control to avoid pipe/PTY/SSH backpressure. Preserve ESS prompts and evaluation state, and make it possible to resume normal evaluation afterward. These protections are **planned, not implemented**; see [architecture](architecture.md) and [roadmap](roadmap.md).
 
+
+## Pending R evaluation queue (planned)
+
+Glassmacs should offer a per-R-session **execution queue** so multiple evaluation requests do not block editing. Pending entries contain captured code snapshots and target-session information, with a dedicated interface to inspect, edit, reorder, pause, resume or remove work **before** it reaches R. Distinct actions should interrupt the currently running evaluation, clear future pending work, or terminate the session. One complete region is a safe initial queue unit; splitting by source lines is not generally valid R parsing. Interactive prompts, ESS readiness, output suppression and SSH disconnections require explicit state handling. This feature is **not implemented**; see [architecture](architecture.md) and [roadmap](roadmap.md).
+
