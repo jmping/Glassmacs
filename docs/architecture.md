@@ -98,6 +98,25 @@ Support existing loopback-only local Shiny operation. For remote Shiny, plan SSH
 
 Interactive ESS/SSH processes generally do **not** imply survival of disconnection. Add an optional design for server-side `tmux` or a scheduler-backed batch job, with explicit attach, detach, reconnect, status, logs, cancellation and artifact retrieval semantics. Model ownership, orphaned jobs and reconnect failure. Job durability is a separate capability; do not claim it until verified. Do not kill durable server jobs merely because the editor closes.
 
+## Plain text editing and large-file safety
+
+Glassmacs must remain a dependable **general-purpose plain text editor**, independently of its R/research tooling. Opening `.txt`, `.log`, `.csv`, configuration files, and files without an extension must not require ESS, R, Quarto or a project profile. Preserve conventional GNU Emacs text editing, search, undo, encoding/line-ending handling and save semantics, with an approachable macOS interface.
+
+**Large-file safety is a separate requirement from long-line handling.** Emacs `so-long-mode` helps avoid expensive operations on very long lines; it does not provide bounded-memory reading of arbitrarily large files. `find-file-literally` can bypass some decoding and file-processing behavior, but it is not a streaming viewer. Consider a maintained large-file facility such as `vlf` for chunked inspection when appropriate, while verifying its compatibility and write semantics before enabling editing.
+
+Design requirements:
+
+- Detect potentially expensive opens before normal loading, using configurable file-size thresholds, long-line indicators where practical, and remote-file context. Avoid reading the entire file just to decide whether to read it.
+- Offer clear choices: open normally, open in a conservative read-only inspection mode, or use a chunked/streaming large-file viewer if available. Do not silently truncate data or represent a partial view as the entire file.
+- Prefer read-only by default in large-file inspection; require an explicit, well-understood transition before editing and saving. Never overwrite a complete file with a displayed subset.
+- Disable or defer expensive syntax highlighting, tree-sitter parsing, LSP/diagnostics, auto-formatting, line numbers, eager hooks, large undo histories and automatic project indexing when they threaten responsiveness. Apply safeguards only where needed; normal files retain full editing features.
+- Preserve byte integrity and communicate encoding, newline conversion and binary-file limitations. Avoid silent conversions on save. Provide reliable search and navigation for large logs, with documented limitations for partial-buffer views.
+- Make large remote files safe to inspect without unexpectedly transferring the entire file; specify remote chunking/transport behavior and failures.
+- Keep GUI responsiveness and cancellation observable. Test sparse/large files, single enormous lines, multi-gigabyte logs when resources permit, invalid encodings, remote files, permission errors and save protection.
+- Benchmark open time, peak memory, scrolling/search latency and cancellation against stock GNU Emacs and Terminal utilities on matched files. Define size thresholds through measurements, not unsupported assumptions.
+
+The initial implementation may provide conservative detection, user choice and read-only inspection before implementing fully featured chunked editing. Document supported file sizes and limitations rather than promising arbitrary-size editing.
+
 ## Performance requirements
 
 The old Aquamacs experience was noticeably slower than equivalent Terminal workflows. Glassmacs must minimize overhead and **measure** it.
