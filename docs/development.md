@@ -1,5 +1,14 @@
 # Development
 
+> **Document ID:** DOC-DEV  
+> **Status:** Canonical  
+> **Owner:** Glassmacs maintainers  
+> **Effective date:** 2026-10-19  
+> **Last reviewed:** 2026-10-19  
+> **Coverage:** Contributor setup, testing and verification workflow  
+> **Supersedes:** None
+
+
 ## Requirements
 
 - GNU Emacs 29 or newer is recommended. Emacs Lisp tests use ERT.
