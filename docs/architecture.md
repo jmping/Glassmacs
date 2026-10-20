@@ -201,6 +201,33 @@ See the [development roadmap](roadmap.md) for milestones, acceptance criteria an
 
 Before implementation, record design decisions for session ownership, profile trust, local-to-remote file mapping, remote command construction, process cancellation, credential handling, performance test methodology and remote preview lifecycle. Prefer small ADRs under `docs/adr/` for decisions that constrain multiple modules.
 
+## AI agent integration layer (local and remote)
+
+Glassmacs should provide a **provider-neutral, opt-in interface** for consulting local and remote AI agents while editing text, R, LaTeX and research projects. The AI layer is a client and orchestration boundary, not a replacement for Emacs, ESS, document tooling or the execution queue.
+
+- **Entry points:** ask about selection/buffer/project, explain an R/ESS error or LaTeX build log, review code, suggest tests/refactoring, draft documentation, and maintain multi-turn conversations. The UI should remain responsive and support streamed responses, cancellation and a searchable conversation buffer.
+- **Adapters:** distinguish local model servers, local CLI agents, cloud APIs and agents launched on SSH-accessible research hosts. Define capability negotiation (chat, tools, file edits, streaming, cancellation, authentication) rather than assuming every provider exposes the same functions. Prefer maintained Emacs integrations/protocols where feasible; avoid hardwiring one vendor.
+- **Location model:** record separately the Mac editor, the R/LaTeX execution host, the agent host and the location of referenced files. Remote agent transport can use SSH or authenticated network APIs; Mosh is a terminal experience, not a generic API or TRAMP substitute.
+- **Context controls:** show exactly which buffers, selected regions, diagnostics, logs and project files will be transmitted. Default to minimum necessary context. No automatic upload of full projects, large data, credentials, `.Renviron`, SSH keys or sensitive research material. Local and remote agents must be clearly distinguished before a request is sent.
+- **Permission boundary:** read-only querying by default. Any proposed file edit should be displayed as a diff and explicitly approved before applying. Shell commands, R evaluations, package installs, network requests and remote file writes require separate user authorization with a clear target host and working directory. Do not execute untrusted tool-call output automatically.
+- **Session safety:** agent chat history, permissions and queued R work are separate state machines. Agent-generated R code is not implicitly dispatched to ESS; use an explicit review-and-enqueue action. Cancellation should stop streaming/request processing where supported without terminating unrelated R/SSH sessions.
+- **Robustness:** bound streamed response size and retained conversation history; show partial results and errors; manage API secrets via platform/Emacs auth facilities rather than project files or logs; avoid automatic retries of potentially side-effecting agent actions. Provide graceful operation with no AI provider configured.
+- **Verification:** adapter mocks, opt-in provider integration, diff approval and rejection, permission prompts, remote path translation, streaming flood limits, offline failures, context redaction and no-provider startup. Do not assert privacy guarantees beyond the configured provider's actual behavior.
+
+**Status:** proposed architectural requirement, not an implemented AI integration.
+
+## Mosh and durable remote terminals
+
+Support **Mosh (Mobile Shell)** as an optional transport for interactive remote terminal sessions on unstable networks. It should coexist with OpenSSH/TRAMP and persistent server-side `tmux` sessions rather than replace them.
+
+- Mosh offers roaming/reconnection and responsive terminal interaction; it is not a general SSH file transfer, port forwarding, TRAMP or batch command backend.
+- Continue using OpenSSH for authenticated file access, TRAMP, SSH tunnels, noninteractive execution and remote artifact transfer. Mosh typically relies on SSH for initial login and then uses its own transport; document deployment/network prerequisites.
+- Pair Mosh with `tmux` where durable remote process/session persistence is needed. Define attach/detach/reconnect UX, terminal ownership and cleanup.
+- Do not equate terminal screen reconciliation with exactly-once delivery of R queue entries. After disconnection, unacknowledged evaluation requests remain uncertain until explicitly reconciled; never replay them automatically.
+- Test Wi-Fi interruptions, host changes, reconnect, terminal state, output floods and session recovery on opt-in remote infrastructure.
+
+**Status:** optional future transport; not currently implemented.
+
 ## Existing limitations
 
 Current implementation is local-first, uses no version-locked package snapshot and has not been confirmed in native macOS Cocoa. The proposed execution layer and backend contracts in this document are targets, **not assertions of existing code**. Preserve these distinctions in README and workflow documentation.
