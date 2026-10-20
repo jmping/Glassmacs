@@ -124,9 +124,39 @@ LaTeX should use the **same** local/terminal/SSH execution routing as R and docu
 
 See the [development roadmap](roadmap.md) for planned delivery and test milestones.
 
-## R console output floods (planned safeguards)
+## R console output floods
 
-Accidentally printing an enormous data frame or database result must not make the editor unusable. The design calls for a configurable output budget, visible suppression/truncation status, and three separate commands: **stop displaying**, **interrupt the current R computation**, and **terminate the R session**. The first action does not guarantee that R stops producing output; Glassmacs must continue safely handling the stream or use explicit process control to avoid pipe/PTY/SSH backpressure. Preserve ESS prompts and evaluation state, and make it possible to resume normal evaluation afterward. These protections are **planned, not implemented**; see [architecture](architecture.md) and [roadmap](roadmap.md).
+ESS R consoles have a configurable per-command display budget
+(`glassmacs-r-output-budget`, default 1,000,000 characters). When the budget is
+exceeded, Glassmacs shows a suppression marker, keeps primary and continuation
+prompts visible when ESS marks them, and hides the remaining output until ESS
+reports the process idle and a primary prompt appears at the start of a chunk
+or after a newline.
+An arbitrary chunk suffix resembling a prompt does not reset suppression.
+`comint-buffer-maximum-size` is also set from
+`glassmacs-r-output-buffer-maximum-lines` (default 1,024) to bound retained
+console history. ESS continues consuming process output and remains responsible
+for process and prompt state. These limits do not stop R from producing data or
+guarantee that a local, terminal, or remote transport cannot apply backpressure.
+
+**Chunk-boundary limit:** ESS 24.01.1 sets its `busy` state by matching its
+primary-prompt regexp against each raw process-output chunk. If a prompt is
+split so no individual chunk matches, ESS may remain busy; Glassmacs does not
+replace ESS's process filter or force a readiness transition. Likewise, a
+complete output line exactly resembling the R prompt is indistinguishable from
+a prompt to ESS itself. Such cases remain a reliability limitation; see the
+roadmap's verification status.
+
+Three distinct commands are available: `glassmacs-r-stop-displaying-output`
+hides output for the active command without interrupting R;
+`glassmacs-r-interrupt` requests an interrupt and keeps pending queue work paused;
+and `glassmacs-r-terminate-session` requires interactive confirmation before
+terminating the process. When ESS recognizes the next primary prompt, normal
+output display resumes automatically. A prompt split across chunks may not be
+recognized by ESS, so suppression can remain active in that case. Output
+flooding over SSH or a terminal/PTY and native macOS responsiveness have not
+been validated; see
+[architecture](architecture.md) and [roadmap](roadmap.md).
 
 
 ## R sessions and execution queue (minimal subset implemented)
@@ -201,7 +231,7 @@ later results may change (order, dependencies, RNG state), and defaults to
 calls keep the command. Confirmed removals stay as `removed` records and in
 `glassmacs-sessions-history` with timestamp, original position, id and source.
 `glassmacs-queue-interrupt` is a separate operation: it interrupts the running
-command, marks it `uncertain`, pauses the queue and keeps pending work.
+queued command, marks it `uncertain`, pauses the queue and keeps pending work.
 
 **Termination.** A running entry becomes `uncertain`, pending entries become
 `orphaned`; records are kept, the queue is paused and nothing is replayed.
@@ -211,5 +241,5 @@ that the code succeeded; R errors are not parsed. An incomplete expression
 leaves R at a continuation prompt and is marked `uncertain`. Entries typed
 directly in the console are not tracked, and a busy console delays dispatch.
 History is in memory only. Not implemented: editing or reordering entries, a
-queue buffer UI, persistence across Emacs restarts, output-flood protection,
-SSH/remote sessions. See [architecture](architecture.md) and [roadmap](roadmap.md).
+queue buffer UI, persistence across Emacs restarts, SSH/remote sessions. See
+[architecture](architecture.md) and [roadmap](roadmap.md).

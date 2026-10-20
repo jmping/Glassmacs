@@ -87,6 +87,16 @@
     (define-key menu [queue]
       '(menu-item "Inspect R Queue" glassmacs-queue-show
                   :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [stop-output]
+      '(menu-item "Stop Displaying R Output"
+                  glassmacs-r-stop-displaying-output
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [interrupt]
+      '(menu-item "Interrupt R Computation" glassmacs-r-interrupt
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [terminate]
+      '(menu-item "Terminate R Session" glassmacs-r-terminate-session
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [directories]
       '(menu-item "Show File and Working Directories" glassmacs-r-inspect-directories
                   :enable t))
