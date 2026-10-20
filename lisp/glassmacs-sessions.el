@@ -12,6 +12,7 @@
 ;; `uncertain' and is never replayed automatically.
 
 (require 'cl-lib)
+(require 'comint)
 (require 'project)
 (require 'subr-x)
 
@@ -58,6 +59,10 @@
 (defvar-local glassmacs-r--output-count 0)
 (defvar-local glassmacs-r--output-suppressed nil)
 (defvar-local glassmacs-r--output-marker-pending nil)
+(defcustom glassmacs-r-output-buffer-maximum-lines 1024
+  "Maximum number of retained lines in an ESS R console."
+  :type 'integer
+  :group 'glassmacs-sessions)
 
 (define-minor-mode glassmacs-r-target-indicator-mode
   "Show this buffer's explicitly selected R execution target."
@@ -109,63 +114,74 @@
     (funcall (intern "ess-send-string") process string)))
 
 (defun glassmacs-r--output-prompt-suffix (regexp string)
-  "Return the prompt suffix matching REGEXP at the end of STRING, or nil."
+  "Return a final primary prompt matched by REGEXP in STRING, or nil.
+Require the match to start the chunk or follow a newline, so ordinary text
+ending in prompt-like characters cannot reset suppression."
   (when (and (stringp regexp) (not (string-empty-p regexp)))
     (let ((case-fold-search nil))
-      (when (string-match (concat "\\(?:" regexp "\\)\\'") string)
-        (substring string (match-beginning 0))))))
+      (when (string-match (concat "\\(" regexp "\\)\\'") string)
+        (let ((start (match-beginning 1)))
+          (when (or (= start 0)
+                    (= (aref string (1- start)) ?\n))
+            (substring string start)))))))
 
 (defun glassmacs-r--filter-output (string)
   "Bound displayed R output in STRING without changing ESS process state.
-ESS updates its process status before calling Comint's preoutput filters, so
-primary and continuation prompts remain visible even while output is hidden."
-  (if (not (and (boundp 'inferior-ess-primary-prompt)
-                (stringp inferior-ess-primary-prompt)))
-      string
-    (let* ((primary (glassmacs-r--output-prompt-suffix
-                    inferior-ess-primary-prompt string))
-           (secondary (and (not primary)
-                           (boundp 'inferior-ess-secondary-prompt)
-                           (glassmacs-r--output-prompt-suffix
-                            inferior-ess-secondary-prompt string)))
-           (prompt (or primary secondary))
-           (output (if prompt (substring string 0 (- (length string)
-                                                     (length prompt)))
-                     string))
-           (result
-            (cond
-             (glassmacs-r--output-suppressed
-              (prog1
-                  (concat (when glassmacs-r--output-marker-pending
-                            glassmacs-r-output-suppressed-marker)
-                          prompt)
-                (setq glassmacs-r--output-marker-pending nil)))
-             ((> (+ glassmacs-r--output-count (length output))
-                 (max 1 glassmacs-r-output-budget))
-              (setq glassmacs-r--output-suppressed t
-                    glassmacs-r--output-marker-pending nil)
-              (concat (substring output 0
-                                 (max 0 (- (max 1 glassmacs-r-output-budget)
-                                           glassmacs-r--output-count)))
-                      glassmacs-r-output-suppressed-marker
-                      prompt))
-             (t (concat output prompt)))))
-      (unless primary
-        (setq glassmacs-r--output-count
-              (+ glassmacs-r--output-count (length output))))
-      (when primary
-        (setq glassmacs-r--output-count 0
+Treat a line-start primary prompt as a boundary only when ESS reports the
+process idle. A prompt-like suffix in ordinary output is not enough."
+  (let* ((process (get-buffer-process (current-buffer)))
+         (primary-ready (and process (not (process-get process 'busy))))
+         (prompt (and primary-ready
+                      (boundp 'inferior-ess-primary-prompt)
+                      (glassmacs-r--output-prompt-suffix
+                inferior-ess-primary-prompt string)))
+         (prompt-length (length (or prompt "")))
+         (output-length (max 0 (- (length string) prompt-length)))
+         (output (if prompt (substring string 0 output-length) string))
+         (limit (max 1 glassmacs-r-output-budget))
+         (remaining (max 0 (- limit glassmacs-r--output-count)))
+         (exceeds (and (not glassmacs-r--output-suppressed)
+                       (> (+ glassmacs-r--output-count output-length) limit)))
+         (result
+          (cond
+           (glassmacs-r--output-suppressed
+            (concat (when glassmacs-r--output-marker-pending
+                      glassmacs-r-output-suppressed-marker)
+                    prompt))
+           (exceeds
+            (concat (substring output 0 (min output-length remaining))
+                    glassmacs-r-output-suppressed-marker
+                    prompt))
+           (t string))))
+    (cond
+     (prompt
+      (setq glassmacs-r--output-count 0
+            glassmacs-r--output-suppressed nil
+            glassmacs-r--output-marker-pending nil))
+     (glassmacs-r--output-suppressed
+      (setq glassmacs-r--output-marker-pending nil))
+     (t
+      (setq glassmacs-r--output-count
+            (+ glassmacs-r--output-count output-length))
+      (when exceeds
+        (setq glassmacs-r--output-suppressed t))))
+    result))
+
+(defun glassmacs-r--reset-output-state ()
+  "Reset output filtering state in the current process buffer."
+  (setq-local glassmacs-r--output-count 0
               glassmacs-r--output-suppressed nil
               glassmacs-r--output-marker-pending nil))
-      result)))
 
 (defun glassmacs-r--configure-output-protection ()
   "Install the bounded-output prefilter in this ESS R process buffer."
-  (setq-local glassmacs-r--output-count 0
-              glassmacs-r--output-suppressed nil
-              glassmacs-r--output-marker-pending nil)
+  (glassmacs-r--reset-output-state)
+  (setq-local comint-buffer-maximum-size
+              (max 1 glassmacs-r-output-buffer-maximum-lines))
   (add-hook 'comint-preoutput-filter-functions
-            #'glassmacs-r--filter-output nil t))
+            #'glassmacs-r--filter-output nil t)
+  (add-hook 'comint-output-filter-functions
+            #'comint-truncate-buffer nil t))
 
 (defun glassmacs-r-stop-displaying-output (&optional session)
   "Stop displaying output from SESSION until its next primary R prompt.
@@ -254,6 +270,9 @@ R continues running and ESS continues consuming its process output."
                        :started-at (current-time))))
         (setq glassmacs-sessions--list
               (append glassmacs-sessions--list (list session)))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer
+            (glassmacs-r--configure-output-protection)))
         (glassmacs-sessions--watch session)
         (glassmacs-sessions--record :session-started
                                     :session (glassmacs-session-id session))
@@ -302,6 +321,10 @@ Return the list of live sessions."
 Running work becomes `uncertain'; pending work becomes `orphaned'.  Nothing is
 deleted or replayed."
   (unless (eq (glassmacs-session-state session) 'terminated)
+    (let ((buffer (glassmacs-session-buffer session)))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          (glassmacs-r--reset-output-state))))
     (setf (glassmacs-session-state session) 'terminated
           (glassmacs-session-ended-at session) (current-time)
           (glassmacs-session-paused session) t)
