@@ -105,6 +105,7 @@ Run the automated tests with:
 ```
 
 See [development](docs/development.md), [architecture](docs/architecture.md),
+[roadmap](docs/roadmap.md),
 [keybindings](docs/keybindings.md), and [R workflows](docs/r-workflows.md)
 for details.
 
