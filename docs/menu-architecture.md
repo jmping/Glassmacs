@@ -4,7 +4,7 @@
 > **Status:** Proposed  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-19  
+> **Last reviewed:** 2026-10-20
 > **Coverage:** Mac/Emacs menu taxonomy, Aquamacs menu inventory, command/capability mapping, context/state/shortcut contracts  
 > **Supersedes:** None
 
@@ -25,23 +25,25 @@ Stable command ID; existing command or minimal wrapper; label/description; categ
 
 ## Menu-by-menu historical audit and modern destination
 
-Historical source: `aquamacs/src/site-lisp/macosx/aquamacs-menu.el` (`aquamacs3`, ~1533 lines), `aquamacs-tool-bar.el`, `osx_defaults.el`, `emulate-mac-keyboard-mode.el`. Entries below enumerate **substantive user operations**, not every separator, internal menu variable, generated help card, or obsolete/dead conditional. A future agent should produce per-entry machine-checkable coverage from Emacs menu keymaps before claiming exact parity.
+Historical source: [`aquamacs-menu.el`](https://github.com/jmping/aquamacs-emacs/blob/aquamacs3/aquamacs/src/site-lisp/macosx/aquamacs-menu.el) (`aquamacs3`), [`aquamacs-tool-bar.el`](https://github.com/jmping/aquamacs-emacs/blob/aquamacs3/aquamacs/src/site-lisp/aquamacs-tool-bar.el), [`osx_defaults.el`](https://github.com/jmping/aquamacs-emacs/blob/aquamacs3/aquamacs/src/site-lisp/macosx/osx_defaults.el), [`emulate-mac-keyboard-mode.el`](https://github.com/jmping/aquamacs-emacs/blob/aquamacs3/aquamacs/src/site-lisp/macosx/emulate-mac-keyboard-mode.el), and [`one-buffer-one-frame.el`](https://github.com/jmping/aquamacs-emacs/blob/aquamacs3/aquamacs/src/site-lisp/one-buffer-one-frame.el). The source line ranges below inventory the user-visible entries and stateful/dynamic contributions inspected. GNU Emacs and major-mode/package maps may contribute additional items at runtime; those are extension content rather than Aquamacs-owned commands.
 
-| Historical Aquamacs area | Observed operations | Glassmacs destination and contract |
+| Historical menu / source range | Source-verified user commands and behavior | Glassmacs destination |
 | --- | --- | --- |
-| Application/Aquamacs | Quit, application help, update check, preferences, reopen/unhide | **Glassmacs:** About, Settings, keyboard profile, updates, Services, Quit; native placement where possible |
-| File | New frame, New tab, New Buffer in Mode, Change Mode, Open, recent files, Save, Save As, Close, Reveal in Finder | **File:** New Document (new frame by default), New in Mode, Open, Open Recent, Save, Save As, Open in New Window/Tab, Reveal, Close Document |
-| File/session | Save Session As, Load Session, print, Page Setup, formatted/PDF copy/export | **File:** Save/Restore Workspace; Print/Page Setup/Export. Structured session persistence (R process not falsely restored) |
-| Edit | Undo/redo, cut/copy/paste, select all, formatted/PDF copy, fill/unfill, spell, count words | **Edit:** native-feeling basic editing and text transformations |
-| Search/Go To | Forward/repeat/backward search, use region, goto line | **Find/Navigate:** search, use selection, go to line, project/symbol locations |
-| Options | Tabs, separate frames, UI visibility, line/newline/paren highlighting, fringes, wrap, smart spacing, backup toggle | **View + Settings:** typed, persisted options with synchronized checked/radio state |
-| Customize | Customize Aquamacs, top-level customize, Save Options | **Glassmacs > Settings:** organized preferences + Advanced Emacs Customize; expose save/readback |
-| Keyboard | Option as Meta, composed characters, right Option/Command as Meta, layout maps | **Settings > Keyboard:** separate physical/logical layout and modifier choices |
-| Buffers/Window/Extras | Next/previous tab or buffer, move tab to new frame, hide tab, merge frames, zoom, split/join, new frame, tile/scatter, fullscreen | **Window:** document/frame/tab operations, capability-checked context |
-| Toolbar | Recent files, file actions, print, spelling, visibility and user customization | Shared commands surfaced through configurable toolbar, no separate business logic |
-| Tools | Command-line tool installation, spell and package tools | **Tools/Research:** CLI integration and language tooling; keep upstream package menus |
-| Help | Aquamacs manual, Emacs manual, glossary, Lisp docs, package manuals, reference cards, online support | **Help:** Glassmacs guide, package manuals, offline Help, shortcuts and reference cards |
-| Language/research | Mode-specific R and other package commands | **Research** context menu for ESS/R, Quarto, R Markdown, Sweave, Shiny, LaTeX, statistical profiles |
+| Application/Aquamacs: `aquamacs-menu.el` L1050–1156; `osx_defaults.el` reopen handler | About/quit/manual entries are customized around Cocoa; reopen-application restores a visible frame; customization and updates are surfaced where supported | **Glassmacs:** native app-menu placement for About, Settings, Services, Hide/Show and Quit; expose Glassmacs help/update only when implemented. Do not build a second app-menu renderer |
+| File—creation/open: L55–225, L230–278 | Dynamic New Buffer in Mode and Change Buffer Mode; New Buffer in New Frame/Tab; Open; recent files; active command enablement; mode chooser uses known/recent modes and suppresses unavailable commands | **File:** New Document (new frame by default), New in Mode, explicit New in Window/Tab, Open, Open Recent. Use Emacs completion and mode commands |
+| File—save/close/session: L278–288, L484–530, L495–503, L508–530 | Close Window (sometimes “and Buffer”), Reveal in Finder, Save/Load Session, Save Buffer, Save Buffer As; menu state varies with live frame/buffer | **File:** Save/Save As/Close Document, Reveal, Save/Restore Workspace. Keep view, buffer and document close semantics distinct; preserve unsaved prompts |
+| File—print/export: L297–310, L535–610 | Copy Formatted, Copy as PDF, Page Setup, Print Region/Buffer; some export declarations are commented/disabled in this source | **File:** maintained export and native print commands; distinguish implemented from commented historical proposals and unavailable dependencies |
+| Edit: L290–355, L459–477, L748–766, L946–1031 | Copy/Cut/Paste, Undo/Redo, Select All, Fill/Unfill, Smart Word Spacing, Spelling and Count Words; some labels are modified to display macOS shortcuts | **Edit:** existing Emacs commands and keymaps for editing, fill, spell and count; use one command dispatch path |
+| Search and Go To: L356–375, L777–785, L929–945 | Forward/repeat-forward/repeat-backward search, use region for search, case-insensitive option, Go to Line | **Search/Navigate:** Emacs incremental search, use selection, effective case-fold setting, Go to Line; project/symbol actions are Glassmacs extensions |
+| Options/View: L640–925, especially L748–925 | Smart spacing; tabbar and one-buffer-one-frame toggles; user-interface visibility and display options; fringe widths; backups; Save Place; Customize and Save Options. Menu checks/options refer to actual variables | **View + Settings:** accessible toggles/radios backed by existing Emacs modes or Glassmacs preferences. Document opening policy stays explicit and separate from auxiliary buffer routing |
+| Keyboard submenu: `emulate-mac-keyboard-mode.el`; added under Options | Option as Meta or system/composed-character input; right Option and right Command independently set to Meta; language layout emulation modes; menu toggle/check state | **Settings > Keyboard:** preserve text input by default; expose left/right modifier choices and international input behavior through current Emacs APIs, not old translation tables |
+| Buffers/Window/Extras: `aquamacs-menu.el` L1161–1300 | Font zoom; Join Windows; Split Window; Show Buffer in New Frame; Scatter; Tile vertically/horizontally; Full Screen Editing; generated buffer menu entries, switching and frame placement | **Window:** frame/tab/document/window operations with actual capability predicates; **Navigate:** buffer switch and document navigation |
+| Toolbar: `aquamacs-tool-bar.el` | New/Open/Recent/Close/Revert/Save/Save As/Print/Undo/Redo/Cut/Copy/Paste/Search/Spelling/New Window/Preferences/Help; buttons inherit visibility, enablement and command behavior from menu/map | Shared commands on optional standard Emacs toolbar. Preserve user configurability where supported; don't port Aquamacs toolbar conversion internals |
+| Tools: `aquamacs-menu.el` L447–454, L946–990 | Install Command Line Tools; spelling is moved from Tools to Edit; upstream/package tool entries may remain | **Tools/Research:** show optional tools only when available and avoid installer side effects. Native mode/package maps remain authoritative |
+| Help: L1050–1156, L1420–1515 | Aquamacs Manual, Tips Wiki, Homepage, Emacs Manual, Lisp Intro/Reference, glossary, manuals, man page, package manuals, lookup all manuals, printable language reference cards | **Help:** Glassmacs manual and keyboard reference, Emacs/package Info manuals, Search All Help and optional support link; no obsolete Aquamacs-specific copy |
+| Dynamic language/package menus | Major-mode maps and package menus supplied by ESS, AUCTeX, Org and other modes; recent/common mode list is generated by Aquamacs, not a static mode inventory | **Research / mode maps:** use active mode's keymaps and existing interactive commands. Add only Glassmacs workflows not already provided upstream |
+
+This is a substantive command inventory, not a dump of every translated reference-card entry or every upstream Emacs menu item. For source-verified completeness, check the cited ranges and the effective runtime maps; a commented-out historical menu declaration is not an enabled feature. The compatibility matrix records implementation status and per-feature acceptance tests.
 
 ### Dynamic menu coverage
 
