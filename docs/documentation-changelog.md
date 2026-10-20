@@ -57,3 +57,10 @@ Future entries should state date, affected document IDs, old/new coverage or aut
 - **Expanded DOC-ROADMAP:** introduced a dogfood-priority R graphics workstream: native macOS R graphics first, explicit X11/XQuartz fallback rather than a dependency, session-aware integrated plot history/viewing, and remote artifact-based plotting.
 - **Clarified verification:** real ESS/R graphics tests and minimal maintainer dogfooding are distinct from mocks; no plot viewer or graphics-device integration is claimed as implemented.
 - No authority, status, owner or supersession changes.
+
+## 2026-10-19 — Multi-project routing, contextual UI and SSH deployment planning
+
+- **Expanded DOC-ARCH:** specified ten-plus concurrent research projects, process-owned object/plot/queue views, independent per-buffer R execution target selection, terminal/process identity and distinct document/project/shell/R directory contexts. Added native right-click action contracts and local-code-testing/remote-deployment requirements.
+- **Expanded DOC-ROADMAP:** added staged per-buffer session selection, context menus, session-scoped object explorer, explicit local-test/remote-deploy provenance and a longer-term graphical SSH file transfer/permission-management track.
+- **Clarified safety:** no implicit cross-host path equivalence, execution retargeting, working-directory synchronization, queued-command migration, remote upload execution or destructive remote file/permission operations without appropriate explicit user actions and confirmation.
+- These are architectural targets and planned delivery milestones, **not implemented functionality**. No document authority, status, ownership or supersession changed.
