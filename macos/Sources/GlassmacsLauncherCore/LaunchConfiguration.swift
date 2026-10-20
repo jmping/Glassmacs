@@ -1,58 +1,48 @@
 import Foundation
 
 public struct LaunchConfiguration: Equatable, Sendable {
-    public let emacsExecutable: String
-    public let checkoutPath: String
-    public let homePath: String?
-    public let emacsClientExecutable: String?
+    public let bundleURL: URL
 
-    public init(
-        emacsExecutable: String,
-        checkoutPath: String,
-        homePath: String? = nil,
-        emacsClientExecutable: String? = nil
-    ) {
-        self.emacsExecutable = emacsExecutable
-        self.checkoutPath = checkoutPath
-        self.homePath = homePath
-        self.emacsClientExecutable = emacsClientExecutable
+    public init(bundleURL: URL) {
+        self.bundleURL = bundleURL.standardizedFileURL
     }
 
-    public var initFilePath: String {
-        URL(fileURLWithPath: checkoutPath, isDirectory: true)
+    public var emacsExecutable: URL {
+        bundleURL.appendingPathComponent("Contents/MacOS/Emacs")
+    }
+
+    public var initFile: URL {
+        bundleURL
+            .appendingPathComponent("Contents/Resources/Glassmacs", isDirectory: true)
             .appendingPathComponent("init.el")
-            .path
     }
 
-    public var emacsServerSocketPath: String {
-        let home = homePath ?? URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent(".config/glassmacs", isDirectory: true).path
-        return URL(fileURLWithPath: home, isDirectory: true)
-            .appendingPathComponent("server-sockets/glassmacs")
-            .standardizedFileURL.path
+    public func glassmacsHome(
+        environment: [String: String],
+        defaultHome: URL
+    ) throws -> URL {
+        let configuredHome = environment["GLASSMACS_HOME"]
+        let path = configuredHome.flatMap { $0.isEmpty ? nil : $0 }
+            .map { ($0 as NSString).expandingTildeInPath }
+            ?? defaultHome.path
+        guard path.hasPrefix("/") else {
+            throw LaunchConfigurationError.homeMustBeAbsolute(path)
+        }
+        return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
     }
 
-    public func emacsArguments(opening files: [URL]) -> [String] {
-        ["-Q", "--load", initFilePath]
-            + (files.isEmpty ? [] : ["--"] + files.map(\.path))
+    public func emacsArguments(forwarding arguments: [String]) -> [String] {
+        ["-Q", "--load", initFile.path] + arguments
     }
+}
 
-    public func emacsClientArguments(opening files: [URL]) -> [String] {
-        let encodedPaths = files.map { Data($0.path.utf8).base64EncodedString() }
-            .map { "\"\($0)\"" }
-            .joined(separator: " ")
-        let expression = """
-        (glassmacs-open-files-from-client (mapcar (lambda (path) (decode-coding-string (base64-decode-string path) 'utf-8)) '(\(encodedPaths))))
-        """
-        return [
-            "--socket-name=\(emacsServerSocketPath)",
-            "--no-wait",
-            "--eval",
-            expression
-        ]
-    }
+public enum LaunchConfigurationError: LocalizedError {
+    case homeMustBeAbsolute(String)
 
-    public var emacsServerProbeArguments: [String] {
-        ["--socket-name=\(emacsServerSocketPath)", "--timeout=1", "--eval", "(emacs-pid)"]
+    public var errorDescription: String? {
+        switch self {
+        case .homeMustBeAbsolute(let path):
+            return "GLASSMACS_HOME must be an absolute path: \(path)"
+        }
     }
 }

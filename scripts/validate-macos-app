@@ -1,0 +1,60 @@
+#!/bin/bash
+set -euo pipefail
+
+app=${1:?Usage: validate-macos-app /path/to/Glassmacs.app}
+app=$(CDPATH='' cd -- "$app" && pwd)
+contents="$app/Contents"
+plist="$contents/Info.plist"
+bootstrap="$contents/MacOS/GlassmacsBootstrap"
+emacs="$contents/MacOS/Emacs"
+
+test -f "$plist"
+test -x "$bootstrap"
+test -x "$emacs"
+test -f "$contents/Resources/Glassmacs/init.el"
+test -f "$contents/Resources/Glassmacs/lisp/glassmacs.el"
+test -f "$contents/Resources/Glassmacs/scripts/bootstrap"
+/usr/bin/plutil -lint "$plist"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$plist")" = APPL
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = org.glassmacs.Glassmacs
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")" = GlassmacsBootstrap
+
+for extension in R r Rmd qmd Rnw; do
+  /usr/libexec/PlistBuddy -c 'Print :CFBundleDocumentTypes:0:CFBundleTypeExtensions' \
+    "$plist" | grep -Eq "^[[:space:]]*${extension}[[:space:]]*$"
+done
+
+check_dependencies() {
+  local binary=$1 dependency rpath
+  while IFS= read -r dependency; do
+    case "$dependency" in
+      /System/Library/*|/usr/lib/*|@rpath/*|@loader_path/*|@executable_path/*) ;;
+      *)
+        printf 'Non-relocatable dependency in %s: %s\n' "$binary" "$dependency" >&2
+        return 1
+        ;;
+    esac
+  done < <(/usr/bin/otool -L "$binary" | awk 'NR > 1 {
+    sub(/^[[:space:]]*/, "")
+    sub(/[[:space:]]+\(.*/, "")
+    print
+  }')
+
+  while IFS= read -r rpath; do
+    case "$rpath" in
+      /System/Library/*|/usr/lib/*|@loader_path/*|@executable_path/*) ;;
+      *)
+        printf 'Non-relocatable runtime search path in %s: %s\n' "$binary" "$rpath" >&2
+        return 1
+        ;;
+    esac
+  done < <(/usr/bin/otool -l "$binary" | awk '
+    /cmd LC_RPATH/ { getline; getline; sub(/^[[:space:]]*path /, ""); sub(/ \(offset.*$/, ""); print }
+  ')
+}
+
+check_dependencies "$bootstrap"
+check_dependencies "$emacs"
+"$emacs" --batch --eval '(princ emacs-version)' >/dev/null
+
+printf 'Validated Glassmacs.app structure and direct executable dependencies: %s\n' "$app"

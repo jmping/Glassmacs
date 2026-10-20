@@ -1,12 +1,83 @@
-#!/bin/sh
-set -eu
+#!/bin/bash
+set -euo pipefail
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+source "$root/macos/upstream-emacs.env"
 output=${1:-"$root/build/Glassmacs.app"}
-package_build="$root/macos/.build/release"
+case "$output" in
+  /*) ;;
+  *) output="$root/$output" ;;
+esac
+mkdir -p "$(dirname -- "$output")"
+output="$(cd -- "$(dirname -- "$output")" && pwd)/$(basename -- "$output")"
+
+if [ -e "$output" ] || [ -L "$output" ]; then
+  case "$output" in
+    "$root/build/"*) rm -rf -- "$output" ;;
+    *) printf 'Refusing to replace existing output: %s\n' "$output" >&2; exit 1 ;;
+  esac
+fi
+
+tmp=$(mktemp -d /tmp/glassmacs-build.XXXXXX)
+mounted=
+cleanup() {
+  if [ -n "$mounted" ]; then
+    hdiutil detach "$mounted" -quiet || true
+  fi
+  rm -rf -- "$tmp"
+}
+trap cleanup EXIT HUP INT TERM
+
+if [ -n "${GLASSMACS_UPSTREAM_EMACS_APP:-}" ]; then
+  upstream_app=$(CDPATH='' cd -- "$GLASSMACS_UPSTREAM_EMACS_APP" && pwd)
+else
+  archive="$tmp/Emacs.dmg"
+  printf 'Downloading Cocoa GNU Emacs %s\n' "$GLASSMACS_EMACS_VERSION"
+  curl --fail --location --silent --show-error "$GLASSMACS_EMACS_ARCHIVE_URL" --output "$archive"
+  printf '%s  %s\n' "$GLASSMACS_EMACS_ARCHIVE_SHA256" "$archive" | shasum -a 256 --check
+  mkdir "$tmp/mount"
+  hdiutil attach "$archive" -quiet -nobrowse -readonly -mountpoint "$tmp/mount"
+  mounted="$tmp/mount"
+  upstream_app=$(find "$mounted" -maxdepth 3 -type d -name Emacs.app -print -quit)
+  if [ -z "$upstream_app" ]; then
+    printf 'No Emacs.app was found in the pinned Cocoa Emacs archive.\n' >&2
+    exit 1
+  fi
+fi
+
+if [ ! -x "$upstream_app/Contents/MacOS/Emacs" ] ||
+   [ ! -f "$upstream_app/Contents/Info.plist" ]; then
+  printf 'Not a Cocoa GNU Emacs application bundle: %s\n' "$upstream_app" >&2
+  exit 1
+fi
 
 swift build --package-path "$root/macos" -c release
-mkdir -p "$output/Contents/MacOS" "$output/Contents/Resources"
-cp "$package_build/GlassmacsLauncher" "$output/Contents/MacOS/GlassmacsLauncher"
-cp "$root/macos/Info.plist" "$output/Contents/Info.plist"
-printf 'Built unsigned development app at %s\n' "$output"
+ditto --rsrc --extattr --acl "$upstream_app" "$output"
+cp "$root/macos/.build/release/GlassmacsLauncher" \
+  "$output/Contents/MacOS/GlassmacsBootstrap"
+chmod 755 "$output/Contents/MacOS/GlassmacsBootstrap"
+glassmacs_resources="$output/Contents/Resources/Glassmacs"
+mkdir -p "$glassmacs_resources/scripts"
+cp "$root/init.el" "$glassmacs_resources/init.el"
+ditto "$root/lisp" "$glassmacs_resources/lisp"
+cp "$root/scripts/bootstrap" "$glassmacs_resources/scripts/bootstrap"
+
+python3 - "$output/Contents/Info.plist" "$root/macos/Info.plist" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as upstream_file:
+    upstream = plistlib.load(upstream_file)
+with open(sys.argv[2], "rb") as overlay_file:
+    upstream.update(plistlib.load(overlay_file))
+with open(sys.argv[1], "wb") as output_file:
+    plistlib.dump(upstream, output_file, fmt=plistlib.FMT_XML, sort_keys=False)
+PY
+
+if [ -n "${GLASSMACS_UPSTREAM_EMACS_APP:-}" ]; then
+  emacs_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+    "$upstream_app/Contents/Info.plist" 2>/dev/null || printf 'provided build')
+else
+  emacs_version=$GLASSMACS_EMACS_VERSION
+fi
+printf 'Built Glassmacs.app at %s using Cocoa GNU Emacs %s\n' "$output" "$emacs_version"

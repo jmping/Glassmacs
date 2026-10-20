@@ -3,69 +3,65 @@ import XCTest
 @testable import GlassmacsLauncherCore
 
 final class LaunchConfigurationTests: XCTestCase {
-    func testEmacsArgumentsPreservePathsAsSeparateArguments() {
+    func testBundlePathsAndArgumentsUseTheBundledEmacsAndConfiguration() {
         let configuration = LaunchConfiguration(
-            emacsExecutable: "/Applications/Emacs.app/Contents/MacOS/Emacs",
-            checkoutPath: "/Users/test/Glass macs"
+            bundleURL: URL(fileURLWithPath: "/Applications/Glass macs.app")
         )
-        let files = [
-            URL(fileURLWithPath: "/Users/test/Research folder/analysis.R"),
-            URL(fileURLWithPath: "/Users/test/Research folder/plot's data.R")
-        ]
 
         XCTAssertEqual(
-            configuration.emacsArguments(opening: files),
+            configuration.emacsExecutable.path,
+            "/Applications/Glass macs.app/Contents/MacOS/Emacs"
+        )
+        XCTAssertEqual(
+            configuration.initFile.path,
+            "/Applications/Glass macs.app/Contents/Resources/Glassmacs/init.el"
+        )
+        XCTAssertEqual(
+            configuration.emacsArguments(
+                forwarding: ["/Users/test/Research folder/Δ.R"]
+            ),
             [
-                "-Q", "--load", "/Users/test/Glass macs/init.el", "--",
-                "/Users/test/Research folder/analysis.R",
-                "/Users/test/Research folder/plot's data.R"
+                "-Q", "--load",
+                "/Applications/Glass macs.app/Contents/Resources/Glassmacs/init.el",
+                "/Users/test/Research folder/Δ.R"
             ]
         )
     }
 
-    func testClientArgumentsUseSocketAndKeepEachFileWhole() {
+    func testApplicationSupportIsDefaultAndEnvironmentCanOverrideIt() throws {
         let configuration = LaunchConfiguration(
-            emacsExecutable: "/Applications/Emacs.app/Contents/MacOS/Emacs",
-            checkoutPath: "/tmp/Glassmacs",
-            homePath: "/Users/test/.config/glass macs"
+            bundleURL: URL(fileURLWithPath: "/Applications/Glassmacs.app")
         )
-        let file = URL(fileURLWithPath: "/tmp/source with spaces.R")
+        let defaultHome = URL(
+            fileURLWithPath: "/Users/test/Library/Application Support/Glassmacs",
+            isDirectory: true
+        )
+
         XCTAssertEqual(
-            configuration.emacsClientArguments(opening: [file]),
-            [
-                "--socket-name=/Users/test/.config/glass macs/server-sockets/glassmacs",
-                "--no-wait",
-                "--eval",
-                "(glassmacs-open-files-from-client (mapcar (lambda (path) (decode-coding-string (base64-decode-string path) 'utf-8)) '(\"L3RtcC9zb3VyY2Ugd2l0aCBzcGFjZXMuUg==\")))"
-            ]
+            try configuration.glassmacsHome(environment: [:], defaultHome: defaultHome),
+            defaultHome.standardizedFileURL
+        )
+        XCTAssertEqual(
+            try configuration.glassmacsHome(
+                environment: ["GLASSMACS_HOME": "~/Glass macs state/Δ"],
+                defaultHome: defaultHome
+            ),
+            URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+                .appendingPathComponent("Glass macs state/Δ", isDirectory: true)
+                .standardizedFileURL
         )
     }
 
-    func testClientEncodesMetacharactersInsteadOfBuildingExecutableCodeFromPath() {
+    func testRelativeGlassmacsHomeIsRejected() {
         let configuration = LaunchConfiguration(
-            emacsExecutable: "/Applications/Emacs.app/Contents/MacOS/Emacs",
-            checkoutPath: "/tmp/Glassmacs",
-            homePath: "/tmp/glassmacs-home"
+            bundleURL: URL(fileURLWithPath: "/Applications/Glassmacs.app")
         )
-        let file = URL(fileURLWithPath: "/tmp/a\") (delete-file \"/tmp/x\").R")
-        let arguments = configuration.emacsClientArguments(opening: [file])
-        XCTAssertEqual(arguments.count, 4)
-        XCTAssertFalse(arguments[3].contains(file.path))
-        XCTAssertTrue(arguments[3].hasPrefix("(glassmacs-open-files-from-client "))
-    }
 
-    func testExistingServerProbeIsBoundedAndUsesGlassmacsSocket() {
-        let configuration = LaunchConfiguration(
-            emacsExecutable: "/Applications/Emacs.app/Contents/MacOS/Emacs",
-            checkoutPath: "/tmp/Glassmacs",
-            homePath: "/Users/test/.config/glassmacs"
-        )
-        XCTAssertEqual(
-            configuration.emacsServerProbeArguments,
-            [
-                "--socket-name=/Users/test/.config/glassmacs/server-sockets/glassmacs",
-                "--timeout=1", "--eval", "(emacs-pid)"
-            ]
+        XCTAssertThrowsError(
+            try configuration.glassmacsHome(
+                environment: ["GLASSMACS_HOME": "relative/state"],
+                defaultHome: URL(fileURLWithPath: "/Users/test/Library/Application Support/Glassmacs")
+            )
         )
     }
 }

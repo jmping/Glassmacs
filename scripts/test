@@ -2,7 +2,8 @@
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-exec emacs -Q --batch -l "$root/init.el" -l "$root/tests/test-glassmacs.el" \
+emacs=${GLASSMACS_EMACS:-emacs}
+exec "$emacs" -Q --batch -l "$root/init.el" -l "$root/tests/test-glassmacs.el" \
   -l "$root/tests/test-glassmacs-sessions.el" \
   -l "$root/tests/test-glassmacs-r-ui.el" \
   -l "$root/tests/test-glassmacs-remote.el" \
