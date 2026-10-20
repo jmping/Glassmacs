@@ -115,6 +115,16 @@ Acceptance: rapidly submitting multiple R expressions leaves editing responsive;
 
 Acceptance: Glassmacs starts and edits normally without AI; the user can ask a configured local or remote agent about a selected region, see the transmitted context and cancel a streaming response; agents cannot silently run commands or change files; proposed edits require diff approval; Mosh can reconnect a terminal without claiming to replace SSH or guaranteeing exactly-once command delivery. See [architecture](architecture.md).
 
+## Research application profile track
+
+- **Milestone 2:** define the profile contract for standalone/embedded syntax, command discovery, execution host, logs, artifacts and optional capabilities. Confirm existing ESS BUGS/JAGS support and candidate Emacs language modes; avoid duplicating maintained integrations.
+- **Milestone 3:** implement a minimal end-to-end profile using shared local/SSH execution and queue infrastructure, with explicit executable detection and safe invocation.
+- **Milestone 4:** add representative `lavaan` embedded-model support, JAGS model files and Stan/`cmdstanr` workflows where dependencies exist. Verify diagnostics and output artifact handling; separate available editing support from installed runtime support.
+- **Milestone 5:** add durable sampling/optimization jobs and remote chain monitoring using common job management; pilot an external executable workflow that is not R-native.
+- **Milestone 6:** refine macOS UX and document how contributors add profiles without forking Glassmacs or installing proprietary applications.
+
+Acceptance: a researcher can open a supported external model file without executing it, edit with suitable mode support, explicitly run an installed tool locally or on a configured host, inspect bounded logs and retrieve outputs; missing runtimes do not break editing; user configuration cannot silently launch untrusted commands. See [architecture](architecture.md).
+
 ## Verification matrix
 
 | Capability | Unit / CI | Local macOS integration | Opt-in remote integration |
