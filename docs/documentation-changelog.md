@@ -22,3 +22,10 @@ This log records changes in document **scope, ownership, status and authority**.
 - **Precedence:** the README controls vision; architecture controls target technical design; roadmap controls delivery planning; code/tests control actual implemented behavior. No documents superseded in this baseline.
 
 Future entries should state date, affected document IDs, old/new coverage or authority, rationale, successor (if any), and associated PR/ADR.
+
+## 2026-10-19 — Proposed Aquamacs feature, settings and menu audit (documentation PR)
+
+- **Added DOC-AQUA-COMPAT (Proposed):** source-traced historical feature inventory, intended replacement strategy, settings taxonomy, implementation priorities and test acceptance criteria. Establishes user-requested **separate graphical windows as the intended default for new documents**, with tabs/reuse optional and special buffers exempted by policy.
+- **Added DOC-MENU (Proposed):** first dedicated menu command/capability and dynamic-state specification spanning application, file, editing, display, keyboard, tools/research, window and help menus.
+- **Updated DOC-INDEX:** register proposed documents and explicit scope boundaries. These are not yet implemented features, and review/merge must establish canonical authority.
+- **Linked DOC-ARCH, DOC-KEYS and DOC-ROADMAP:** preserve original execution/ESS/research and governance coverage while pointing to detailed proposals. No document superseded; no functional code touched.

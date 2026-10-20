@@ -4,7 +4,7 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-20
+> **Last reviewed:** 2026-10-19  
 > **Coverage:** Delivery milestones, priorities, dependencies and acceptance criteria  
 > **Supersedes:** None
 
@@ -25,38 +25,22 @@ This roadmap translates the [architecture](architecture.md) into staged, testabl
 
 **Delivered:** modular Emacs Lisp entry point, isolated package storage, hybrid keybinding implementation, dark/light themes, initial ESS/R and document associations, local Shiny commands, ERT tests and documentation.
 
-**Not established:** fully working macOS Cocoa behavior, comprehensive ESS integration, successful GitHub Actions execution, remote execution, performance superiority, native app packaging, or robust LaTeX tooling.
+**Not established:** fully working macOS Cocoa behavior, comprehensive ESS integration, CI, remote execution, performance superiority, native app packaging, or robust LaTeX tooling.
 
 ## Milestone 2 — Stabilize the core and validate local research workflows
 
-**Status:** In progress. PR #4 is a bounded foundation slice; it does not complete Milestone 2.
+**Priority:** next implementation PR.
 
-### Completed foundational work (PR #4)
-
-- Added Ubuntu batch ERT and Lisp byte-compilation workflow with read-only repository contents permission.
-- Added regression coverage for startup isolation, ordinary `.txt` and extensionless editing without research dependencies, and existing configuration behavior.
-- Local validation on GNU Emacs 29.3 passed: 14 tests passed and 3 optional ESS/R tests skipped; byte-compilation succeeded.
-- GitHub Actions has not run the CI jobs for PR #4: runs concluded `action_required` with zero jobs created. Repository/workflow approval is still required, so CI is not verified.
-
-### Implemented but not yet verified
-
-- The prototype has an isolated launcher and package bootstrap, optional ESS/R and research-document associations, local rendering/Shiny commands, and hybrid keyboard bindings. Their presence in source is not evidence of integration behavior.
-- Native macOS/Cocoa behavior, real ESS/R evaluation, document-toolchain workflows, and graphical appearance remain unverified on their respective installations.
-
-### Deferred Milestone 2 work
-
-- Verify supported ESS APIs, R major mode, `M-x R`, source evaluation, and persistent inferior-R behavior; keep standard ESS bindings.
+- Audit startup, package initialization, error handling and isolation; add CI and supported Emacs compatibility checks.
+- Verify current ESS APIs, R major mode, `M-x R`, source evaluation and persistent inferior-R process behavior; keep standard ESS bindings.
 - Fix graphical-frame initialization and hybrid keyboard conflicts; check actual macOS GUI behavior manually.
 - Validate syntax highlighting, theme loading, user-configurable fonts and diagnostics.
 - Verify R Markdown, Quarto, Sweave and Rd associations and basic local rendering.
 - Establish local direct execution and a minimal project execution profile design without replacing ESS's process machinery.
 - Verify a basic local LaTeX/AUCTeX editing and build workflow where dependencies are installed; document missing tools clearly.
 - Add baseline measurements for startup, interactive R evaluation, direct Rscript and large output.
-- Implement and test safe bounded ESS console output and separate stop-display, interrupt, and terminate semantics; this PR adds no output throttling.
-- Define and validate a nonblocking per-session ESS execution queue with snapshot, readiness, pause, cancel-pending, and interrupt semantics; this PR adds no queue.
-- Add measured large-file/long-line safeguards and prove partial views cannot overwrite complete source files; these safeguards are not implemented by the current tests.
 
-**Exit criteria:** isolated launch and automated tests pass in declared environments; GitHub Actions completes successfully after any approval gate is cleared; an R session can be started and used where R/ESS are installed; local LaTeX build is documented and demonstrable where TeX/AUCTeX are installed; no unsupported performance or macOS claims.
+**Exit criteria:** isolated launch and automated tests pass in declared environments; an R session can be started and used where R/ESS are installed; local LaTeX build is documented and demonstrable where TeX/AUCTeX are installed; no unsupported performance or macOS claims.
 
 ## Milestone 3 — Terminal and SSH research execution
 
@@ -91,6 +75,17 @@ This roadmap translates the [architecture](architecture.md) into staged, testabl
 
 **Exit criteria:** remote Shiny is not publicly exposed by default; tunnels and processes have observable lifecycle; durable jobs can survive client disconnect as documented and are not inadvertently killed by GUI shutdown.
 
+## Aquamacs feature and settings compatibility track
+
+The [proposed Aquamacs feature inventory](aquamacs-compatibility.md) and [menu architecture](menu-architecture.md) enumerate historical behaviors, intended replacements and tests; these proposals must be reviewed before claiming binding feature parity.
+
+- **Milestone 2/next GUI validation:** specify and test **new graphical frame as the default for opening/creating ordinary documents on macOS**; tab and reuse policies configurable and persistent, without creating spurious frames for ESS, Help or completion buffers. Add tests for open-existing behavior, dirty Close/Save/Quit, and settings persistence.
+- **Milestones 2–3:** align dynamic File/Edit/View/Window menus, shortcuts, enablement and checked/radio state with the same command and preference APIs; audit actual Mac keymaps, modifier layouts and nonmac behavior.
+- **Milestones 3–4:** implement document/tab detach and merge, session restoration, clipboard semantics, per-mode typography, recent files/Finder, text wrapping and safety settings.
+- **Milestone 6:** refine native printing, spelling, formatted/PDF copy, custom toolbars, Apple menu/Services, migration wizard, help and update experience.
+
+Exit conditions require **actual macOS GUI tests** for window/tab behavior, not merely ERT in Linux CI; documented intentional departures from Aquamacs do not count as missing features when approved. Current prototype does not satisfy these tests.
+
 ## Milestone 6 — Native macOS refinement and packaging
 
 - Refine Cocoa window/frame behavior, typography, dark/light appearance, shortcuts, file associations and application conventions.
@@ -109,8 +104,6 @@ This is a **core product requirement**, not an optional R feature. Glassmacs mus
 - **Milestone 4 and later:** improve large-file editing only where correctness and save integrity can be guaranteed; benchmark open time, peak memory and interactive responsiveness on representative text and log files.
 
 Acceptance tests must include ordinary `.txt` and extensionless files, multi-megabyte documents, long single-line files, large logs, non-UTF-8/invalid encoding cases, read-only and permission-restricted files, and remote large files when a test host is available. Do not require all large files to load into a normal Emacs buffer. Never write back a partial view as a complete file. See [architecture](architecture.md) for safety constraints.
-
-**Current status:** PR #4 verifies basic `.txt` and extensionless open/edit/save behavior while simulating absent executables and optional Emacs libraries. It does not implement or validate large-file protection, long-line performance safeguards, chunked reading, or partial-file write safety. Those remain open acceptance requirements; no partial view is currently provided by this PR.
 
 ## R output-flood protection track
 
