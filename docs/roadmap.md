@@ -42,6 +42,20 @@ This roadmap translates the [architecture](architecture.md) into staged, testabl
 
 **Exit criteria:** isolated launch and automated tests pass in declared environments; an R session can be started and used where R/ESS are installed; local LaTeX build is documented and demonstrable where TeX/AUCTeX are installed; no unsupported performance or macOS claims.
 
+## R graphics and plotting workstream (dogfood priority)
+
+**Status: planned; no Glassmacs-managed plot viewer has been implemented.** Standard ESS/R graphics devices may already work where the local R graphics stack is configured, but that behavior has not been validated as a Glassmacs integration. Plotting is a core base R research workflow, not an optional IDE-style embellishment.
+
+**Phase 1 — Reliable immediate fallback (next integrated dogfood build):** verify that ordinary `plot(cars)`, multi-page/base graphics, and `ggplot2` output can be produced from a real ESS R session on macOS using an available native R graphics device. Document the device actually used, startup requirements, focus/window behavior, closing and reopening devices, errors and recovery. Prefer a supported native macOS graphics device when available; permit an explicitly selected X11/XQuartz device as a **fallback**, not a required dependency or the sole strategy. X11 has historically been brittle (display forwarding, server lifecycle and dependency drift); do not silently select it or claim it is reliable without testing. A basic external graphics window is acceptable for the first dogfood build; plotting must not prevent source editing or block Glassmacs startup when graphics facilities are absent.
+
+**Phase 2 — Session-aware integrated plot viewing:** evaluate a standard R graphics-device-to-file workflow (PNG/SVG/PDF as appropriate) with asynchronous artifact detection and an Emacs image/document buffer or configurable separate native macOS frame. Support plot history, next/previous, refresh, zoom, export and clipboard where feasible. Associate plots with their originating ESS session; support multiple sessions without mixing histories. Preserve normal R graphics semantics and support base graphics and `ggplot2` without a package-specific plotting API. Avoid forcing an RStudio-style pane or creating spurious frames for non-plot special buffers.
+
+**Phase 3 — Remote plots:** support explicitly remote ESS sessions and remote-generated graphics artifacts via existing SSH/TRAMP facilities, with bounded transfers, host/path identity, error reporting, disconnection recovery and cleanup. Do not rely on X11 forwarding as the primary remote graphics transport; do not require an SSH server for local plotting. Interactive graphics and advanced device synchronization are separate optional investigations.
+
+**Verification:** CI should cover viewer state, session association, artifact lifecycle and fallback behavior; opt-in integration tests should use real R/ESS and available graphics devices. Clearly distinguish mocks, local macOS GUI tests and remote SSH tests. Ask the maintainer for no more than three manual dogfood checks: create a base R plot, create a ggplot2 plot if installed, and navigate/close/reopen the resulting graphics without losing editing focus. Record unsupported devices and untested environments rather than claiming cross-platform parity.
+
+**Exit criteria:** first, ordinary plots are demonstrably usable from the maintainer's macOS ESS workflow with a documented non-X11 preferred path and explicit X11 fallback where configured; subsequently, Glassmacs can display and manage plots by R session, including remote artifacts, without compromising editing responsiveness or requiring X11.
+
 ## Milestone 3 — Terminal and SSH research execution
 
 **Implemented foundation (partial; this does not complete the milestone):** normal TRAMP file access, an opt-in remote shell, a small read-only remote-context interface, connection inspection/cleanup, and a minimal optional Mosh terminal launcher. Unit tests do not use a real SSH server. Remote ESS and execution routing remain planned.
