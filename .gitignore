@@ -1,1 +1,11 @@
+# Generated application bundles
 /build/
+
+# Distribution archives
+/dist/
+
+# macOS Finder metadata
+.DS_Store
+
+# Temporary backups
+*.app.bak
