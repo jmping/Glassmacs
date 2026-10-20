@@ -9,7 +9,7 @@
 
 (ert-deftest glassmacs-configuration-loads ()
   (dolist (feature '(glassmacs glassmacs-core glassmacs-keys glassmacs-r
-                     glassmacs-sessions glassmacs-remote
+                     glassmacs-sessions glassmacs-r-ui glassmacs-remote
                      glassmacs-documents glassmacs-frames
                      glassmacs-diagnostics glassmacs-shiny
                      glassmacs-appearance))
