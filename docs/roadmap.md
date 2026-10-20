@@ -85,6 +85,16 @@ This is a **core product requirement**, not an optional R feature. Glassmacs mus
 
 Acceptance tests must include ordinary `.txt` and extensionless files, multi-megabyte documents, long single-line files, large logs, non-UTF-8/invalid encoding cases, read-only and permission-restricted files, and remote large files when a test host is available. Do not require all large files to load into a normal Emacs buffer. Never write back a partial view as a complete file. See [architecture](architecture.md) for safety constraints.
 
+## R output-flood protection track
+
+Output-flood handling is a high-priority reliability requirement, separate from large-file inspection:
+
+- **Milestone 2:** document and test how current ESS/comint handles a huge R print; define bounded output budgets and distinct stop-display / interrupt / terminate controls. Implement a conservative, tested local protection path if compatible with ESS.
+- **Milestone 3:** integrate output suppression and recovery with persistent terminal and SSH sessions, ensuring channel draining, bounded queues and accurate prompt/session state.
+- **Milestone 4:** extend the same protections to rendering logs, batch jobs and remote job output, with bounded tails and explicit truncation indicators.
+
+Acceptance: printing a large object does not cause unbounded Emacs buffer growth or an unresponsive UI; the user can suppress further display without unintentionally killing R; interrupts remain independently available; output truncation is visible; subsequent R evaluation works after the flood ends. Confirm process behavior and transport backpressure under test rather than assuming suppressed display means printing has stopped.
+
 ## Verification matrix
 
 | Capability | Unit / CI | Local macOS integration | Opt-in remote integration |
