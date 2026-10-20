@@ -1,5 +1,14 @@
 # R and reproducible-document workflows
 
+> **Document ID:** DOC-R-WORKFLOWS  
+> **Status:** Canonical  
+> **Owner:** Glassmacs maintainers  
+> **Effective date:** 2026-10-19  
+> **Last reviewed:** 2026-10-19  
+> **Coverage:** Current and explicitly proposed R and research document workflows  
+> **Supersedes:** None
+
+
 ## ESS and R
 
 Install ESS with `./scripts/bootstrap`. `.R` and `.r` files use ESS's
