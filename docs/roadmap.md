@@ -98,6 +98,59 @@ Exit conditions require **actual macOS GUI tests** for window/tab behavior, not 
 
 **Exit criteria:** reproducible packaging and installation, documented compatibility, stable R/LaTeX/remote workflows, and measured GUI performance with transparent limitations.
 
+## Integrated distribution and remote editing workstream (next release gate)
+
+**Delivery decision (2026-10-19):** assemble one integrated, runnable Glassmacs distribution and exercise cross-feature scenarios before further isolated feature proliferation. This complements—not replaces—the existing macOS-first, upstream-GNU-Emacs, ESS-first, Aquamacs-compatibility, plain-text, document and remote-execution milestones. GNU Emacs remains upstream; do **not** fork the editor merely for distribution. Prefer a shared Lisp core with capability-gated macOS GUI and terminal adapters rather than separate implementations.
+
+### Three first-class operating modes
+
+| Mode | Emacs process | Editing UI and files | Computation |
+| --- | --- | --- | --- |
+| Local GUI | macOS | Native Glassmacs GUI; local buffers | Local sessions |
+| GUI with remote buffers | macOS | Native Glassmacs GUI; remote files via SSH/TRAMP | Explicitly chosen local or remote session |
+| Remote-running Glassmacs | Remote Linux/Unix host | Terminal Emacs over SSH, optionally Mosh/tmux or an Emacs daemon/client | Server-local sessions |
+
+The second mode does **not** require a remote GUI Emacs, and the third does **not** require macOS, Cocoa, Swift, native menus, or an active graphical display. A locally opened remote file and a file opened by a remote Emacs process are separate buffers/processes; ordinary file-change/conflict detection applies. Live cross-process buffer synchronization is out of scope for the first release.
+
+### Workstream A — integrated distribution, startup, dependency isolation (first PR)
+
+- Provide a documented, reproducible installation and launch path for an upstream-GNU-Emacs-based Glassmacs distribution, with isolated configuration/package storage and no mutation of the user's other Emacs/Aquamacs profiles.
+- Make GUI, terminal (`-nw`) and batch startup robust, graceful when optional R/ESS/TeX/Quarto/Mosh tools are missing, and usable offline after required dependencies have been installed. Record Emacs/ESS/version assumptions and dependency resolution; avoid unsupported claims of fully reproducible packages without pinning.
+- Establish a macOS runnable release candidate and diagnostics; define app packaging/signing as a subsequent, explicit gate rather than blocking basic startup on Swift/AppKit or a GNU Emacs fork.
+- Run merged-main ERT and byte compilation; test the integrated startup paths and preserve local plain-text editing without R or network access.
+- Coordinate `init.el`, startup loading and scripts with the terminal and GUI-remote agents rather than letting parallel PRs overwrite one another.
+
+### Workstream B — remote-running terminal/headless Glassmacs (parallel PR)
+
+- Support interactive `glassmacs -nw` (proposed launcher syntax) on supported remote Linux/Unix hosts via ordinary SSH; document an optional `glassmacs --daemon` / `glassmacsclient -t` workflow, names subject to implementation. A regular terminal Emacs session is an acceptable first implementation; no new network protocol or custom terminal emulator.
+- Reuse the **same core** for editing, ESS/R sessions, immutable per-session execution queues, confirmation of pending-command removal, session inspection, plain-text files and supported document modes. Terminal confirmation must be possible without GUI dialogs, with *Keep* as the safe default.
+- Gate native macOS frame/tab/appearance/menus/keybindings on display/platform capabilities. Preserve ordinary terminal Control/Meta, ESS/AUCTeX and SSH/tmux key behavior. Avoid unconditional macOS dependencies or remote startup network access.
+- Distinguish Emacs server lifetime, terminal/tmux lifetime and R/job lifetime: reconnecting a client does not prove job durability; never silently replay uncertain R commands or discard orphaned queue entries.
+- Test `emacs -Q --batch` where applicable, true `-nw` terminal startup, Linux operation, daemon/client lifecycle, optional R/ESS on the remote host, missing-dependency/offline behavior and absence of graphical-display assumptions. CI stubs are not proof of real SSH or interactive terminal behavior.
+
+### Workstream C — first-class remote buffers in the native macOS GUI (parallel PR)
+
+**Binding architectural requirement:** a TRAMP-backed remote file is a **first-class Glassmacs document**, participating in ordinary editing, search, undo, navigation, window/frame/tab preferences and Close/Save/Quit semantics. Opening or creating an ordinary remote document obeys the same **separate native graphical frame by default** policy as local documents, with user-selectable tab/reuse exceptions and distinct special-buffer policies.
+
+- Reuse upstream TRAMP/OpenSSH and existing `glassmacs-remote.el`; support normal `find-file` remote paths (e.g. `/ssh:research:/home/user/project/analysis.R`), not a parallel remote-file abstraction. A remote GUI document must not depend on a remote-running Emacs.
+- Make host/remote-path identity intelligible in the document title or nonblocking status UI. Never trigger remote metadata queries just to render a menu, title, tooltip or contextual indicator. Remote discovery must remain explicit or asynchronous.
+- Preserve unsaved local buffer modifications on SSH disconnect or save failure. On reconnection allow explicit save retry; respect Emacs/TRAMP external-modification and overwrite conflict checks. Never silently overwrite a concurrently modified remote file or persist a truncated/partial large-file view as the complete file.
+- Treat editing location and computation location as **independent**. Opening a remote R script must not automatically start an R session or choose remote execution. Future execution UI must show the chosen host/session and pending queue, and ambiguous selection must prompt/error rather than guess.
+- Validate ordinary remote edit/save, dirty Close/Quit, frame/tab policy, offline/disconnect/reconnect, conflicting changes, slow-server responsiveness, remote large-file safeguards and host/path display on an actual macOS Cocoa GUI plus an opt-in test SSH host. Keep real-network tests out of public CI.
+
+### Workstream D — integrated ESS/R correctness and cross-feature stabilization (release gate)
+
+- Validate PR #6's actual ESS readiness/busy transitions, prompt/continuation/error semantics, sentinel/termination observation, multi-session routing and FIFO queue against real R/ESS (not only process mocks); no completion inference solely from console text.
+- Exercise long-running commands, rapid multiline submissions, immutable snapshots, failed sends, interruption, unexpected process termination and session uncertainty. **Every pending-command removal requires confirmation**, including bulk/noninteractive entry points; keep intended ordering and removal audit history and never auto-replay uncertain execution.
+- Verify remote source buffers plus explicitly chosen local-vs-remote execution, remote Emacs with server-local ESS/R, SSH disconnect and reconnect, local GUI buffers, and plain-text/document workflows across all modes. Remote ESS integration remains a separate implementation prerequisite, **not** a feature delivered by PRs #6–#8.
+- Run full ERT/byte compilation on the combined `main` plus macOS Cocoa, Linux terminal, real R/ESS, SSH/TRAMP and (where configured) Mosh/tmux/daemon smoke and failure-injection tests. Capture versions, installed tools, skipped tests, results and regressions. Treat each merged PR as integrated but **not yet end-to-end verified**.
+
+### Delivery sequencing, ownership and exit criteria
+
+Develop A (distribution/startup), B (remote terminal) and C (GUI remote documents) in separate, rebased PRs with disjoint modules and coordinated entry-point edits; D is the consolidated real-environment validation and stabilization gate. The earlier proposed PR numbers 9–12 are **workstream placeholders**, not reserved GitHub PR numbers. Do not claim features implemented simply because they appear here.
+
+**Exit criteria:** a researcher can launch Mac GUI Glassmacs, edit/save local and remote documents in the intended frame policy, run terminal Glassmacs on a remote host with ordinary upstream Emacs facilities, use and inspect real ESS/R sessions and conservative queues where dependencies are installed, and recover safely from representative disconnects and execution failures. Evidence must distinguish unit/CI mocks from actual macOS GUI, terminal Linux, R/ESS and SSH tests. Native standalone packaging, remote ESS dispatch, remote durable jobs, shared live buffer synchronization and AI integrations may remain later milestones if explicitly documented.
+
 ## Plain text and large-file acceptance track
 
 This is a **core product requirement**, not an optional R feature. Glassmacs must remain a useful general-purpose plain text editor even when no statistical packages are installed.
