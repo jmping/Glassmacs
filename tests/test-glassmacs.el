@@ -8,9 +8,11 @@
 (require 'glassmacs)
 
 (ert-deftest glassmacs-configuration-loads ()
-  (should (featurep 'glassmacs))
-  (should (featurep 'glassmacs-core))
-  (should (featurep 'glassmacs-r)))
+  (dolist (feature '(glassmacs glassmacs-core glassmacs-keys glassmacs-r
+                     glassmacs-sessions glassmacs-remote
+                     glassmacs-documents glassmacs-shiny
+                     glassmacs-appearance))
+    (should (featurep feature))))
 
 (ert-deftest glassmacs-package-state-is-isolated ()
   (should (equal user-emacs-directory
@@ -86,6 +88,57 @@
       (when (buffer-live-p output)
         (kill-buffer output))
       (delete-directory temporary-home t))))
+
+(ert-deftest glassmacs-launcher-forwards-emacs-arguments ()
+  (let* ((directory (make-temp-file "glassmacs-launcher-" t))
+        (fake-emacs (expand-file-name "fake-emacs" directory))
+        (arguments-file (expand-file-name "arguments" directory))
+        (launcher (expand-file-name "scripts/glassmacs" glassmacs-root))
+        (arguments '("-nw" "some file.R"
+                     "/ssh:research:/home/user/project/analysis.R"
+                     "--eval" "(message \"argument preserved\")"))
+        (status nil))
+    (unwind-protect
+        (progn
+         (with-temp-file fake-emacs
+           (insert "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$GLASSMACS_TEST_ARGS\"\n"))
+         (set-file-modes fake-emacs #o755)
+         (let ((process-environment (copy-sequence process-environment)))
+           (setenv "GLASSMACS_EMACS" fake-emacs)
+           (setenv "GLASSMACS_TEST_ARGS" arguments-file)
+           (setq status (apply #'call-process launcher nil nil nil arguments)))
+         (should (zerop status))
+         (should
+          (equal
+           (with-temp-buffer
+             (insert-file-contents arguments-file)
+             (split-string (buffer-string) "\n" t))
+           (append '("-Q" "--load")
+                   (list (expand-file-name "init.el" glassmacs-root))
+                   arguments))))
+      (delete-directory directory t))))
+
+(ert-deftest glassmacs-launcher-reports-a-missing-emacs ()
+  (let* ((directory (make-temp-file "glassmacs-launcher-missing-" t))
+        (launcher (expand-file-name "scripts/glassmacs" glassmacs-root))
+        (error-file (expand-file-name "stderr" directory))
+        (output (generate-new-buffer " *glassmacs missing Emacs*"))
+        (status nil))
+    (unwind-protect
+        (progn
+         (let ((process-environment (copy-sequence process-environment)))
+           (setenv "GLASSMACS_EMACS"
+                   (expand-file-name "not-installed" directory))
+           (setq status
+                 (call-process launcher nil (list output error-file) nil)))
+         (should (equal status 127))
+         (with-temp-buffer
+           (insert-file-contents error-file)
+           (should (search-forward "GNU Emacs executable" nil t))
+           (should (search-forward "GLASSMACS_EMACS" nil t))))
+      (when (buffer-live-p output)
+        (kill-buffer output))
+      (delete-directory directory t))))
 
 (ert-deftest glassmacs-plain-text-files-open-and-save-without-research-tools ()
   (let* ((directory (make-temp-file "glassmacs-plain-text-" t))

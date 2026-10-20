@@ -2,9 +2,28 @@
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-exec emacs -Q --batch --load "$root/init.el" --eval \
+emacs_command=${GLASSMACS_EMACS:-emacs}
+if ! emacs=$(command -v "$emacs_command" 2>/dev/null); then
+  printf "Glassmacs bootstrap: GNU Emacs executable '%s' was not found. Install GNU Emacs and ensure 'emacs' is on PATH, or set GLASSMACS_EMACS to its executable.\n" \
+    "$emacs_command" >&2
+  exit 127
+fi
+
+exec "$emacs" -Q --batch --load "$root/init.el" --eval \
   '(progn
-     (package-refresh-contents)
-     (dolist (package (quote (ess markdown-mode quarto polymode poly-R auctex)))
-       (unless (package-installed-p package)
-         (package-install package))))'
+     (require (quote cl-lib))
+     (let* ((packages (quote (ess markdown-mode quarto polymode poly-R auctex)))
+           (missing (cl-remove-if (function package-installed-p) packages)))
+       (if (null missing)
+           (message "All optional Glassmacs packages are already installed.")
+         (condition-case error-data
+             (progn
+               (package-refresh-contents)
+               (dolist (package missing)
+                 (package-install package))
+               (message "Installed optional Glassmacs packages: %s"
+                        (mapconcat (function symbol-name) missing ", ")))
+           (error
+            (error "Could not install optional Glassmacs packages (%s); check network access and retry ./scripts/bootstrap: %s"
+                   (mapconcat (function symbol-name) missing ", ")
+                   (error-message-string error-data))))))'

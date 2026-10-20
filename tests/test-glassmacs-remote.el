@@ -120,17 +120,20 @@
                      "research")))))
 
 (ert-deftest glassmacs-remote-startup-does-not-connect ()
-  (let* ((output (generate-new-buffer " *glassmacs remote startup*"))
+  (let* ((directory (make-temp-file "glassmacs-remote-startup-" t))
+         (launcher (expand-file-name "scripts/glassmacs" glassmacs-root))
+         (output (generate-new-buffer " *glassmacs remote startup*"))
          (status nil))
     (unwind-protect
-        (setq status
-              (call-process
-               "emacs" nil output t "-Q" "--batch"
-               "-l" (expand-file-name "init.el" glassmacs-root)
-               "--eval"
-               "(progn (require 'tramp) (when (tramp-list-connections) (error \"TRAMP connected at startup\")))"))
+        (let ((process-environment (copy-sequence process-environment)))
+          (setenv "GLASSMACS_HOME" directory)
+          (setq status
+                (call-process
+                 launcher nil output t "--batch" "--eval"
+                 "(progn (require 'tramp) (when (tramp-list-connections) (error \"TRAMP connected at startup\")))")))
       (when (buffer-live-p output)
-        (kill-buffer output)))
+        (kill-buffer output))
+      (delete-directory directory t))
     (should (and (integerp status) (zerop status)))))
 
 (ert-deftest glassmacs-remote-module-preserves-local-file-editing ()

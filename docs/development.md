@@ -62,21 +62,74 @@ on macOS with a graphical Cocoa Emacs; Linux batch tests do not validate it.
 Native macOS GUI behavior, including hybrid shortcuts, appearance, and frame
 handling, remains a manual verification item.
 
-## Isolated launch and dependencies
+## Installation, isolated launch, and dependencies
 
-`./scripts/glassmacs` launches upstream Emacs with `-Q`, then loads this
-checkout's `init.el`. `./scripts/bootstrap` installs current package versions
-into the separate Glassmacs package directory. Set `GLASSMACS_HOME` before
-launch/bootstrap to choose another location. Optional customizations can be
-placed in `$GLASSMACS_HOME/custom.el` (default `~/.config/glassmacs/custom.el`).
-This prevents Glassmacs from rewriting a pre-existing Emacs init or Aquamacs
-preferences. ERT exercises this launcher with a temporary `GLASSMACS_HOME` and
-a separate simulated ordinary Emacs home, and verifies the ordinary home files
-are unchanged.
+**Required:** upstream GNU Emacs. GNU Emacs 29 or newer is recommended; the
+launcher looks for `emacs` on `PATH`. Set `GLASSMACS_EMACS` to an executable path
+or command name to select another installation. A graphical macOS launch needs
+a graphical Emacs build; terminal and batch use need no graphical display.
 
-The package archives are not version-locked in this initial milestone. Tests
-should be run with the project's supported Emacs version and with optional
-dependencies absent as well as installed when practical.
+From the repository checkout:
+
+```sh
+./scripts/glassmacs                 # graphical startup where supported
+./scripts/glassmacs -nw             # terminal startup
+./scripts/glassmacs some-file.R
+./scripts/glassmacs /ssh:research:/home/user/project/analysis.R
+```
+
+These are ordinary Emacs command-line arguments. GNU Emacs handles file names
+and TRAMP paths. Opening a remote path is an explicit user action; startup does
+not establish SSH connections, start R, or execute project configuration.
+
+Glassmacs starts Emacs with `-Q`, loads this checkout's `init.el`, and puts
+`user-emacs-directory`, packages, and the `custom-file` under the isolated
+Glassmacs home. The default is `~/.config/glassmacs`; set `GLASSMACS_HOME` before
+launch to choose another directory. Optional user customizations belong in
+`$GLASSMACS_HOME/custom.el`. Ordinary GNU Emacs and Aquamacs configuration is
+neither loaded nor modified. To return to ordinary GNU Emacs, start it directly
+with `emacs` rather than `./scripts/glassmacs`.
+
+The core editor has no required Emacs packages beyond GNU Emacs. ESS and
+document-editing packages (markdown-mode, Quarto mode, polymode/poly-R, and
+AUCTeX) are optional. R/Rscript, Quarto, TeX, OpenSSH and Mosh are external
+optional tools; SSH/TRAMP uses Emacs' built-in TRAMP and local OpenSSH. Plain
+text editing and local startup do not require these tools. Glassmacs reports
+missing optional tools when the related commands are invoked.
+
+To install the optional Emacs packages explicitly, run `./scripts/bootstrap`.
+It installs packages that are missing under the isolated package directory and
+requires network access when installation is needed. It does not run
+automatically on startup. After the chosen packages are installed, normal
+startup does not refresh archives or initiate network access. Package archives
+are not version-locked, so this setup is not yet reproducible across dates or
+machines.
+
+### Manual smoke test
+
+1. Launch `./scripts/glassmacs`, open a local `.txt` file, edit it, and save it.
+2. Launch `./scripts/glassmacs -nw` and verify ordinary text editing and saving.
+3. Start with an empty `GLASSMACS_HOME` and no R/ESS or document tools; verify
+   startup and plain-text editing still work.
+4. If you have a configured SSH alias, verify launch itself made no connection,
+   then explicitly open a test TRAMP path.
+5. Launch ordinary `emacs` and verify it still uses the existing Emacs setup.
+
+### Troubleshooting and verification limits
+
+- If startup reports GNU Emacs is missing, install it or set `GLASSMACS_EMACS`
+  to its executable. `GLASSMACS_EMACS` selects an executable, not extra
+  command-line options; pass options such as `-nw` to the Glassmacs launcher.
+- If ESS or a document mode is unavailable, run `./scripts/bootstrap` while
+  online. If an external tool is missing, install it separately and ensure it
+  is on `PATH`; Glassmacs does not install R, Quarto, TeX, SSH or Mosh.
+- If package installation fails offline, plain-text startup remains available;
+  retry bootstrap when network access is available.
+- Linux ERT and batch checks do not establish Cocoa behavior. Native macOS GUI
+  startup, Finder/LaunchServices integration, hybrid shortcut event handling,
+  appearance, and frame behavior have not been verified by Linux tests and
+  require a graphical macOS Emacs smoke test. This distribution does not
+  include a packaged/signed/notarized macOS application.
 
 ## Execution architecture verification plan
 
