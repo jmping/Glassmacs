@@ -57,6 +57,13 @@ ditto --rsrc --extattr --acl "$upstream_app" "$output"
 cp "$root/macos/.build/release/GlassmacsLauncher" \
   "$output/Contents/MacOS/GlassmacsBootstrap"
 chmod 755 "$output/Contents/MacOS/GlassmacsBootstrap"
+# Swift may embed an absolute Xcode toolchain LC_RPATH; remove it for relocation.
+while IFS= read -r path; do
+  case "$path" in
+    /Applications/Xcode.app/*|*/Xcode*.app/Contents/Developer/*)
+      /usr/bin/install_name_tool -delete_rpath "$path" "$output/Contents/MacOS/GlassmacsBootstrap" ;;
+  esac
+done < <(/usr/bin/otool -l "$output/Contents/MacOS/GlassmacsBootstrap" | awk '/cmd LC_RPATH/ { getline; getline; sub(/^[[:space:]]*path /, ""); sub(/ \(offset.*$/, ""); print }')
 glassmacs_resources="$output/Contents/Resources/Glassmacs"
 mkdir -p "$glassmacs_resources/scripts"
 cp "$root/init.el" "$glassmacs_resources/init.el"
