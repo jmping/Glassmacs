@@ -124,9 +124,26 @@ LaTeX should use the **same** local/terminal/SSH execution routing as R and docu
 
 See the [development roadmap](roadmap.md) for planned delivery and test milestones.
 
-## R console output floods (planned safeguards)
+## R console output floods
 
-Accidentally printing an enormous data frame or database result must not make the editor unusable. The design calls for a configurable output budget, visible suppression/truncation status, and three separate commands: **stop displaying**, **interrupt the current R computation**, and **terminate the R session**. The first action does not guarantee that R stops producing output; Glassmacs must continue safely handling the stream or use explicit process control to avoid pipe/PTY/SSH backpressure. Preserve ESS prompts and evaluation state, and make it possible to resume normal evaluation afterward. These protections are **planned, not implemented**; see [architecture](architecture.md) and [roadmap](roadmap.md).
+ESS R consoles have a configurable per-command display budget
+(`glassmacs-r-output-budget`, default 1,000,000 characters). When the budget is
+exceeded, Glassmacs shows a suppression marker, keeps primary and continuation
+prompts visible, and hides the remaining output until R returns to its primary
+prompt. The `comint` preoutput filter bounds what is inserted into the console;
+ESS continues consuming process output and remains responsible for process and
+prompt state. This limits buffer growth but does not stop R from producing data
+or guarantee that a local, terminal, or remote transport cannot apply
+backpressure.
+
+Three distinct commands are available: `glassmacs-r-stop-displaying-output`
+hides output for the active command without interrupting R;
+`glassmacs-r-interrupt` requests an interrupt and keeps pending queue work paused;
+and `glassmacs-r-terminate-session` requires interactive confirmation before
+terminating the process. When R reaches its next primary prompt, normal output
+display resumes automatically. Output flooding over SSH or a terminal/PTY and
+native macOS responsiveness have not been validated; see
+[architecture](architecture.md) and [roadmap](roadmap.md).
 
 
 ## R sessions and execution queue (minimal subset implemented)
@@ -201,7 +218,7 @@ later results may change (order, dependencies, RNG state), and defaults to
 calls keep the command. Confirmed removals stay as `removed` records and in
 `glassmacs-sessions-history` with timestamp, original position, id and source.
 `glassmacs-queue-interrupt` is a separate operation: it interrupts the running
-command, marks it `uncertain`, pauses the queue and keeps pending work.
+queued command, marks it `uncertain`, pauses the queue and keeps pending work.
 
 **Termination.** A running entry becomes `uncertain`, pending entries become
 `orphaned`; records are kept, the queue is paused and nothing is replayed.

@@ -19,6 +19,15 @@
   "R session registry and command queue."
   :group 'glassmacs-r)
 
+(defcustom glassmacs-r-output-budget 1000000
+  "Maximum characters displayed for one R command before suppression."
+  :type 'integer
+  :group 'glassmacs-sessions)
+
+(defconst glassmacs-r-output-suppressed-marker
+  "\n[Glassmacs: additional R output suppressed; output is not retained]\n"
+  "Text shown when an R output budget is exceeded or display is stopped.")
+
 (defconst glassmacs-sessions-poll-interval 0.1
   "Seconds between nonblocking queue polls while work is outstanding.")
 
@@ -46,6 +55,9 @@
 (defvar glassmacs-sessions--timer nil)
 (defvar-local glassmacs-r-target-session nil
   "Session id explicitly selected for this buffer, or nil.")
+(defvar-local glassmacs-r--output-count 0)
+(defvar-local glassmacs-r--output-suppressed nil)
+(defvar-local glassmacs-r--output-marker-pending nil)
 
 (define-minor-mode glassmacs-r-target-indicator-mode
   "Show this buffer's explicitly selected R execution target."
@@ -66,6 +78,8 @@
 (defvar ess-process-name-list)
 (defvar ess-local-process-name)
 (defvar inferior-ess-r-program)
+(defvar inferior-ess-primary-prompt)
+(defvar inferior-ess-secondary-prompt)
 (defvar glassmacs-r-executable)
 
 (defun glassmacs-sessions--record (kind &rest plist)
@@ -93,6 +107,122 @@
   ;; ESS's presend hooks consult buffer-local state of the process buffer.
   (with-current-buffer (process-buffer process)
     (funcall (intern "ess-send-string") process string)))
+
+(defun glassmacs-r--output-prompt-suffix (regexp string)
+  "Return the prompt suffix matching REGEXP at the end of STRING, or nil."
+  (when (and (stringp regexp) (not (string-empty-p regexp)))
+    (let ((case-fold-search nil))
+      (when (string-match (concat "\\(?:" regexp "\\)\\'") string)
+        (substring string (match-beginning 0))))))
+
+(defun glassmacs-r--filter-output (string)
+  "Bound displayed R output in STRING without changing ESS process state.
+ESS updates its process status before calling Comint's preoutput filters, so
+primary and continuation prompts remain visible even while output is hidden."
+  (if (not (and (boundp 'inferior-ess-primary-prompt)
+                (stringp inferior-ess-primary-prompt)))
+      string
+    (let* ((primary (glassmacs-r--output-prompt-suffix
+                    inferior-ess-primary-prompt string))
+           (secondary (and (not primary)
+                           (boundp 'inferior-ess-secondary-prompt)
+                           (glassmacs-r--output-prompt-suffix
+                            inferior-ess-secondary-prompt string)))
+           (prompt (or primary secondary))
+           (output (if prompt (substring string 0 (- (length string)
+                                                     (length prompt)))
+                     string))
+           (result
+            (cond
+             (glassmacs-r--output-suppressed
+              (prog1
+                  (concat (when glassmacs-r--output-marker-pending
+                            glassmacs-r-output-suppressed-marker)
+                          prompt)
+                (setq glassmacs-r--output-marker-pending nil)))
+             ((> (+ glassmacs-r--output-count (length output))
+                 (max 1 glassmacs-r-output-budget))
+              (setq glassmacs-r--output-suppressed t
+                    glassmacs-r--output-marker-pending nil)
+              (concat (substring output 0
+                                 (max 0 (- (max 1 glassmacs-r-output-budget)
+                                           glassmacs-r--output-count)))
+                      glassmacs-r-output-suppressed-marker
+                      prompt))
+             (t (concat output prompt)))))
+      (unless primary
+        (setq glassmacs-r--output-count
+              (+ glassmacs-r--output-count (length output))))
+      (when primary
+        (setq glassmacs-r--output-count 0
+              glassmacs-r--output-suppressed nil
+              glassmacs-r--output-marker-pending nil))
+      result)))
+
+(defun glassmacs-r--configure-output-protection ()
+  "Install the bounded-output prefilter in this ESS R process buffer."
+  (setq-local glassmacs-r--output-count 0
+              glassmacs-r--output-suppressed nil
+              glassmacs-r--output-marker-pending nil)
+  (add-hook 'comint-preoutput-filter-functions
+            #'glassmacs-r--filter-output nil t))
+
+(defun glassmacs-r-stop-displaying-output (&optional session)
+  "Stop displaying output from SESSION until its next primary R prompt.
+R continues running and ESS continues consuming its process output."
+  (interactive)
+  (let* ((session (glassmacs-sessions-resolve session))
+         (process (glassmacs-session-process session))
+         (buffer (process-buffer process)))
+    (unless (and (glassmacs-sessions--process-live-p process)
+                 (process-get process 'busy))
+      (user-error "R session %s is not currently running a command"
+                  (glassmacs-session-id session)))
+    (unless (buffer-live-p buffer)
+      (user-error "The console for R session %s no longer exists"
+                  (glassmacs-session-id session)))
+    (with-current-buffer buffer
+      (setq glassmacs-r--output-suppressed t
+            glassmacs-r--output-marker-pending t))
+    (message "Stopped displaying output from %s; R continues running"
+             (glassmacs-session-id session))))
+
+(defun glassmacs-r-interrupt (&optional session)
+  "Interrupt the current computation in SESSION without terminating R."
+  (interactive)
+  (let* ((session (glassmacs-sessions-resolve session))
+         (process (glassmacs-session-process session)))
+    (unless (glassmacs-sessions--process-live-p process)
+      (user-error "R session %s is not live" (glassmacs-session-id session)))
+    (if (glassmacs-queue-running session)
+        (glassmacs-queue-interrupt session)
+      (unless (process-get process 'busy)
+        (user-error "R session %s is not running a command"
+                    (glassmacs-session-id session)))
+      (unless (or noninteractive
+                  (y-or-n-p (format "Interrupt R in %s? Pending commands will be kept and the queue paused. "
+                                    (glassmacs-session-id session))))
+        (user-error "Interrupt cancelled"))
+      (setf (glassmacs-session-paused session) t)
+      (glassmacs-sessions--record :paused :session (glassmacs-session-id session))
+      (interrupt-process process))))
+
+(defun glassmacs-r-terminate-session (&optional session)
+  "Terminate SESSION after explicit confirmation, preserving queue records."
+  (interactive)
+  (let* ((session (glassmacs-sessions-resolve session))
+         (process (glassmacs-session-process session)))
+    (unless (glassmacs-sessions--process-live-p process)
+      (user-error "R session %s is not live" (glassmacs-session-id session)))
+    (when (or (and (not noninteractive)
+                   (yes-or-no-p
+                    (format "Terminate R session %s? Running work becomes uncertain and pending commands are orphaned. "
+                            (glassmacs-session-id session))))
+              (and noninteractive
+                   (user-error "Terminating an R session requires interactive confirmation")))
+      (setf (glassmacs-session-paused session) t)
+      (delete-process process)
+      (message "Terminated R session %s" (glassmacs-session-id session)))))
 
 (defun glassmacs-sessions-find (id-or-process)
   "Return the session for ID-OR-PROCESS, or nil."
@@ -589,6 +719,10 @@ nothing further runs until you resume it."
     (if (glassmacs-sessions--process-live-p (glassmacs-session-process session))
         (interrupt-process (glassmacs-session-process session))
       (glassmacs-sessions--terminate session))))
+
+(with-eval-after-load 'ess-inf
+  (add-hook 'inferior-ess-r-mode-hook
+            #'glassmacs-r--configure-output-protection))
 
 ;;; Inspection and submission commands
 

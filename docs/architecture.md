@@ -160,8 +160,10 @@ Test rapid repeated submissions, multiline regions, queued edits/reordering/dele
 
 **Status:** A conservative local ESS subset is implemented: per-session FIFO
 dispatch, immutable source snapshots, queue inspection and lifecycle controls.
-It has no dedicated queue editor, output-flood protection, or remote-session
-support; see [R workflows](r-workflows.md) and the [roadmap](roadmap.md).
+The local ESS output filter and separate display-stop, interrupt, and
+termination commands are also implemented. There is no dedicated queue editor;
+remote-session output protection remains unimplemented. See
+[R workflows](r-workflows.md) and the [roadmap](roadmap.md).
 
 ## Bounded R console output and output-flood recovery
 
@@ -174,6 +176,16 @@ Separate three user actions with clearly different semantics:
 3. **Terminate session:** explicitly stop the R process, with confirmation where appropriate; reserve for irrecoverable sessions.
 
 Design an output budget for interactive consoles and command output: configurable byte/line thresholds, per-burst rate detection, bounded retained history, and a clear notification such as *Output limit reached — additional output suppressed*. Offer a user action to resume display, inspect a bounded tail, or redirect output to a user-selected file when supported. Never silently discard output while implying that it is complete. Do not confuse console-output truncation with truncating a file being edited.
+
+**Current local ESS subset:** Glassmacs installs a buffer-local
+`comint-preoutput-filter-functions` function and leaves ESS's process filter
+unchanged. ESS updates its process status before calling Comint's preoutput
+filters, allowing Glassmacs to suppress insertion while retaining prompt
+recognition. A configurable per-command character budget and visible marker
+bound displayed local ESS output; the rest of a command's output is discarded
+from the visible buffer until its primary prompt. This does not stop R from
+producing output or establish backpressure safety, and it has not been verified
+for terminal/PTY or remote streams.
 
 **Transport/backpressure constraint:** suppressing buffer insertion does not automatically suppress R's printing. The consumer must continue draining or explicitly interrupt/stop the producer where appropriate; otherwise full pipes/PTYs or SSH channel windows can block R. Design bounded queues and nonblocking draining with careful flow control. For a local subprocess, it may be possible to drain and discard after a threshold; for ESS/comint, integrate with supported process filters and their prompt/session bookkeeping rather than replacing them with a filter that breaks ESS state. Remote SSH and PTY behavior requires independent validation. Avoid unbounded in-memory buffering or unbounded temporary logging as a supposed fix.
 

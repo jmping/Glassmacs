@@ -196,6 +196,12 @@ Output-flood handling is a high-priority reliability requirement, separate from 
 - **Milestone 3:** integrate output suppression and recovery with persistent terminal and SSH sessions, ensuring channel draining, bounded queues and accurate prompt/session state.
 - **Milestone 4:** extend the same protections to rendering logs, batch jobs and remote job output, with bounded tails and explicit truncation indicators.
 
+**Status (2026-10-20):** a first local ESS slice adds a configurable
+per-command display budget, visible suppression marker, and separate
+stop-display, interrupt, and terminate-session commands. Real ESS/R tests cover
+prompt recovery and subsequent evaluation. Terminal/PTY and SSH output,
+backpressure behavior, and native GUI responsiveness remain unverified.
+
 Acceptance: printing a large object does not cause unbounded Emacs buffer growth or an unresponsive UI; the user can suppress further display without unintentionally killing R; interrupts remain independently available; output truncation is visible; subsequent R evaluation works after the flood ends. Confirm process behavior and transport backpressure under test rather than assuming suppressed display means printing has stopped.
 
 ## Nonblocking R execution queue track
@@ -206,7 +212,7 @@ The execution queue is a major usability requirement and should be introduced al
 - **Milestone 3:** add editable/reorderable pending snapshots and a dedicated queue buffer; connect queue selection to local terminal and remote ESS sessions. Explicitly handle interactive prompts, SSH disconnects and uncertain execution status without automatic retries.
 - **Milestone 4:** refine diagnostics, bounded history, cancellation and project/session observability; validate performance and failure recovery with real R sessions.
 
-**Status (2026-10-20):** a minimal subset (session registry, per-session FIFO, inspect, pause/resume, confirmed removal with history, interrupt, orphaning on termination) is implemented; see [R workflows](r-workflows.md). Pending-command removal always requires explicit confirmation. Editing/reordering, a queue buffer, output floods and remote sessions remain planned.
+**Status (2026-10-20):** a minimal subset (session registry, per-session FIFO, inspect, pause/resume, confirmed removal with history, interrupt, orphaning on termination) is implemented; see [R workflows](r-workflows.md). Pending-command removal always requires explicit confirmation. Editing/reordering, a queue buffer, remote sessions, and integrated output-flood handling beyond the local ESS console remain planned.
 
 Acceptance: rapidly submitting multiple R expressions leaves editing responsive; only one command at a time is dispatched to a single ESS session; users can pause or delete work not yet sent; interrupting the current evaluation does not silently delete or run the rest; edits to source buffers do not mutate queued snapshots; a reconnect never silently replays potentially executed work. See [architecture](architecture.md).
 

@@ -38,7 +38,9 @@
     (should (local-variable-p 'comint-input-ring))
     (should (eq (key-binding [up]) #'glassmacs-r-ui-previous-input-or-line))
     (should (eq (key-binding [down]) #'glassmacs-r-ui-next-input-or-line))
-    (should (eq (key-binding (kbd "RET")) #'comint-send-input))))
+    (should (eq (key-binding (kbd "RET")) #'comint-send-input))
+    (should (memq #'glassmacs-r--filter-output
+                  comint-preoutput-filter-functions))))
 
 (ert-deftest glassmacs-r-ui-ess-region-entrypoint-uses-selected-target ()
   (unless (locate-library "ess-site")
@@ -103,8 +105,14 @@
                  (lambda () (ert-fail "Building a context menu must not refresh sessions"))))
         (glassmacs-r-ui--populate-context-menu menu nil))
       (should (eq (lookup-key menu [glassmacs-queue]) #'glassmacs-queue-show))
+      (should (eq (lookup-key menu [glassmacs-stop-output])
+                   #'glassmacs-r-stop-displaying-output))
+      (should (eq (lookup-key menu [glassmacs-interrupt])
+                   #'glassmacs-r-interrupt))
+      (should (eq (lookup-key menu [glassmacs-terminate])
+                   #'glassmacs-r-terminate-session))
       (should (eq (lookup-key menu [glassmacs-directories])
-                  #'glassmacs-r-inspect-directories)))))
+                   #'glassmacs-r-inspect-directories)))))
 
 (ert-deftest glassmacs-r-ui-up-at-prompt-start-recalls-history ()
   (with-temp-buffer
