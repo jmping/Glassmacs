@@ -6,6 +6,8 @@
 (require 'glassmacs-sessions)
 (require 'glassmacs-remote)
 (require 'glassmacs-documents)
+(require 'glassmacs-frames)
+(require 'glassmacs-diagnostics)
 (require 'glassmacs-shiny)
 (require 'glassmacs-appearance)
 

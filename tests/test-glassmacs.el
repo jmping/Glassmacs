@@ -10,9 +10,94 @@
 (ert-deftest glassmacs-configuration-loads ()
   (dolist (feature '(glassmacs glassmacs-core glassmacs-keys glassmacs-r
                      glassmacs-sessions glassmacs-remote
-                     glassmacs-documents glassmacs-shiny
+                     glassmacs-documents glassmacs-frames
+                     glassmacs-diagnostics glassmacs-shiny
                      glassmacs-appearance))
     (should (featurep feature))))
+
+(ert-deftest glassmacs-document-classification-excludes-special-buffers ()
+  (let ((document (generate-new-buffer "glassmacs-document"))
+        (untitled (generate-new-buffer "Untitled"))
+        (internal (generate-new-buffer "*Completions*"))
+        (help (generate-new-buffer "glassmacs-help")))
+    (unwind-protect
+        (progn
+          (with-current-buffer document
+            (setq buffer-file-name "/tmp/analysis.R")
+            (fundamental-mode))
+          (with-current-buffer untitled
+            (fundamental-mode))
+          (with-current-buffer internal
+            (fundamental-mode))
+          (with-current-buffer help
+            (help-mode))
+          (should (glassmacs--ordinary-document-buffer-p document))
+          (should (glassmacs--ordinary-document-buffer-p untitled))
+          (should-not (glassmacs--ordinary-document-buffer-p internal))
+          (should-not (glassmacs--ordinary-document-buffer-p help)))
+      (mapc (lambda (buffer)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))
+            (list document untitled internal help)))))
+
+(ert-deftest glassmacs-document-policy-requires-graphical-ordinary-buffer ()
+  (let ((document (generate-new-buffer "glassmacs-policy-document"))
+        (special (generate-new-buffer "*Glassmacs Special*"))
+        (glassmacs-document-opening-policy 'new-frame))
+    (unwind-protect
+        (progn
+          (with-current-buffer document
+            (setq buffer-file-name "/tmp/analysis.R")
+            (fundamental-mode))
+          (with-current-buffer special
+            (special-mode))
+          (cl-letf (((symbol-function 'display-graphic-p)
+                     (lambda (&optional _frame) t)))
+            (should (eq (glassmacs--document-opening-action document)
+                        'new-frame))
+            (should-not (glassmacs--document-opening-action special)))
+          (cl-letf (((symbol-function 'display-graphic-p)
+                     (lambda (&optional _frame) nil)))
+            (should-not (glassmacs--document-opening-action document))))
+      (mapc (lambda (buffer)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))
+            (list document special)))))
+
+(ert-deftest glassmacs-find-file-policy-preserves-noninteractive-opens ()
+  (let (called)
+    (cl-letf (((symbol-function 'find-file-noselect)
+               (lambda (&rest _) (ert-fail "Policy must not visit the file")))
+              ((symbol-function 'display-graphic-p)
+               (lambda (&optional _frame) t)))
+      (should
+       (eq (glassmacs--find-file-with-policy
+            (lambda (filename &optional _wildcards)
+              (setq called filename)
+              'original-result)
+            "/tmp/startup.R")
+           'original-result))
+      (should (equal called "/tmp/startup.R")))))
+
+(ert-deftest glassmacs-diagnostics-report-local-capabilities-only ()
+  (let ((glassmacs-home "/private/glassmacs")
+        (buffer nil))
+    (cl-letf (((symbol-function 'display-graphic-p)
+               (lambda (&optional _frame) nil))
+              ((symbol-function 'locate-library)
+               (lambda (_library &optional _path _nosuffix) nil))
+              ((symbol-function 'executable-find)
+               (lambda (_program) nil))
+              ((symbol-function 'call-process)
+               (lambda (&rest _) (ert-fail "Diagnostics must not run processes"))))
+      (glassmacs-diagnostics)
+      (setq buffer (get-buffer "*Glassmacs Diagnostics*"))
+      (with-current-buffer buffer
+        (should (search-forward "Emacs:" nil t))
+        (should (search-forward "Operating system:" nil t))
+        (should (search-forward "/private/glassmacs" nil t))
+        (should (search-forward "ESS: not found" nil t))
+        (should (search-forward "R: not found" nil t))
+        (should-not (search-forward "SSH_AUTH_SOCK" nil t)))
+      (kill-buffer buffer))))
 
 (ert-deftest glassmacs-package-state-is-isolated ()
   (should (equal user-emacs-directory
