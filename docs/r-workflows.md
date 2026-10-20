@@ -57,3 +57,9 @@ The current commands above run locally; remote execution and unified project bac
 - **Durable remote work:** future tmux/scheduler support with detach/reconnect/log/cancel semantics; ordinary SSH sessions do not guarantee survival across disconnects.
 
 Project execution configuration must be opt-in and non-executable; never run commands simply because a project or TRAMP path was opened. The profile shape in the architecture document is illustrative and is not yet an available Lisp variable.
+
+## LaTeX and PDF workflows (planned verification)
+
+LaTeX should use the **same** local/terminal/SSH execution routing as R and document rendering, with AUCTeX and established TeX tooling supplying LaTeX-specific behavior. A separate LaTeX execution backend is not needed. Planned supported engines include `latexmk`, `pdflatex`, `xelatex` and `lualatex`, with BibTeX/Biber where appropriate. Local compilation, log/error navigation and PDF preview must be verified with installed dependencies; remote builds additionally require explicit PDF artifact access and source-to-output path mapping. SyncTeX forward/inverse search across a remote boundary requires dedicated integration and testing. These capabilities are not yet validated in Glassmacs.
+
+See the [development roadmap](roadmap.md) for planned delivery and test milestones.
