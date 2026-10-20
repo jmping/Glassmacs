@@ -71,9 +71,24 @@ tests the bundled configuration, relocates the app, and produces a downloadable
 ZIP artifact.
 
 Drag `Glassmacs.app` into `/Applications` (or another location) to install.
-Signing and notarization are not included in this milestone. Gatekeeper may
-require the user to explicitly approve this unsigned app; the workflow does
-not set it as a default handler.
+Developer ID signing is supported as a separate, opt-in step. The build itself
+does not sign with a personal identity and notarization is not yet automated.
+On managed Macs requiring identified-developer signatures, **sign before
+running the validator**, because validation launches bundled Emacs:
+
+```sh
+./scripts/build-macos-app
+GLASSMACS_SIGN_IDENTITY="<Developer ID Application certificate SHA-1>" \\
+  bash ./scripts/sign-macos-app build/Glassmacs.app
+./scripts/validate-macos-app build/Glassmacs.app
+```
+
+The signing script signs regular Mach-O files within the bundle, then the
+outer application, using hardened runtime and a secure timestamp. It verifies
+the resulting bundle. Do not modify the bundle after signing. Signatures alone
+do not imply notarization or compliance with every enterprise policy; perform
+launch tests and notarize before public distribution. The workflow does not
+set the app as a default document handler.
 
 ## User data and R setup
 
@@ -155,7 +170,7 @@ Before calling those behaviors verified, manually test on supported macOS:
 5. Check native menus and keyboard shortcuts, plus app startup after moving the
    bundle to a different directory.
 
-Known limitations: the app is unsigned and not notarized; LaunchServices may
+Known limitations: the app is not signed by default and is not notarized; LaunchServices may
 not select it as the default document handler; package versions are not locked;
 R and optional command-line programs are not bundled; and GUI behavior remains
 unverified until the manual checks above are completed. This milestone does
