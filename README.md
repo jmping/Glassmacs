@@ -63,6 +63,11 @@ Our goals are to:
 - Preserved ESS evaluation commands
 - Configurable keyboard profiles
 
+
+### Execution and remote research roadmap
+
+Glassmacs aims to support fast local direct execution, persistent terminal/PTY sessions, and SSH/TRAMP-based remote R and research workflows. The editor and computational host need not be the same machine. Planned capabilities include per-project execution profiles, remote ESS, asynchronous rendering, remote Shiny previews through secure SSH port forwarding, and detachable long-running server jobs. **These features are architectural goals, not part of the present prototype.** See [execution architecture](docs/architecture.md) and [R workflows](docs/r-workflows.md).
+
 ## Architecture
 
 Glassmacs is intended to use an upstream GNU Emacs release as its editing engine.
