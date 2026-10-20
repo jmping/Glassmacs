@@ -19,6 +19,7 @@ Our goals are to:
 - **Make R a first-class language.** Excellent ESS integration, intelligent indentation, syntax highlighting, completion, diagnostics, and interactive R sessions.
 - **Support reproducible research.** Seamless editing, execution, rendering, and previewing of R Markdown, Quarto, Sweave, and knitr documents.
 - **Make Shiny development easier.** Integrated application execution, diagnostics, and preview workflows.
+- **Be a dependable plain text editor.** Open and edit ordinary text files without requiring R or research tooling, and provide safe, responsive inspection of very large text documents and logs.
 - **Remain true to GNU Emacs.** Preserve Emacs extensibility, existing packages, and conventional Emacs commands.
 - **Minimize maintenance overhead.** Prefer upstream GNU Emacs and actively maintained packages over custom forks and duplicated functionality.
 
