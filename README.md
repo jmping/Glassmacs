@@ -4,7 +4,7 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-19  
+> **Last reviewed:** 2026-10-20
 > **Coverage:** Project identity, audience, vision and high-level getting started  
 > **Supersedes:** None
 
@@ -88,25 +88,52 @@ Where necessary, lightweight Swift components may provide additional macOS appli
 
 The project will avoid modifying the GNU Emacs core unless a specific limitation makes such changes necessary.
 
-## Getting started with the prototype
+## Install and launch the development distribution
 
-The first development milestone provides an experimental Emacs Lisp configuration,
-not a packaged macOS application. Install GNU Emacs 29 or newer, then from a
-checkout of Glassmacs run:
+Glassmacs is a development distribution layered on upstream GNU Emacs, not a
+standalone application. Install GNU Emacs 29 or newer (recommended) and make its
+`emacs` executable available on `PATH`. From a checkout of Glassmacs, start the
+graphical editor with:
 
 ```sh
-./scripts/bootstrap
 ./scripts/glassmacs
 ```
 
-The bootstrap installs ESS and optional document-editing packages in
-`~/.config/glassmacs/elpa`, separate from your existing Emacs and Aquamacs
-configuration. Set `GLASSMACS_HOME` to choose another data directory.
-The launcher starts Emacs with `-Q` and loads Glassmacs's `init.el`;
-it does not edit `~/.emacs`, `~/.emacs.d`, or Aquamacs preferences.
+Use `./scripts/glassmacs -nw` for terminal Emacs, and pass ordinary Emacs
+arguments or file paths after the launcher, for example
+`./scripts/glassmacs some-file.R` or
+`./scripts/glassmacs /ssh:research:/home/user/project/analysis.R`. The same
+terminal command works on Linux with a terminal-capable GNU Emacs. Glassmacs
+forwards these arguments to upstream Emacs; no separate argument syntax is
+introduced. Set `GLASSMACS_EMACS` if the executable is not named `emacs` or is
+not on `PATH`.
 
-Install R separately and ensure its executable is available on `PATH`.
-Quarto and other rendering tools are also external dependencies.
+Core editing requires only GNU Emacs. ESS, R, Quarto, TeX/AUCTeX, SSH and Mosh
+are optional integrations; ordinary text editing does not require them. To
+install the optional Emacs packages for research/document workflows, run:
+
+```sh
+./scripts/bootstrap
+```
+
+This explicit first-run step needs network access when packages are missing.
+Normal Glassmacs startup does not install packages or refresh package archives,
+so it can run offline after any desired packages have been installed. Package
+versions are not locked or reproducible yet. Packages and Glassmacs settings
+are kept under `~/.config/glassmacs` by default; set `GLASSMACS_HOME` to use a
+different directory. The launcher starts Emacs with `-Q` and does not modify
+`~/.emacs`, `~/.emacs.d`, or Aquamacs preferences. Start ordinary GNU Emacs
+with `emacs` (not the Glassmacs launcher) to return to its normal configuration.
+
+Install R, Quarto, TeX and remote tools separately when needed, and ensure their
+executables are available on `PATH`. Missing optional integrations do not block
+startup; the relevant command reports what is missing.
+
+For installation details and a manual smoke test, see
+[development](docs/development.md). Linux batch/terminal checks do not validate
+macOS Cocoa behavior. A native macOS graphical build, its hybrid shortcuts and
+appearance still require manual verification; no standalone app packaging,
+signing or notarization is provided.
 
 Run the automated tests with:
 
