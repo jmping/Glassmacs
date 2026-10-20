@@ -75,7 +75,7 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
             guard FileManager.default.fileExists(atPath: configuration.initFilePath) else {
                 throw LauncherError.invalidCheckout(configuration.checkoutPath)
             }
-            if forwardToExistingServer(configuration, files: pendingFiles) {
+            if try forwardToExistingServer(configuration, files: pendingFiles) {
                 serverAvailable = true
                 pendingFiles.removeAll()
                 return
