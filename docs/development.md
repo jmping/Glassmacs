@@ -46,6 +46,12 @@ emacs -Q --batch -l init.el \
               (byte-compile-file file)))'
 ```
 
+`tests/test-glassmacs-sessions.el` covers sessions and the queue with mocked
+sending against throwaway processes, plus `glassmacs-sessions-integration-real-ess`,
+which skips unless R and ESS are discoverable (`GLASSMACS_SKIP_INTEGRATION=1`
+forces a skip). To run it against a system ESS, add `-L <ess directory>` to the
+`emacs` command in `scripts/test`.
+
 For a real ESS/R integration check, install ESS and R, start Glassmacs, open an
 R file, run `M-x glassmacs-r-start`, and evaluate `1 + 1`. Rendering tests
 likewise require R packages or the Quarto CLI. GUI key behavior must be checked

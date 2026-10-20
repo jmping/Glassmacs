@@ -3,6 +3,7 @@
 (require 'glassmacs-core)
 (require 'glassmacs-keys)
 (require 'glassmacs-r)
+(require 'glassmacs-sessions)
 (require 'glassmacs-documents)
 (require 'glassmacs-shiny)
 (require 'glassmacs-appearance)

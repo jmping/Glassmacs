@@ -37,3 +37,9 @@ Future entries should state date, affected document IDs, old/new coverage or aut
 - **Expanded DOC-ARCH and DOC-KEYS:** specified lifecycle/document/buffer/window/tab/frame/session/command/context/capability/appearance/preference/platform/research boundaries; documented existing Command bindings, conflicts, Option input, international layouts and left/right modifier gaps.
 - **Updated DOC-INDEX:** narrowed canonical coverage and cross-references; compatibility and menu documents remain Proposed pending review. The architecture and existing execution, SSH, ESS, LaTeX, Shiny and research boundaries remain authoritative for their existing scopes.
 - **No code changes:** this audit specifies future engineering and acceptance criteria; it does not implement frames, menus, settings persistence, native services or keyboard behavior.
+
+## 2026-10-20 — ESS session registry and minimal R queue (implementation PR)
+
+- **Updated DOC-R-WORKFLOWS:** the minimal queue and session registry are now documented as implemented (`lisp/glassmacs-sessions.el`); editing, reordering, a queue buffer, output budgets, persistence and remote sessions remain planned.
+- **Updated DOC-ROADMAP:** Milestone 2 queue track records what is delivered and what is deferred. Pending-command removal now always requires confirmation; this tightens the earlier "delete work not yet sent" wording.
+- No documents superseded. Dependencies on menu, keybinding and preference architecture are documented, not implemented.
