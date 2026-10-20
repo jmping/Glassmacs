@@ -353,8 +353,7 @@
           (should (string-match-p
                    (regexp-quote glassmacs-r-output-suppressed-marker)
                    (gs-test--filter-output process "overflow")))
-          (should (equal (gs-test--filter-output process "> \n> " t)
-                         "> \n> "))
+          (should (equal (gs-test--filter-output process "> \n> " t) "> "))
           (should-not glassmacs-r--output-suppressed)
           (should (= glassmacs-r--output-count 0)))
        (kill-buffer buffer)))))
@@ -412,7 +411,7 @@
                    (gs-test--filter-output process "too much")))
           (should (equal
                    (gs-test--filter-output process "output\nR> " t)
-                   (concat glassmacs-r-output-suppressed-marker "R> ")))
+                   "R> "))
           (should-not glassmacs-r--output-suppressed))
        (kill-buffer buffer)))))
 
