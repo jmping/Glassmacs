@@ -105,7 +105,11 @@ printf 'mock-zip' > "$destination"
             "xcrun": """#!/bin/bash
 printf 'xcrun %s\\n' "$*" >> "$MOCK_LOG"
 if [[ "$1" == notarytool && "$2" == submit ]]; then
-  printf '{"id":"875456b4-1dd3-4e72-af29-9c0cb4357909","status":"%s"}\\n' "${NOTARY_STATUS:-Accepted}"
+  if [[ "${NOTARY_NO_ID:-0}" == 1 ]]; then
+    printf '{"status":"%s"}\\n' "${NOTARY_STATUS:-Accepted}"
+  else
+    printf '{"id":"875456b4-1dd3-4e72-af29-9c0cb4357909","status":"%s"}\\n' "${NOTARY_STATUS:-Accepted}"
+  fi
   if [[ "${NOTARY_EXIT:-0}" == 1 ]]; then exit 1; fi
 elif [[ "$1" == stapler && "$2" == validate && "${STAPLER_VALIDATE_FAIL:-0}" == 1 ]]; then
   exit 1
@@ -113,6 +117,7 @@ fi
 """,
             "spctl": """#!/bin/bash
 printf 'spctl %s\\n' "$*" >> "$MOCK_LOG"
+if [[ "${SPCTL_FAIL:-0}" == 1 ]]; then exit 1; fi
 """,
         }
         for name, contents in commands.items():
@@ -172,6 +177,23 @@ printf 'spctl %s\\n' "$*" >> "$MOCK_LOG"
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((output_dir / "Glassmacs-macOS.zip").exists())
         self.assertNotIn("stapler", log.read_text())
+
+    def test_missing_submission_id_and_gatekeeper_failure_prevent_final_archive(self):
+        no_id, no_id_output, no_id_log = self.run_release(
+            extra_environment={"NOTARY_NO_ID": "1"}
+        )
+        self.assertNotEqual(no_id.returncode, 0)
+        self.assertIn("without a submission ID", no_id.stderr)
+        self.assertFalse((no_id_output / "Glassmacs-macOS.zip").exists())
+        self.assertNotIn("stapler", no_id_log.read_text())
+
+        gatekeeper, gatekeeper_output, gatekeeper_log = self.run_release(
+            extra_environment={"SPCTL_FAIL": "1"}
+        )
+        self.assertNotEqual(gatekeeper.returncode, 0)
+        self.assertTrue((gatekeeper_output / "Glassmacs-notarization.zip").is_file())
+        self.assertFalse((gatekeeper_output / "Glassmacs-macOS.zip").exists())
+        self.assertNotIn("Glassmacs-macOS.zip", gatekeeper_log.read_text())
 
     def test_signing_or_staple_validation_failure_stops_final_archive(self):
         signing_failure, signing_output, signing_log = self.run_release(

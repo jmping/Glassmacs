@@ -96,6 +96,13 @@ def expand_runtime_path(path, binary, rpaths):
         return [Path(path)]
     return []
 
+def dependency_resolves(candidate):
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError:
+        return False
+    return within_bundle(resolved) or str(resolved).startswith(system_prefixes)
+
 def own_install_name(binary):
     try:
         lines = output("/usr/bin/otool", "-D", str(binary)).splitlines()
@@ -135,7 +142,7 @@ for binary in binaries:
         if dependency.startswith(system_prefixes):
             continue
         candidates = expand_runtime_path(dependency, binary, rpaths)
-        if not candidates or not any(candidate.is_file() for candidate in candidates):
+        if not candidates or not any(dependency_resolves(candidate) for candidate in candidates):
             sys.exit(f"Unresolved or non-relocatable dependency in {binary}: {dependency}")
 
 init_file = contents / "Resources/Glassmacs/init.el"
