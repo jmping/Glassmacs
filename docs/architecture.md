@@ -228,6 +228,25 @@ Support **Mosh (Mobile Shell)** as an optional transport for interactive remote 
 
 **Status:** optional future transport; not currently implemented.
 
+## Research application profiles: external syntax and tools
+
+Glassmacs must accommodate established statistical and research applications that use **embedded model syntax, standalone source files, imported scripts, command-line executables or remote jobs**. Users should not have to migrate working research pipelines into a new language or graphical interface to benefit from the editor.
+
+A research application profile is a thin, optional adapter with declarative metadata (file extensions and embedded-language contexts, syntax/major-mode association, executable and version detection, invocation templates, working directory, expected outputs, diagnostic parsing and preview handlers) plus narrowly scoped Emacs Lisp integration where needed. Profiles reuse the common execution router, per-session queues, SSH/TRAMP, optional Mosh terminal sessions, durable jobs, output flood controls, artifact mapping and provenance ledger. They do **not** introduce new process engines.
+
+Representative profiles:
+
+- **lavaan:** R-embedded model syntax and standalone model text where used; highlighting/navigation of parameter specifications, model-fit diagnostics, parameter tables, standardized solutions and optional diagrams. Preserve normal R/ESS evaluation.
+- **JAGS/BUGS:** model-file modes, `rjags` and established ESS BUGS/JAGS facilities, chain configuration, progress, diagnostics and remote sampling.
+- **Stan:** `.stan` language support, `cmdstanr` and existing `rstan` workflows, compiler diagnostics, model caching, multiple chains and remote results.
+- **Other external tools:** configurable command-line statistical applications (for example Stata, SAS, Mplus, Julia or Python workflows) where licensing and installed tools permit; use existing language modes and supported execution adapters rather than claiming universal integration.
+
+Profiles must distinguish **editing support** from **execution support** and **result inspection**; each can be available independently. Detect missing applications and unsupported versions without breaking text editing. Imported external syntax must not be evaluated merely by opening a file. Profile-defined commands and project-local configuration are untrusted until reviewed; require explicit consent before execution and avoid unsafe shell interpolation. Preserve remote host and working-directory identity, job cancellation, path mapping and artifact retrieval. Large model output and diagnostic logs must be bounded.
+
+The profile contract should support discovery, capability negotiation, documentation and optional per-project configuration without silently enabling network access or installing proprietary tools. Define extension points with tests for file detection, embedded syntax, local execution, remote execution, log diagnostics and artifact previews. Start with one or two well-supported profiles and expand based on user demand rather than promising every application at launch.
+
+**Status:** proposed extension architecture; profile-specific functionality beyond existing ESS scaffolding is not yet implemented or validated.
+
 ## Existing limitations
 
 Current implementation is local-first, uses no version-locked package snapshot and has not been confirmed in native macOS Cocoa. The proposed execution layer and backend contracts in this document are targets, **not assertions of existing code**. Preserve these distinctions in README and workflow documentation.
