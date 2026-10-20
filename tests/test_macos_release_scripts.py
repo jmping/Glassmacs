@@ -23,6 +23,119 @@ class MacOSReleaseScriptTests(unittest.TestCase):
         self.assertIn(".macOS(.v13)", package)
         self.assertIn('cp "$root/assets/icon/Glassmacs.icns"', builder)
 
+    def test_build_sanitizes_before_strict_bundle_validation(self):
+        builder = (ROOT / "scripts/build-macos-app").read_text()
+        sanitizer_call = builder.index('"$root/scripts/sanitize-macos-rpaths" "$output"')
+        validator_call = builder.index(
+            'GLASSMACS_SKIP_EMACS_STARTUP=1 "$root/scripts/validate-macos-app" "$output"'
+        )
+        self.assertLess(sanitizer_call, validator_call)
+        self.assertIn("install_name_tool", (ROOT / "scripts/sanitize-macos-rpaths").read_text())
+
+    def run_rpath_sanitizer(self, fixture, fail_delete=False, fail_otool=False):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        app = root / "Glass macs.app"
+        contents = app / "Contents"
+        contents.mkdir(parents=True)
+        binary_a = contents / "MacOS/lib-arm64-11/libgccjit/libcc1.0.so"
+        binary_a.parent.mkdir(parents=True)
+        binary_a.write_text("\n".join(f"RPATH={entry}" for entry in fixture[0]))
+        binary_b = contents / "MacOS/Frameworks/other.dylib"
+        binary_b.parent.mkdir(parents=True)
+        binary_b.write_text("\n".join(f"RPATH={entry}" for entry in fixture[1]))
+        tools = root / "tools"
+        tools.mkdir()
+        log = root / "install-name-tool.log"
+
+        file_tool = tools / "file"
+        file_tool.write_text("""#!/bin/bash
+case "$2" in
+  *.so|*.dylib) printf 'Mach-O 64-bit dynamically linked shared library\\n' ;;
+  *) printf 'ASCII text\\n' ;;
+esac
+""")
+        file_tool.chmod(0o755)
+
+        otool = tools / "otool"
+        otool.write_text("""#!/usr/bin/env python3
+import os, sys
+if os.environ.get("OTOOL_FAIL") == "1":
+    sys.exit(8)
+if sys.argv[1] != "-l":
+    sys.exit(9)
+for entry in open(sys.argv[2]).read().splitlines():
+    if entry.startswith("RPATH="):
+        print("Load command 1")
+        print("          cmd LC_RPATH")
+        print("      cmdsize 56")
+        print(f"         path {entry[6:]} (offset 12)")
+""")
+        otool.chmod(0o755)
+
+        installer = tools / "install_name_tool"
+        installer.write_text("""#!/usr/bin/env python3
+import os, sys
+if os.environ.get("INSTALL_NAME_FAIL") == "1":
+    sys.exit(7)
+_, operation, entry, binary = sys.argv
+with open(os.environ["INSTALL_NAME_LOG"], "a") as log:
+    log.write(f"{binary}\\t{entry}\\n")
+lines = open(binary).read().splitlines()
+lines.remove("RPATH=" + entry)
+open(binary, "w").write("\\n".join(lines))
+""")
+        installer.chmod(0o755)
+
+        environment = os.environ.copy()
+        environment.update({
+            "GLASSMACS_FILE_TOOL": str(file_tool),
+            "GLASSMACS_OTOOL": str(otool),
+            "GLASSMACS_INSTALL_NAME_TOOL": str(installer),
+            "INSTALL_NAME_LOG": str(log),
+        })
+        if fail_delete:
+            environment["INSTALL_NAME_FAIL"] = "1"
+        if fail_otool:
+            environment["OTOOL_FAIL"] = "1"
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts/sanitize-macos-rpaths"), str(app)],
+            text=True, capture_output=True, check=False, env=environment,
+        )
+        return result, binary_a, binary_b, log
+
+    def test_rpath_sanitizer_cleans_all_binaries_but_preserves_relocatable_entries(self):
+        obsolete = [
+            "/private/tmp/nix-build-gcc-14.3.0-abc/source/lib",
+            "/nix/store/abcd1234-gcc-14.3.0/lib",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib",
+        ]
+        safe = ["@loader_path/../lib", "@executable_path/../Frameworks", "@rpath"]
+        result, binary_a, binary_b, log = self.run_rpath_sanitizer(
+            [obsolete + safe, [obsolete[1], "@loader_path"]]
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(log.read_text().splitlines()), len(obsolete) + 1)
+        for entry in safe:
+            self.assertIn(f"RPATH={entry}", binary_a.read_text())
+        self.assertIn("RPATH=@loader_path", binary_b.read_text())
+        for entry in obsolete:
+            self.assertNotIn(f"RPATH={entry}", binary_a.read_text())
+        self.assertNotIn(f"RPATH={obsolete[1]}", binary_b.read_text())
+
+    def test_rpath_sanitizer_fails_when_inspection_or_removal_fails(self):
+        nix_rpath = "/nix/store/abcd-gcc/lib"
+        remove_result, _, _, _ = self.run_rpath_sanitizer(
+            [[nix_rpath], []], fail_delete=True
+        )
+        self.assertNotEqual(remove_result.returncode, 0)
+
+        inspect_result, _, _, _ = self.run_rpath_sanitizer(
+            [[nix_rpath], []], fail_otool=True
+        )
+        self.assertNotEqual(inspect_result.returncode, 0)
+
     def test_native_compilation_is_configured_before_package_loading(self):
         startup = (ROOT / "init.el").read_text()
         policy = re.search(
