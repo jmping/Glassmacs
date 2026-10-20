@@ -32,6 +32,13 @@ enum GlassmacsBootstrap {
             guard setenv("GLASSMACS_HOME", home.path, 1) == 0 else {
                 throw BootstrapError.cannotConfigureHome(home.path)
             }
+            let environment = configuration.emacsEnvironment(
+                environment: ProcessInfo.processInfo.environment
+            )
+            guard let deploymentTarget = environment["MACOSX_DEPLOYMENT_TARGET"],
+                  setenv("MACOSX_DEPLOYMENT_TARGET", deploymentTarget, 1) == 0 else {
+                throw BootstrapError.cannotConfigureDeploymentTarget
+            }
 
             let arguments = configuration.emacsArguments(
                 forwarding: Array(CommandLine.arguments.dropFirst())
@@ -56,6 +63,7 @@ enum BootstrapError: LocalizedError {
     case missingExecutable(String)
     case missingConfiguration(String)
     case cannotConfigureHome(String)
+    case cannotConfigureDeploymentTarget
     case cannotLaunchEmacs(String)
 
     var errorDescription: String? {
@@ -66,6 +74,8 @@ enum BootstrapError: LocalizedError {
             return "Bundled Glassmacs configuration is missing: \(path)"
         case .cannotConfigureHome(let path):
             return "Could not set GLASSMACS_HOME to \(path)"
+        case .cannotConfigureDeploymentTarget:
+            return "Could not set MACOSX_DEPLOYMENT_TARGET for bundled Emacs"
         case .cannotLaunchEmacs(let reason):
             return "Could not start bundled Emacs: \(reason)"
         }

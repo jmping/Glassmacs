@@ -1,0 +1,130 @@
+#!/bin/bash
+set -euo pipefail
+
+usage() {
+  printf 'Usage: %s /path/to/Glassmacs.app KEYCHAIN_PROFILE [distribution-directory]\n' "$0" >&2
+}
+
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
+  usage
+  exit 2
+fi
+
+app=$1
+profile=$2
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+dist_dir=${3:-"$root/dist"}
+
+if [ ! -d "$app" ] || [ ! -f "$app/Contents/Info.plist" ]; then
+  printf 'Application bundle not found or invalid: %s\n' "$app" >&2
+  exit 1
+fi
+if [ -z "$profile" ]; then
+  printf 'A notarytool Keychain profile name is required.\n' >&2
+  usage
+  exit 2
+fi
+app=$(CDPATH='' cd -- "$app" && pwd)
+if [ ! -x "$app/Contents/MacOS/Emacs" ]; then
+  printf 'Bundled Emacs executable is missing: %s\n' "$app/Contents/MacOS/Emacs" >&2
+  exit 1
+fi
+mkdir -p "$dist_dir"
+dist_dir=$(CDPATH='' cd -- "$dist_dir" && pwd)
+notarization_zip="$dist_dir/Glassmacs-notarization.zip"
+final_zip="$dist_dir/Glassmacs-macOS.zip"
+temp_dir=$(mktemp -d "$dist_dir/.glassmacs-release.XXXXXX")
+cleanup() {
+  rm -rf -- "$temp_dir"
+}
+trap cleanup EXIT
+
+codesign --verify --deep --strict --verbose=2 "$app"
+if ! signing_metadata=$(codesign -dv --verbose=4 "$app" 2>&1); then
+  printf 'Could not inspect the outer application signature.\n' >&2
+  exit 1
+fi
+if ! emacs_metadata=$(codesign -dv --verbose=4 "$app/Contents/MacOS/Emacs" 2>&1); then
+  printf 'Could not inspect the bundled Emacs signature.\n' >&2
+  exit 1
+fi
+app_team=$(sed -n 's/^TeamIdentifier=//p' <<<"$signing_metadata" | head -n 1)
+emacs_team=$(sed -n 's/^TeamIdentifier=//p' <<<"$emacs_metadata" | head -n 1)
+if ! grep -Fq 'Authority=Developer ID Application:' <<<"$signing_metadata" ||
+   ! grep -Fq 'Authority=Developer ID Application:' <<<"$emacs_metadata" ||
+   [ -z "$app_team" ] || [ "$app_team" = "not set" ] ||
+   [ -z "$emacs_team" ] || [ "$app_team" != "$emacs_team" ]; then
+  printf 'Application is not signed with a Developer ID Application identity.\n' >&2
+  printf 'The outer app and bundled Emacs must be signed by the same Developer ID team.\n' >&2
+  exit 1
+fi
+
+rm -f -- "$notarization_zip"
+ditto -c -k --keepParent "$app" "$notarization_zip"
+if [ ! -s "$notarization_zip" ]; then
+  printf 'Could not create notarization archive: %s\n' "$notarization_zip" >&2
+  exit 1
+fi
+
+set +e
+notarization_result=$(xcrun notarytool submit "$notarization_zip" \
+  --keychain-profile "$profile" --wait --output-format json \
+  2>"$temp_dir/notarytool.stderr")
+notarization_exit=$?
+set -e
+notarization_diagnostics=$(<"$temp_dir/notarytool.stderr")
+submission_id=$(python3 -c '
+import json, re, sys
+text = sys.stdin.read()
+try:
+    result = json.loads(text)
+except json.JSONDecodeError:
+    result = {}
+if result.get("id"):
+    print(result["id"])
+else:
+    match = re.search(r"\b[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\b", text)
+    print(match.group(0) if match else "")
+' <<<"${notarization_result}"$'\n'"${notarization_diagnostics}")
+notarization_status=$(python3 -c '
+import json, sys
+try:
+    print(json.loads(sys.stdin.read()).get("status", ""))
+except json.JSONDecodeError:
+    print("")
+' <<<"$notarization_result")
+
+if [ "$notarization_exit" -ne 0 ] || [ "$notarization_status" != "Accepted" ]; then
+  printf 'Apple notarization did not succeed (status: %s).\n' \
+    "${notarization_status:-unknown}" >&2
+  if [ -n "$submission_id" ]; then
+    printf 'Submission ID: %s\n' "$submission_id" >&2
+    printf 'Retrieve diagnostics with: xcrun notarytool log %s --keychain-profile PROFILE_NAME\n' \
+      "$submission_id" >&2
+    if [ "${GLASSMACS_NOTARY_FETCH_LOG:-0}" = 1 ]; then
+      printf 'Fetching notarization diagnostics:\n' >&2
+      xcrun notarytool log "$submission_id" --keychain-profile "$profile" >&2 || true
+    fi
+  else
+    printf 'No submission ID was returned; check the notarytool and Keychain profile configuration.\n' >&2
+  fi
+  exit 1
+fi
+
+if [ -z "$submission_id" ]; then
+  printf 'Notarytool reported Accepted without a submission ID; refusing to staple.\n' >&2
+  exit 1
+fi
+printf 'Apple accepted notarization submission %s.\n' "$submission_id"
+
+xcrun stapler staple "$app"
+xcrun stapler validate "$app"
+spctl --assess --type execute --verbose=4 "$app"
+
+ditto -c -k --keepParent "$app" "$temp_dir/Glassmacs-macOS.zip"
+if [ ! -s "$temp_dir/Glassmacs-macOS.zip" ]; then
+  printf 'Could not create final distribution archive.\n' >&2
+  exit 1
+fi
+mv -f -- "$temp_dir/Glassmacs-macOS.zip" "$final_zip"
+printf 'Final stapled distribution: %s\n' "$final_zip"

@@ -21,7 +21,9 @@ final class LaunchConfigurationTests: XCTestCase {
                 forwarding: ["/Users/test/Research folder/Δ.R"]
             ),
             [
-                "-Q", "--load",
+                "-Q", "--eval",
+                "(setq native-comp-jit-compilation (equal (getenv \"GLASSMACS_NATIVE_COMP\") \"1\"))",
+                "--load",
                 "/Applications/Glass macs.app/Contents/Resources/Glassmacs/init.el",
                 "/Users/test/Research folder/Δ.R"
             ]
@@ -63,5 +65,43 @@ final class LaunchConfigurationTests: XCTestCase {
                 defaultHome: URL(fileURLWithPath: "/Users/test/Library/Application Support/Glassmacs")
             )
         )
+    }
+
+    func testDeploymentTargetDefaultsToSupportedMinimum() {
+        let configuration = LaunchConfiguration(
+            bundleURL: URL(fileURLWithPath: "/Applications/Glassmacs.app")
+        )
+
+        XCTAssertEqual(
+            configuration.emacsEnvironment(environment: [:])["MACOSX_DEPLOYMENT_TARGET"],
+            "13.0"
+        )
+        XCTAssertEqual(
+            configuration.emacsEnvironment(
+                environment: ["MACOSX_DEPLOYMENT_TARGET": "15.0"]
+            )["MACOSX_DEPLOYMENT_TARGET"],
+            "15.0"
+        )
+        XCTAssertEqual(
+            configuration.emacsEnvironment(
+                environment: ["MACOSX_DEPLOYMENT_TARGET": "26.0"]
+            )["MACOSX_DEPLOYMENT_TARGET"],
+            "26.0"
+        )
+    }
+
+    func testInvalidOrTooOldDeploymentTargetFallsBackToSupportedMinimum() {
+        let configuration = LaunchConfiguration(
+            bundleURL: URL(fileURLWithPath: "/Applications/Glassmacs.app")
+        )
+
+        for invalidTarget in ["", "invalid", "12.7", "18.0", "13..0", "13.0beta"] {
+            XCTAssertEqual(
+                configuration.emacsEnvironment(
+                    environment: ["MACOSX_DEPLOYMENT_TARGET": invalidTarget]
+                )["MACOSX_DEPLOYMENT_TARGET"],
+                "13.0"
+            )
+        }
     }
 }

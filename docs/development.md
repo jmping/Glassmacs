@@ -48,7 +48,9 @@ configuration, verifies relocation, and uploads an app ZIP. These are build and
 batch checks only; they do not exercise Finder, LaunchServices, Dock identity,
 Cocoa windows, native menus, or interactive Emacs behavior. See the
 [macOS application guide](macos-launcher.md) for build inputs and manual GUI
-verification steps.
+verification steps. The portable Python tests mock codesign, notarytool,
+stapler, and Gatekeeper to cover release ordering and failure behavior without
+Apple credentials.
 
 For PR #4, the workflow was created but the GitHub Actions run ended with
 `action_required` before any jobs were created. This is an approval/permissions
@@ -122,6 +124,14 @@ launch to choose another directory. Optional user customizations belong in
 `$GLASSMACS_HOME/custom.el`. Ordinary GNU Emacs and Aquamacs configuration is
 neither loaded nor modified. To return to ordinary GNU Emacs, start it directly
 with `emacs` rather than `./scripts/glassmacs`.
+
+For the bundled macOS app, automatic native JIT compilation is disabled before
+Glassmacs modules/package initialization; `GLASSMACS_NATIVE_COMP=1` opts into
+JIT for controlled testing. The bootstrap exports `MACOSX_DEPLOYMENT_TARGET`
+13.0 by default, matching the app's minimum supported macOS version, while
+preserving a valid explicit override. See the
+[macOS application guide](macos-launcher.md#native-lisp-compilation) for the
+separate generated-`.eln` Team ID limitation and release signing/notarization.
 
 The core editor has no required Emacs packages beyond GNU Emacs. ESS and
 document-editing packages (markdown-mode, Quarto mode, polymode/poly-R, and

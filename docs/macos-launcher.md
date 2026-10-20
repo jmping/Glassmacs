@@ -54,7 +54,9 @@ tools `curl`, `shasum`, `hdiutil`, `ditto`, `plutil`, `PlistBuddy`, and `otool`.
 The default build downloads a pinned Cocoa GNU Emacs release archive and checks
 its SHA-256 before copying it. To build from a separately obtained compatible
 Cocoa Emacs bundle instead, set `GLASSMACS_UPSTREAM_EMACS_APP` to its absolute
-`.app` path; the build does not modify that source bundle.
+`.app` path; the build does not modify that source bundle. The supported minimum
+is macOS 13.0 in SwiftPM, `LSMinimumSystemVersion`, and the bootstrap's default
+native-compiler deployment target.
 
 ```sh
 ./scripts/build-macos-app
@@ -62,33 +64,83 @@ Cocoa Emacs bundle instead, set `GLASSMACS_UPSTREAM_EMACS_APP` to its absolute
 ```
 
 The result is `build/Glassmacs.app`. The build copies only `init.el`, `lisp/`,
-and the package bootstrap into the bundle; it does not depend on the source
-checkout at runtime. The validation script checks bundle metadata, document
-extensions, required files, direct executable dependencies, and a batch startup
-of the bundled Emacs. It rejects absolute non-system library dependencies and
-non-relocatable runtime search paths. CI additionally runs Swift tests and ERT,
+the package bootstrap, and the committed `assets/icon/Glassmacs.icns` into the
+bundle; it does not depend on the source checkout at runtime. The validation
+script checks bundle metadata and icon, document extensions, required files,
+all bundled Mach-O dependencies and runtime search paths, and a batch startup
+of the bundled Emacs. Use `GLASSMACS_SKIP_EMACS_STARTUP=1` to run structural
+checks without launching an unsigned executable on a managed Mac; dependency
+and startup-policy checks still run. CI additionally runs Swift tests and ERT,
 tests the bundled configuration, relocates the app, and produces a downloadable
 ZIP artifact.
 
 Drag `Glassmacs.app` into `/Applications` (or another location) to install.
-Developer ID signing is supported as a separate, opt-in step. The build itself
-does not sign with a personal identity and notarization is not yet automated.
-On managed Macs requiring identified-developer signatures, **sign before
-running the validator**, because validation launches bundled Emacs:
+The ordinary build and validation do not require Developer ID credentials. To
+sign a release, first validate the unsigned bundle, then select an installed
+Developer ID Application identity by its certificate SHA-1:
 
 ```sh
 ./scripts/build-macos-app
-GLASSMACS_SIGN_IDENTITY="<Developer ID Application certificate SHA-1>" \\
+GLASSMACS_SKIP_EMACS_STARTUP=1 ./scripts/validate-macos-app build/Glassmacs.app
+GLASSMACS_SIGN_IDENTITY="<Developer ID Application certificate SHA-1>" \
   bash ./scripts/sign-macos-app build/Glassmacs.app
 ./scripts/validate-macos-app build/Glassmacs.app
 ```
 
-The signing script signs regular Mach-O files within the bundle, then the
-outer application, using hardened runtime and a secure timestamp. It verifies
-the resulting bundle. Do not modify the bundle after signing. Signatures alone
-do not imply notarization or compliance with every enterprise policy; perform
-launch tests and notarize before public distribution. The workflow does not
-set the app as a default document handler.
+The signing script signs nested Mach-O files first, signs bundled Emacs with
+`macos/Glassmacs.entitlements.plist`, and signs the outer app with the same
+entitlements. It uses Developer ID, hardened runtime, and a secure timestamp,
+then requires `codesign --verify --deep --strict --verbose=2`. The only
+entitlement is `com.apple.security.cs.disable-library-validation`; it is
+included to reproduce the tested signing configuration, **not** because it
+has been shown to fix runtime-generated `.eln` Team ID failures. It broadens
+which libraries the signed process may load, so retain it only while needed by
+this distribution. Do not modify the bundle after signing.
+
+Inspect the signed Emacs executable with:
+
+```sh
+codesign -d --entitlements :- build/Glassmacs.app/Contents/MacOS/Emacs
+codesign -dv --verbose=4 build/Glassmacs.app/Contents/MacOS/Emacs
+codesign --verify --deep --strict --verbose=2 build/Glassmacs.app
+```
+
+The entitlements are not a substitute for signing runtime-generated native
+libraries with the same Team ID. Glassmacs never signs generated `.eln` files
+with a developer identity or distributes private keys.
+
+## Notarization and distribution
+
+Configure an Apple notarytool Keychain profile on the release Mac using Apple's
+`xcrun notarytool store-credentials` workflow. Credentials stay in that
+developer's Keychain; do not put Apple passwords, API keys, certificates, or
+private keys in this repository or CI artifact. The profile name is an argument
+and can be `Glassmacs` locally:
+
+```sh
+./scripts/notarize-macos-app build/Glassmacs.app Glassmacs
+```
+
+Optionally pass an output directory as the third argument. The script verifies
+the Developer ID signature, creates `Glassmacs-notarization.zip` with `ditto`,
+submits it with `notarytool --wait`, and requires an `Accepted` result and
+submission ID before stapling. It then staples and validates the ticket,
+requires Gatekeeper acceptance via `spctl --assess`, and only then writes the
+final `Glassmacs-macOS.zip`, which contains the stapled app. The pre-notarization
+archive and final distributable are separate. The app is not rebuilt or
+re-signed between submission and stapling.
+
+On a rejected submission, the script prints the submission ID and command
+needed to retrieve Apple's diagnostics. Set `GLASSMACS_NOTARY_FETCH_LOG=1` to
+request the log automatically:
+
+```sh
+xcrun notarytool log SUBMISSION_ID --keychain-profile Glassmacs
+```
+
+The release script and its mocked-tool regression tests do not contact Apple.
+An actual notarization still requires a valid local Developer ID-signed app,
+network access, and a configured Keychain profile.
 
 ## User data and R setup
 
@@ -123,6 +175,65 @@ Native Quartz graphics are supplied by the installed R build; Glassmacs does
 not add a graphics device or R execution backend. ESS remains responsible for
 process readiness and evaluation. The documented split-prompt limitation is
 unchanged.
+
+### Native Lisp compilation
+
+The bundled Emacs retains native-compilation support and can load compatible,
+properly signed precompiled `.eln` files. By default Glassmacs disables
+automatic native JIT compilation at the beginning of its `init.el`, before it
+loads Glassmacs modules or initializes packages. Ordinary interpreted and
+byte-compiled Emacs Lisp continue to work; this does not remove GCC JIT or
+disable byte compilation.
+
+The bootstrap exports `MACOSX_DEPLOYMENT_TARGET=13.0` unless the launching
+environment already supplies a recognized numeric macOS target at or above the
+supported macOS 13 minimum. The selected value is inherited by Emacs and
+native-compilation subprocesses. The SDK/compiler must still support an
+explicitly selected version. This default avoids the observed invalid
+`-mmacosx-version-min=18.0` generated by GCC 14.3 on the tested system; it does
+not change the bundle's minimum OS.
+
+The bootstrap also sets the JIT policy with a command-line `--eval` before
+loading the bundled init file; the init file repeats it before requiring any
+Glassmacs module. To explicitly enable JIT while diagnosing a compatible setup,
+launch with:
+
+```sh
+GLASSMACS_NATIVE_COMP=1 \
+  "/Applications/Glassmacs.app/Contents/MacOS/GlassmacsBootstrap"
+```
+
+The setting is read before Glassmacs' package initialization. This mode is for
+controlled developer testing, not a recommended end-user setting.
+
+The separate `.eln` issue is a code-signing library-validation failure:
+the tested Developer ID Emacs rejected a GCC-JIT-generated `.eln` without the
+same Team ID, while signing that library with the same Developer ID allowed it
+to load. Re-signing it ad hoc failed again. Disabling library validation on
+Emacs and removing hardened runtime were also insufficient on the tested
+machine. The cause is not conclusively known; organizational device policy is
+only a possibility, not an established explanation. Glassmacs does not suppress
+native-compilation errors, automatically sign generated libraries, require
+end-user certificates, or claim that the entitlement resolves this failure.
+JIT remains available for systems where both the compiler and generated
+libraries are permitted.
+
+Maintainer-reported local verification: setting the deployment target to 15.0
+allowed GCC 14.3 native compilation on an Apple Silicon macOS 27.0.1 test
+machine. A `.eln` signed with the same Developer ID Team ID as Emacs loaded on
+that machine, while an ad-hoc `.eln` did not. This change does not reproduce
+those macOS experiments in Linux CI; the 13.0 default follows the declared app
+minimum and must be exercised with the packaged toolchain. If an older
+development run left incompatible generated files, inspect and manually clear
+only the Glassmacs cache after quitting Emacs:
+
+```sh
+find "$HOME/Library/Application Support/Glassmacs/eln-cache" \
+  -type f -name '*.eln' -delete
+```
+
+Do not clear the bundled Emacs native Lisp directories: properly signed
+precompiled libraries remain eligible to load.
 
 ## Launch and diagnostics
 
@@ -170,11 +281,17 @@ Before calling those behaviors verified, manually test on supported macOS:
 5. Check native menus and keyboard shortcuts, plus app startup after moving the
    bundle to a different directory.
 
-Known limitations: the app is not signed by default and is not notarized; LaunchServices may
-not select it as the default document handler; package versions are not locked;
+Known limitations: local builds are unsigned by default; notarization requires
+the developer's credentials and is not performed in CI; LaunchServices may
+not select the app as default document handler; package versions are not locked;
 R and optional command-line programs are not bundled; and GUI behavior remains
 unverified until the manual checks above are completed. This milestone does
 not add remote ESS, PTY output protection, or a new R backend.
+
+Maintainers report a successful local Developer ID signing, notarization
+acceptance, staple validation, and Gatekeeper assessment of the current
+Apple-Silicon Emacs 31.1 app. This is a prior local result, not a result of the
+mocked release tests or a promise that every future build is accepted.
 
 The pinned input is a third-party Cocoa build of GNU Emacs. The builder retains
 its bundle resources and license notices, but this CI artifact is not a formal

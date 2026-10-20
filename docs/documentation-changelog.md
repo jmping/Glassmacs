@@ -23,6 +23,12 @@ This log records changes in document **scope, ownership, status and authority**.
 
 Future entries should state date, affected document IDs, old/new coverage or authority, rationale, successor (if any), and associated PR/ADR.
 
+## 2026-10-20 — Native compilation and signed macOS release pipeline
+
+- **Updated DOC-MAC-LAUNCHER:** documented deployment-target propagation, default-off native JIT and developer opt-in, the unresolved generated-`.eln` Team ID issue, entitlements, Developer ID signing, notarization, stapling, Gatekeeper, and final distribution archive.
+- **Updated DOC-ARCH, DOC-DEV, DOC-ROADMAP and DOC-README:** distinguish portable build/mocked release validation from actual local signing/notarization and interactive macOS verification.
+- No document status or authority changed; no signing credentials or generated app artifacts are documented or committed.
+
 ## 2026-10-20 — Standalone macOS app packaging
 
 - **Replaced DOC-MAC-LAUNCHER coverage:** documents the one-bundle Cocoa Emacs architecture, pinned app build, install/bootstrap/configuration, runtime checks, and explicit GUI verification requirements; it no longer describes the superseded child-process launcher.

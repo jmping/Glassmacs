@@ -107,8 +107,9 @@ standard tools documented in the [macOS application guide](docs/macos-launcher.m
 The builder downloads the pinned Cocoa Emacs bundle and verifies its checksum.
 Drag `build/Glassmacs.app` into `/Applications`, then launch it from Finder,
 Spotlight, or the Dock. No separate Emacs installation or Glassmacs checkout is
-needed at runtime. The app is unsigned and not notarized; its Dock identity,
-Finder integration, and other GUI behavior still require macOS manual testing.
+needed at runtime. Builds are unsigned by default; the documented release
+scripts support Developer ID signing and notarization. Dock identity, Finder
+integration, and other GUI behavior still require macOS manual testing.
 
 For terminal use or development, `./scripts/glassmacs -nw` starts terminal
 Emacs. File arguments are forwarded directly, for example
@@ -147,7 +148,8 @@ For installation, diagnostics, manual macOS GUI checks, and limitations, see
 the [macOS application guide](docs/macos-launcher.md). Linux batch/terminal
 checks do not validate Cocoa behavior. CI builds and validates the app bundle
 but does not perform interactive GUI verification. Signing and notarization
-are not provided.
+are release-only operations requiring a Developer ID identity and local
+notarytool Keychain profile.
 
 Interactive document opens on a graphical macOS session default to a separate
 frame, with configurable new-tab and reuse-current policies. Special buffers

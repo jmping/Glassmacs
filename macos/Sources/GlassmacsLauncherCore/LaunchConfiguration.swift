@@ -1,6 +1,8 @@
 import Foundation
 
 public struct LaunchConfiguration: Equatable, Sendable {
+    public static let minimumMacOSVersion = "13.0"
+
     public let bundleURL: URL
 
     public init(bundleURL: URL) {
@@ -32,7 +34,35 @@ public struct LaunchConfiguration: Equatable, Sendable {
     }
 
     public func emacsArguments(forwarding arguments: [String]) -> [String] {
-        ["-Q", "--load", initFile.path] + arguments
+        [
+            "-Q",
+            "--eval",
+            "(setq native-comp-jit-compilation (equal (getenv \"GLASSMACS_NATIVE_COMP\") \"1\"))",
+            "--load",
+            initFile.path
+        ] + arguments
+    }
+
+    public func emacsEnvironment(environment: [String: String]) -> [String: String] {
+        var result = environment
+        if !Self.isSupportedDeploymentTarget(result["MACOSX_DEPLOYMENT_TARGET"]) {
+            result["MACOSX_DEPLOYMENT_TARGET"] = Self.minimumMacOSVersion
+        }
+        return result
+    }
+
+    private static func isSupportedDeploymentTarget(_ value: String?) -> Bool {
+        guard let value else { return false }
+        let components = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard (2...3).contains(components.count),
+              components.allSatisfy({
+                  !$0.isEmpty && $0.allSatisfy { $0 >= "0" && $0 <= "9" }
+              }),
+              let major = Int(components[0])
+        else {
+            return false
+        }
+        return (13...15).contains(major) || major >= 26
     }
 }
 

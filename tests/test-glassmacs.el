@@ -15,6 +15,21 @@
                      glassmacs-appearance))
     (should (featurep feature))))
 
+(ert-deftest glassmacs-native-jit-is-disabled-by-default-before-packages ()
+  (should (boundp 'native-comp-jit-compilation))
+  (should (eq native-comp-jit-compilation
+              (equal (getenv "GLASSMACS_NATIVE_COMP") "1")))
+  (should package--initialized)
+  (cl-letf (((symbol-function 'getenv)
+             (lambda (name)
+               (if (equal name "GLASSMACS_NATIVE_COMP") "1"))))
+    (glassmacs--configure-native-compilation)
+    (should native-comp-jit-compilation))
+  (cl-letf (((symbol-function 'getenv)
+             (lambda (_name) nil)))
+    (glassmacs--configure-native-compilation)
+    (should-not native-comp-jit-compilation)))
+
 (ert-deftest glassmacs-document-classification-excludes-special-buffers ()
   (let ((document (generate-new-buffer "glassmacs-document"))
         (untitled (generate-new-buffer "Untitled"))

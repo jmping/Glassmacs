@@ -115,18 +115,19 @@ Exit conditions require **actual macOS GUI tests** for window/tab behavior, not 
 - Refine Cocoa window/frame behavior, typography, dark/light appearance, shortcuts, file associations and application conventions.
 - **Standalone app build implemented:** a reproducible macOS build starts from a pinned, checksum-verified Cocoa GNU Emacs bundle, installs Glassmacs Lisp/configuration, uses one top-level `Glassmacs.app` bundle identity, and stores mutable state under `~/Library/Application Support/Glassmacs`. A process-replacing Swift bootstrap loads the bundled Emacs; the app is not an Emacs child-process helper.
 - **Build validation implemented:** macOS CI checks bundle metadata and direct executable dependencies, runs Swift and ERT tests with the bundled Emacs, tests the bundled configuration and relocation, and uploads a ZIP artifact.
+- **Release and native-compilation safeguards implemented:** the bootstrap supplies the macOS 13 deployment target, native JIT defaults off with a developer opt-in, signing applies version-controlled hardened-runtime entitlements, and a mock-tested release script orders notarization, stapling, Gatekeeper assessment, and final ZIP creation. This does not resolve runtime-generated `.eln` Team ID failures.
 - Complete actual GUI validation of Finder/Dock activation, reopen, document-open dispatch and frame policy, save prompts, keyboard shortcuts, menus, interactive ESS/R, and Quartz graphics. Do not mark these verified based only on CI or ERT.
 - Continue assessing lifecycle, document integration, preview coordination and updates; never replace Emacs editing or execution engines.
-- Signing, notarization, default-handler registration, and package-version locking remain future distribution work.
+- Actual signing and notarization require local Developer ID and Keychain setup; default-handler registration and package-version locking remain future distribution work.
 - Test on supported macOS and hardware combinations; compare against Aquamacs workflows and Terminal baselines.
 
-**Status:** the package-build and relocation-validation slices are implemented. The milestone is **not complete**: macOS GUI lifecycle and document integration, R/ESS and native graphics remain explicitly unverified, and signing/notarization are out of scope for this first build.
+**Status:** app packaging, release-script implementation, and mocked release-order tests are implemented. The milestone is **not complete**: macOS GUI lifecycle and document integration, R/ESS, native graphics, and a real signed/notarized release remain to be verified with the appropriate host and credentials.
 
 **Exit criteria:** reproducible packaging and installation; successful interactive macOS GUI lifecycle/document tests; verified local ESS/R and native graphics workflows; documented compatibility and limitations; and measured GUI performance with transparent evidence.
 
-The standalone bundle build is implemented, but this milestone's exit criteria
-remain open: the app is unsigned, and Finder/Cocoa/ESS GUI flows remain
-unverified on a real Mac. The build and known boundaries are documented in
+The standalone bundle and release scripts are implemented, but this milestone's
+exit criteria remain open: the app has not been signed/notarized in CI, and
+Finder/Cocoa/ESS GUI flows remain unverified on a real Mac. The build and known boundaries are documented in
 [the macOS application guide](macos-launcher.md).
 
 ## Integrated distribution and remote editing workstream (next release gate)

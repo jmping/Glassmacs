@@ -14,50 +14,147 @@ test -x "$emacs"
 test -f "$contents/Resources/Glassmacs/init.el"
 test -f "$contents/Resources/Glassmacs/lisp/glassmacs.el"
 test -f "$contents/Resources/Glassmacs/scripts/bootstrap"
+test -f "$contents/Resources/Glassmacs.icns"
 /usr/bin/plutil -lint "$plist"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$plist")" = APPL
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = org.glassmacs.Glassmacs
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")" = GlassmacsBootstrap
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$plist")" = Glassmacs
+test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" = 13.0
 
 for extension in R r Rmd qmd Rnw; do
   /usr/libexec/PlistBuddy -c 'Print :CFBundleDocumentTypes:0:CFBundleTypeExtensions' \
     "$plist" | grep -Eq "^[[:space:]]*${extension}[[:space:]]*$"
 done
 
-check_dependencies() {
-  local binary=$1 dependency rpath
-  while IFS= read -r dependency; do
-    case "$dependency" in
-      /System/Library/*|/usr/lib/*|@rpath/*|@loader_path|@loader_path/*|@executable_path|@executable_path/*|@rpath|@rpath/*) ;;
-      *)
-        printf 'Non-relocatable dependency in %s: %s\n' "$binary" "$dependency" >&2
-        return 1
-        ;;
-    esac
-  done < <(/usr/bin/otool -L "$binary" | awk -v binary="$binary" '
-    NR == 1 { next }
-    {
-      sub(/^[[:space:]]*/, "")
-      sub(/[[:space:]]+\(.*/, "")
-      if ($0 != binary) print
-    }
-  ')
+python3 - "$contents" "$emacs" <<'PY'
+from pathlib import Path
+import re
+import subprocess
+import sys
 
-  while IFS= read -r rpath; do
-    case "$rpath" in
-      /System/Library/*|/usr/lib/*|@loader_path|@loader_path/*|@executable_path|@executable_path/*|@rpath|@rpath/*) ;;
-      *)
-        printf 'Non-relocatable runtime search path in %s: %s\n' "$binary" "$rpath" >&2
-        return 1
-        ;;
-    esac
-  done < <(/usr/bin/otool -l "$binary" | awk '
-    /cmd LC_RPATH/ { getline; getline; sub(/^[[:space:]]*path /, ""); sub(/ \(offset.*$/, ""); print }
-  ')
-}
+contents = Path(sys.argv[1]).resolve()
+main_executable = Path(sys.argv[2]).resolve()
+system_prefixes = (
+    "/System/Library/",
+    "/System/Volumes/Preboot/Cryptexes/OS/System/Library/",
+    "/usr/lib/",
+    "/Library/Apple/System/Library/",
+)
+bare_tokens = {"@rpath", "@loader_path", "@executable_path"}
 
-check_dependencies "$bootstrap"
-check_dependencies "$emacs"
-"$emacs" -Q --batch --eval '(princ emacs-version)' >/dev/null
+def output(*arguments):
+    return subprocess.run(arguments, check=True, text=True, capture_output=True).stdout
+
+def within_bundle(path):
+    try:
+        path.resolve(strict=True).relative_to(contents)
+        return True
+    except (OSError, ValueError):
+        return False
+
+def runtime_path_allowed(path, binary):
+    if path in bare_tokens:
+        return True
+    if path.startswith("@loader_path/"):
+        resolved = binary.parent / path[len("@loader_path/"):]
+    elif path.startswith("@executable_path/"):
+        resolved = main_executable.parent / path[len("@executable_path/"):]
+    elif path.startswith("/"):
+        if path.startswith(system_prefixes):
+            return True
+        resolved = Path(path)
+    else:
+        return False
+    return within_bundle(resolved)
+
+def rpaths_for(binary):
+    lines = output("/usr/bin/otool", "-l", str(binary)).splitlines()
+    paths = []
+    for index, line in enumerate(lines):
+        if line.strip() == "cmd LC_RPATH" and index + 2 < len(lines):
+            match = re.match(r"\s*path (.+?) \(offset \d+\)", lines[index + 2])
+            if match:
+                paths.append(match.group(1))
+    return paths
+
+def expand_runtime_path(path, binary, rpaths):
+    if path in bare_tokens:
+        return []
+    if path.startswith("@loader_path/"):
+        return [binary.parent / path[len("@loader_path/"):]]
+    if path.startswith("@executable_path/"):
+        return [main_executable.parent / path[len("@executable_path/"):]]
+    if path.startswith("@rpath/"):
+        suffix = path[len("@rpath/"):]
+        return [
+            candidate / suffix
+            for rpath in rpaths
+            for candidate in expand_runtime_path(rpath, binary, ())
+        ]
+    if path.startswith("/") and not path.startswith(system_prefixes):
+        return [Path(path)]
+    return []
+
+def own_install_name(binary):
+    try:
+        lines = output("/usr/bin/otool", "-D", str(binary)).splitlines()
+    except subprocess.CalledProcessError:
+        return None
+    return lines[1].strip() if len(lines) > 1 else None
+
+binaries = []
+for candidate in contents.rglob("*"):
+    if not candidate.is_file():
+        continue
+    description = subprocess.run(
+        ["/usr/bin/file", "-b", str(candidate)],
+        check=True, text=True, capture_output=True,
+    ).stdout
+    if "Mach-O" in description:
+        resolved = candidate.resolve()
+        if not within_bundle(resolved):
+            sys.exit(f"Bundled Mach-O symlink resolves outside the app: {candidate}")
+        binaries.append(resolved)
+
+if main_executable not in binaries:
+    sys.exit(f"Expected Emacs Mach-O executable was not found: {main_executable}")
+
+for binary in binaries:
+    rpaths = rpaths_for(binary)
+    for rpath in rpaths:
+        if not runtime_path_allowed(rpath, binary):
+            sys.exit(f"Unexpected or non-relocatable LC_RPATH in {binary}: {rpath}")
+
+    dependencies = output("/usr/bin/otool", "-L", str(binary)).splitlines()[1:]
+    install_name = own_install_name(binary)
+    for line in dependencies:
+        dependency = re.sub(r"^\s*(.*?)\s+\(compatibility version.*$", r"\1", line)
+        if dependency in {str(binary), install_name}:
+            continue
+        if dependency.startswith(system_prefixes):
+            continue
+        candidates = expand_runtime_path(dependency, binary, rpaths)
+        if not candidates or not any(candidate.is_file() for candidate in candidates):
+            sys.exit(f"Unresolved or non-relocatable dependency in {binary}: {dependency}")
+
+init_file = contents / "Resources/Glassmacs/init.el"
+startup = init_file.read_text()
+policy = re.search(
+    r"^\(glassmacs--configure-native-compilation\)$",
+    startup,
+    re.MULTILINE,
+)
+glassmacs_load = startup.find("(require 'glassmacs)")
+if not policy or glassmacs_load < 0 or policy.start() > glassmacs_load:
+    sys.exit("Native-compilation policy must run before Glassmacs package initialization")
+if 'GLASSMACS_NATIVE_COMP' not in startup or 'native-comp-jit-compilation' not in startup:
+    sys.exit("Bundled startup does not configure native JIT compilation")
+
+print(f"Checked {len(binaries)} bundled Mach-O files and startup policy")
+PY
+if [ "${GLASSMACS_SKIP_EMACS_STARTUP:-0}" != 1 ]; then
+  "$emacs" -Q --batch --eval '(princ emacs-version)' >/dev/null
+fi
 
 printf 'Validated Glassmacs.app structure and direct executable dependencies: %s\n' "$app"

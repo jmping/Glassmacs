@@ -19,6 +19,8 @@ jobs:
           emacs --version
       - name: Run ERT tests
         run: ./scripts/test
+      - name: Test macOS release scripts with mocked Apple tools
+        run: python3 -m unittest discover -s tests -p 'test_macos_release_scripts.py'
       - name: Byte-compile Lisp modules
         run: |
           emacs -Q --batch -l init.el \

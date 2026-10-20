@@ -4,10 +4,21 @@ set -euo pipefail
 
 app=${1:?Usage: GLASSMACS_SIGN_IDENTITY=<certificate SHA-1> bash scripts/sign-macos-app /path/to/Glassmacs.app}
 identity=${GLASSMACS_SIGN_IDENTITY:?Set GLASSMACS_SIGN_IDENTITY to a Developer ID Application certificate SHA-1}
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+entitlements="$root/macos/Glassmacs.entitlements.plist"
 app=$(CDPATH='' cd -- "$app" && pwd)
 
 if [ ! -f "$app/Contents/Info.plist" ]; then
   printf 'Not an application bundle: %s\n' "$app" >&2
+  exit 1
+fi
+if [ ! -f "$entitlements" ]; then
+  printf 'Signing entitlements are missing: %s\n' "$entitlements" >&2
+  exit 1
+fi
+emacs="$app/Contents/MacOS/Emacs"
+if [ ! -f "$emacs" ]; then
+  printf 'Bundled Emacs executable is missing: %s\n' "$emacs" >&2
   exit 1
 fi
 if ! /usr/bin/security find-identity -v -p codesigning | /usr/bin/grep -Fq "$identity"; then
@@ -20,6 +31,9 @@ fi
 # before signing the enclosing application. Do not follow symlinks.
 count=0
 while IFS= read -r -d '' path; do
+  if [ "$path" = "$emacs" ]; then
+    continue
+  fi
   case "$(/usr/bin/file -b "$path")" in
     *Mach-O*)
       /usr/bin/codesign --force --sign "$identity" --options runtime --timestamp "$path"
@@ -28,7 +42,13 @@ while IFS= read -r -d '' path; do
   esac
 done < <(/usr/bin/find "$app/Contents" -type f -print0)
 
-/usr/bin/codesign --force --sign "$identity" --options runtime --timestamp "$app"
+/usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
+  --entitlements "$entitlements" "$emacs"
+/usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
+  --entitlements "$entitlements" "$app"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
-/usr/bin/codesign -dv --verbose=2 "$app" 2>&1 | /usr/bin/grep -E 'Identifier=|Authority=|TeamIdentifier='
+/usr/bin/codesign -d --entitlements :- "$emacs" 2>&1 |
+  /usr/bin/grep -Fq 'com.apple.security.cs.disable-library-validation'
+/usr/bin/codesign -dv --verbose=4 "$emacs" 2>&1 |
+  /usr/bin/grep -E 'Identifier=|Authority=|TeamIdentifier='
 printf 'Signed and verified %s (%s nested Mach-O files)\n' "$app" "$count"

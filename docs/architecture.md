@@ -262,10 +262,13 @@ visible, but real Finder delivery and event ordering must still be tested.
 Command-line and Finder file arguments remain data paths, not generated Lisp
 source. Cocoa menu, buffer, and ESS ownership remains entirely in Emacs Lisp.
 
-The current CI validates bundle construction, direct binary dependencies,
-startup, Lisp tests and relocation; it does not validate app activation,
-LaunchServices registration, Dock identity, GUI menu delivery, native Quartz
-graphics, or interactive R/ESS. The app is unsigned and not notarized.
+The CI validates bundle construction, bundled Mach-O dependency resolution,
+startup policy, Lisp tests and relocation; mocked release tests verify signing
+and notarization ordering but do not contact Apple. It does not validate app
+activation, LaunchServices registration, Dock identity, GUI menu delivery,
+native Quartz graphics, interactive R/ESS, or a real signed/notarized release.
+Development builds remain unsigned; release scripts use a developer-provided
+identity and Keychain profile.
 
 ## Testability and acceptance gates
 
