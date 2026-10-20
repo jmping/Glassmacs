@@ -18,13 +18,85 @@
   (should (equal package-user-dir
                  (expand-file-name "elpa" glassmacs-home))))
 
+(ert-deftest glassmacs-startup-does-not-touch-ordinary-emacs-home ()
+  (let* ((temporary-home (make-temp-file "glassmacs-startup-" t))
+         (ordinary-home (expand-file-name "ordinary-home" temporary-home))
+         (ordinary-emacs-directory (expand-file-name ".emacs.d" ordinary-home))
+         (ordinary-config-directory (expand-file-name ".config" ordinary-home))
+         (ordinary-init (expand-file-name "init.el" ordinary-emacs-directory))
+         (ordinary-dotemacs (expand-file-name ".emacs" ordinary-home))
+         (isolated-home (expand-file-name "glassmacs" temporary-home))
+         (launcher (expand-file-name "scripts/glassmacs" glassmacs-root))
+         (original-files nil)
+         (output (generate-new-buffer " *glassmacs startup test*"))
+         (status nil))
+    (unwind-protect
+        (progn
+          (make-directory ordinary-emacs-directory t)
+          (make-directory ordinary-config-directory t)
+          (write-region "(error \"ordinary init must not load\")\n" nil
+                        ordinary-init)
+          (write-region "ordinary Emacs settings\n" nil ordinary-dotemacs)
+          (setq original-files
+                (directory-files-recursively ordinary-home "." t))
+          (let* ((process-environment (copy-sequence process-environment))
+                 (default-directory glassmacs-root)
+                 (expression
+                  (format
+                   (concat
+                    "(progn"
+                    " (unless (equal user-emacs-directory %S)"
+                    "   (error \"unexpected user-emacs-directory: %s\""
+                    "          user-emacs-directory))"
+                    " (unless (equal package-user-dir %S)"
+                    "   (error \"unexpected package-user-dir: %s\""
+                    "          package-user-dir))"
+                    " (unless (equal custom-file %S)"
+                    "   (error \"unexpected custom-file: %s\" custom-file)))")
+                   (file-name-as-directory isolated-home)
+                   (file-name-as-directory isolated-home)
+                   (expand-file-name "elpa" isolated-home)
+                   (expand-file-name "elpa" isolated-home)
+                   (expand-file-name "custom.el" isolated-home)
+                   (expand-file-name "custom.el" isolated-home))))
+            (setenv "HOME" ordinary-home)
+            (setenv "XDG_CONFIG_HOME" ordinary-config-directory)
+            (setenv "GLASSMACS_HOME" isolated-home)
+            (setq status
+                  (call-process launcher nil output t
+                                "--batch" "--eval" expression)))
+          (unless (and (integerp status) (zerop status))
+            (ert-fail
+             (format "Glassmacs launcher failed (%s): %s"
+                     status
+                     (with-current-buffer output (buffer-string)))))
+          (should (equal original-files
+                         (directory-files-recursively ordinary-home "." t)))
+          (with-temp-buffer
+            (insert-file-contents ordinary-init)
+            (should (equal (buffer-string)
+                           "(error \"ordinary init must not load\")\n")))
+          (with-temp-buffer
+            (insert-file-contents ordinary-dotemacs)
+            (should (equal (buffer-string) "ordinary Emacs settings\n")))
+          (should-not (file-exists-p
+                       (expand-file-name "elpa" ordinary-emacs-directory)))
+          (should-not (file-exists-p
+                       (expand-file-name "glassmacs" ordinary-config-directory))))
+      (when (buffer-live-p output)
+        (kill-buffer output))
+      (delete-directory temporary-home t))))
+
 (ert-deftest glassmacs-plain-text-files-open-and-save-without-research-tools ()
   (let* ((directory (make-temp-file "glassmacs-plain-text-" t))
          (text-file (expand-file-name "notes.txt" directory))
          (extensionless-file (expand-file-name "NOTES" directory))
          buffers)
     (unwind-protect
-        (progn
+        (cl-letf (((symbol-function 'executable-find)
+                   (lambda (_program) nil))
+                  ((symbol-function 'locate-library)
+                   (lambda (_library &optional _path _nosuffix) nil)))
           (with-temp-file text-file
             (insert "plain text\n"))
           (with-temp-file extensionless-file

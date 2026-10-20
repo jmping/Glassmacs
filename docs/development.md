@@ -28,6 +28,11 @@ GitHub Actions runs the ERT suite and byte-compiles all Lisp modules on Ubuntu
 Quarto, or TeX; integration tests requiring optional tools are skipped when
 those dependencies are unavailable. CI verifies batch behavior only.
 
+For PR #4, the workflow was created but the GitHub Actions run ended with
+`action_required` before any jobs were created. This is an approval/permissions
+gate outside the workflow definition, not a passing or failing test result.
+Local checks are reported separately from GitHub Actions status.
+
 Byte-compile the Lisp modules with `.elc` output redirected to the system
 temporary directory:
 
@@ -56,7 +61,9 @@ into the separate Glassmacs package directory. Set `GLASSMACS_HOME` before
 launch/bootstrap to choose another location. Optional customizations can be
 placed in `$GLASSMACS_HOME/custom.el` (default `~/.config/glassmacs/custom.el`).
 This prevents Glassmacs from rewriting a pre-existing Emacs init or Aquamacs
-preferences.
+preferences. ERT exercises this launcher with a temporary `GLASSMACS_HOME` and
+a separate simulated ordinary Emacs home, and verifies the ordinary home files
+are unchanged.
 
 The package archives are not version-locked in this initial milestone. Tests
 should be run with the project's supported Emacs version and with optional
