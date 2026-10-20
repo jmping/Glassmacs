@@ -32,7 +32,9 @@ class MacOSReleaseScriptTests(unittest.TestCase):
         self.assertLess(sanitizer_call, validator_call)
         self.assertIn("install_name_tool", (ROOT / "scripts/sanitize-macos-rpaths").read_text())
 
-    def run_rpath_sanitizer(self, fixture, fail_delete=False, fail_otool=False):
+    def run_rpath_sanitizer(
+        self, fixture, fail_delete=False, fail_otool=False, fail_file=False
+    ):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
@@ -51,6 +53,9 @@ class MacOSReleaseScriptTests(unittest.TestCase):
 
         file_tool = tools / "file"
         file_tool.write_text("""#!/bin/bash
+if [ "${FILE_FAIL:-0}" = 1 ]; then
+  exit 6
+fi
 case "$2" in
   *.so|*.dylib) printf 'Mach-O 64-bit dynamically linked shared library\\n' ;;
   *) printf 'ASCII text\\n' ;;
@@ -99,6 +104,8 @@ open(binary, "w").write("\\n".join(lines))
             environment["INSTALL_NAME_FAIL"] = "1"
         if fail_otool:
             environment["OTOOL_FAIL"] = "1"
+        if fail_file:
+            environment["FILE_FAIL"] = "1"
         result = subprocess.run(
             ["bash", str(ROOT / "scripts/sanitize-macos-rpaths"), str(app)],
             text=True, capture_output=True, check=False, env=environment,
@@ -135,6 +142,11 @@ open(binary, "w").write("\\n".join(lines))
             [[nix_rpath], []], fail_otool=True
         )
         self.assertNotEqual(inspect_result.returncode, 0)
+
+        identify_result, _, _, _ = self.run_rpath_sanitizer(
+            [[nix_rpath], []], fail_file=True
+        )
+        self.assertNotEqual(identify_result.returncode, 0)
 
     def test_native_compilation_is_configured_before_package_loading(self):
         startup = (ROOT / "init.el").read_text()
