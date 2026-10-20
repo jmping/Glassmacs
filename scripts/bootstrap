@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+exec emacs -Q --batch --load "$root/init.el" --eval \
+  '(progn
+     (package-refresh-contents)
+     (dolist (package (quote (ess markdown-mode quarto polymode poly-R auctex)))
+       (unless (package-installed-p package)
+         (package-install package))))'
