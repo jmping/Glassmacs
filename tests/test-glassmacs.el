@@ -2,6 +2,8 @@
 
 (require 'ert)
 (require 'cl-lib)
+(require 'comint)
+(defvar custom-file)
 (add-to-list 'load-path
              (expand-file-name "../lisp"
                                (file-name-directory (or load-file-name buffer-file-name))))
@@ -108,7 +110,8 @@
   (let ((document (generate-new-buffer "glassmacs-document"))
         (untitled (generate-new-buffer "Untitled"))
         (internal (generate-new-buffer "*Completions*"))
-        (help (generate-new-buffer "glassmacs-help")))
+        (help (generate-new-buffer "glassmacs-help"))
+        (r-process (generate-new-buffer "Glassmacs R session")))
     (unwind-protect
         (progn
           (with-current-buffer document
@@ -120,18 +123,21 @@
             (fundamental-mode))
           (with-current-buffer help
             (help-mode))
+          (with-current-buffer r-process
+            (comint-mode))
           (should (glassmacs--ordinary-document-buffer-p document))
           (should (glassmacs--ordinary-document-buffer-p untitled))
           (should-not (glassmacs--ordinary-document-buffer-p internal))
-          (should-not (glassmacs--ordinary-document-buffer-p help)))
+          (should-not (glassmacs--ordinary-document-buffer-p help))
+          (should-not (glassmacs--ordinary-document-buffer-p r-process)))
       (mapc (lambda (buffer)
               (when (buffer-live-p buffer) (kill-buffer buffer)))
-            (list document untitled internal help)))))
+            (list document untitled internal help r-process)))))
 
 (ert-deftest glassmacs-document-policy-requires-graphical-ordinary-buffer ()
   (let ((document (generate-new-buffer "glassmacs-policy-document"))
         (special (generate-new-buffer "*Glassmacs Special*"))
-        (glassmacs-document-opening-policy 'new-frame))
+        (policies '(new-frame new-tab reuse-current)))
     (unwind-protect
         (progn
           (with-current-buffer document
@@ -139,17 +145,65 @@
             (fundamental-mode))
           (with-current-buffer special
             (special-mode))
-          (cl-letf (((symbol-function 'display-graphic-p)
-                     (lambda (&optional _frame) t)))
-            (should (eq (glassmacs--document-opening-action document)
-                        'new-frame))
-            (should-not (glassmacs--document-opening-action special)))
+          (dolist (policy policies)
+            (let ((glassmacs-document-opening-policy policy))
+              (cl-letf (((symbol-function 'display-graphic-p)
+                         (lambda (&optional _frame) t)))
+                (should (eq (glassmacs--document-opening-action document)
+                            policy))
+                (should-not (glassmacs--document-opening-action special)))
+              (cl-letf (((symbol-function 'display-graphic-p)
+                         (lambda (&optional _frame) nil)))
+                (should-not (glassmacs--document-opening-action document)))))
           (cl-letf (((symbol-function 'display-graphic-p)
                      (lambda (&optional _frame) nil)))
             (should-not (glassmacs--document-opening-action document))))
       (mapc (lambda (buffer)
               (when (buffer-live-p buffer) (kill-buffer buffer)))
             (list document special)))))
+
+(ert-deftest glassmacs-document-opening-policy-is-persisted ()
+  (let ((policies '(new-frame new-tab reuse-current))
+         (original-default
+          (default-value 'glassmacs-document-opening-policy)))
+    (unwind-protect
+        (dolist (policy policies)
+          (let ((custom-file (make-temp-file "glassmacs-custom-")))
+            (unwind-protect
+                (progn
+                  (delete-file custom-file)
+                  (glassmacs-set-document-opening-policy policy)
+                  (should (eq glassmacs-document-opening-policy policy))
+                  (should (file-readable-p custom-file))
+                  (set-default 'glassmacs-document-opening-policy
+                               original-default)
+                  (load custom-file nil t)
+                  (should (eq glassmacs-document-opening-policy policy)))
+              (when (file-exists-p custom-file)
+                (delete-file custom-file)))))
+      (set-default 'glassmacs-document-opening-policy original-default))))
+
+(ert-deftest glassmacs-document-opening-command-works-graphically-and-in-terminal ()
+  (let* ((custom-file (make-temp-file "glassmacs-custom-"))
+         (policies '(new-frame new-tab reuse-current))
+         (original-default
+          (default-value 'glassmacs-document-opening-policy)))
+    (unwind-protect
+        (dolist (graphical '(nil t))
+          (dolist (policy policies)
+            (cl-letf (((symbol-function 'display-graphic-p)
+                       (lambda (&optional _frame) graphical))
+                      ((symbol-function 'completing-read)
+                       (lambda (&rest _) (symbol-name policy))))
+              (call-interactively #'glassmacs-set-document-opening-policy))
+            (should (eq glassmacs-document-opening-policy policy))))
+      (set-default 'glassmacs-document-opening-policy original-default)
+      (when (file-exists-p custom-file)
+        (delete-file custom-file)))))
+
+(ert-deftest glassmacs-document-opening-policy-rejects-unknown-values ()
+  (should-error (glassmacs-set-document-opening-policy 'unknown)
+                :type 'user-error))
 
 (ert-deftest glassmacs-file-menu-uses-document-opening-command ()
   (let ((global-map (copy-keymap global-map))
@@ -180,7 +234,7 @@
                  (glassmacs--ns-find-file
                   (lambda (&rest _) (ert-fail "Cocoa file event was not intercepted")))))
             (should (buffer-live-p buffer))
-            (should (equal (buffer-file-name buffer) file)))
+            (should (equal (buffer-file-name buffer) (file-truename file))))
           (should (= 1 (length shown)))
           (should (eq (cdar shown) 'new-tab))
           (should-not ns-input-file))

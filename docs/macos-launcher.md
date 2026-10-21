@@ -207,6 +207,18 @@ not add a graphics device or R execution backend. ESS remains responsible for
 process readiness and evaluation. The documented split-prompt limitation is
 unchanged.
 
+### Document-opening preference
+
+On macOS, interactive opens of ordinary documents use a new Emacs frame by
+default; on other platforms they reuse the current frame. Run
+`M-x glassmacs-set-document-opening-policy` to select and save one of:
+`new-frame`, `new-tab`, or `reuse-current`. Emacs frames are macOS application
+windows; the policy does not create a new frame for each buffer switch.
+`new-tab` uses Emacs's built-in tab-bar support. The setting is saved through
+Emacs Customize to `custom.el` in the Glassmacs data directory and restored on
+the next launch. Special and interactive buffers, including help and ESS/R
+process buffers, are not treated as documents by this policy.
+
 ### Native Lisp compilation
 
 The bundled Emacs retains native-compilation support and can load compatible,
