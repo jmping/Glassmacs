@@ -83,7 +83,7 @@ def main(app):
             )
 
         own_name = install_name(binary)
-        for dependency in load_dependencies(binary):
+        for dependency in dict.fromkeys(load_dependencies(binary)):
             if dependency == str(binary) or dependency == own_name:
                 continue
             if not dependency.startswith("/") or dependency.startswith(SYSTEM_PREFIXES):
@@ -96,9 +96,10 @@ def main(app):
                 continue
 
             matches = by_name.get(Path(dependency).name, set())
+            binary_architectures = architectures(binary)
             compatible = [
                 candidate for candidate in matches
-                if architectures(candidate) & architectures(binary)
+                if binary_architectures <= architectures(candidate)
             ]
             if len(compatible) != 1:
                 reason = "unresolved" if not compatible else "ambiguous"
@@ -123,9 +124,21 @@ def main(app):
                 install_name_tool, "-change", dependency, replacement, str(binary),
                 context=f"relocate dependency {dependency} in {binary}",
             )
-            if replacement not in load_dependencies(binary):
+            updated_dependencies = load_dependencies(binary)
+            updated_target = (
+                binary.parent / replacement[len("@loader_path/"):]
+                if replacement.startswith("@loader_path/")
+                else None
+            )
+            if (
+                dependency in updated_dependencies
+                or replacement not in updated_dependencies
+                or updated_target is None
+                or updated_target.resolve(strict=True) != target
+            ):
                 raise RuntimeError(
-                    f"Dependency relocation was not recorded in {binary}: "
+                    f"Dependency relocation did not resolve to the selected bundled "
+                    f"library in {binary}: "
                     f"{dependency} -> {replacement}"
                 )
             changed += 1

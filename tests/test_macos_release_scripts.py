@@ -78,7 +78,9 @@ class MacOSReleaseScriptTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "exit 9.*bad file"):
                 run_tool("otool", "-L", "binary", context="inspect binary")
 
-    def run_dependency_relocator(self, dependencies, extra_libraries=(), fail_otool=False):
+    def run_dependency_relocator(
+        self, dependencies, extra_libraries=(), fail_otool=False, executable_arch="arm64"
+    ):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
@@ -95,14 +97,17 @@ class MacOSReleaseScriptTests(unittest.TestCase):
             path.write_bytes(b"\xcf\xfa\xed\xfe" + ("\n".join(lines) + "\n").encode())
             return path
 
-        executable = make_binary(executable_dir / "Emacs", "arm64")
-        libraries = [
-            make_binary(contents / relative, "arm64")
-            for relative in extra_libraries
-        ]
+        executable = make_binary(executable_dir / "Emacs", executable_arch)
+        libraries = []
+        for item in extra_libraries:
+            relative, arch = item if isinstance(item, tuple) else (item, "arm64")
+            libraries.append(make_binary(contents / relative, arch))
         executable.write_bytes(
             b"\xcf\xfa\xed\xfe"
-            + (f"ARCH=arm64\n" + "".join(f"DEP={item}\n" for item in dependencies)).encode()
+            + (
+                f"ARCH={executable_arch}\n"
+                + "".join(f"DEP={item}\n" for item in dependencies)
+            ).encode()
         )
         tools = root / "tools"
         tools.mkdir()
@@ -181,6 +186,29 @@ open(binary, "wb").write(data[:4] + text.encode())
         self.assertNotEqual(unresolved.returncode, 0)
         self.assertIn("Unresolved external dependency", unresolved.stderr)
 
+        wrong_arch, _, _ = self.run_dependency_relocator(
+            [external], [("MacOS/lib-arm64-11/libintl.8.dylib", "x86_64")]
+        )
+        self.assertNotEqual(wrong_arch.returncode, 0)
+        self.assertIn("Unresolved external dependency", wrong_arch.stderr)
+
+    def test_dependency_relocator_requires_a_library_for_every_binary_architecture(self):
+        external = "/nix/store/abcd-gettext/lib/libintl.8.dylib"
+        universal, _, _ = self.run_dependency_relocator(
+            [external],
+            [("MacOS/lib-universal/libintl.8.dylib", "arm64 x86_64")],
+            executable_arch="arm64 x86_64",
+        )
+        self.assertEqual(universal.returncode, 0, universal.stderr)
+
+        partial, _, _ = self.run_dependency_relocator(
+            [external],
+            [("MacOS/lib-arm64/libintl.8.dylib", "arm64")],
+            executable_arch="arm64 x86_64",
+        )
+        self.assertNotEqual(partial.returncode, 0)
+        self.assertIn("Unresolved external dependency", partial.stderr)
+
     def test_dependency_relocator_reports_subprocess_failure(self):
         result, _, _ = self.run_dependency_relocator(
             ["/nix/store/abcd-gettext/lib/libintl.8.dylib"],
@@ -204,6 +232,7 @@ open(binary, "wb").write(data[:4] + text.encode())
 
     def test_build_sanitizes_before_strict_bundle_validation(self):
         builder = (ROOT / "scripts/build-macos-app").read_text()
+        validator = (ROOT / "scripts/validate-macos-app").read_text()
         sanitizer_call = builder.index('"$root/scripts/sanitize-macos-rpaths" "$output"')
         validator_call = builder.index(
             'GLASSMACS_SKIP_EMACS_STARTUP=1 "$root/scripts/validate-macos-app" "$output"'
@@ -214,6 +243,8 @@ open(binary, "wb").write(data[:4] + text.encode())
         self.assertLess(sanitizer_call, relocator_call)
         self.assertLess(relocator_call, validator_call)
         self.assertIn("install_name_tool", (ROOT / "scripts/sanitize-macos-rpaths").read_text())
+        self.assertNotIn('"/usr/bin/file"', validator)
+        self.assertIn("discover_macho_binaries", validator)
 
     def run_rpath_sanitizer(
         self, fixture, fail_delete=False, fail_otool=False, fail_file=False
