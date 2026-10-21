@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import plistlib
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -379,6 +380,7 @@ open(binary, "wb").write(data[:32] + text.encode())
         self.assertEqual(plist["LSMinimumSystemVersion"], "13.0")
         self.assertIn(".macOS(.v13)", package)
         self.assertIn('cp "$root/assets/icon/Glassmacs.icns"', builder)
+        self.assertIn('cp "$root/assets/icon/glass-gnu.png" "$emacs_icon"', builder)
 
     def test_build_sanitizes_before_strict_bundle_validation(self):
         builder = (ROOT / "scripts/build-macos-app").read_text()
@@ -395,6 +397,19 @@ open(binary, "wb").write(data[:32] + text.encode())
         self.assertIn("install_name_tool", (ROOT / "scripts/sanitize-macos-rpaths").read_text())
         self.assertNotIn('"/usr/bin/file"', validator)
         self.assertIn("discover_macho_binaries", validator)
+
+    def test_signing_script_is_executable_without_bash(self):
+        script = ROOT / "scripts/sign-macos-app"
+        self.assertTrue(script.stat().st_mode & stat.S_IXUSR)
+        result = subprocess.run(
+            ["./scripts/sign-macos-app"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Usage:", result.stderr)
 
     def test_validator_shell_entrypoint_runs_with_literal_python_heredoc(self):
         with tempfile.TemporaryDirectory() as temp:

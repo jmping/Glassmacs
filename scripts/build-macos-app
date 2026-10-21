@@ -79,6 +79,9 @@ with open(sys.argv[1], "wb") as output_file:
     plistlib.dump(upstream, output_file, fmt=plistlib.FMT_XML, sort_keys=False)
 PY
 cp "$root/assets/icon/Glassmacs.icns" "$output/Contents/Resources/Glassmacs.icns"
+emacs_icon="$output/Contents/Resources/etc/images/icons/hicolor/128x128/apps/emacs.png"
+mkdir -p "$(dirname -- "$emacs_icon")"
+cp "$root/assets/icon/glass-gnu.png" "$emacs_icon"
 
 "$root/scripts/sanitize-macos-rpaths" "$output"
 "$root/scripts/relocate-macos-dependencies" "$output"

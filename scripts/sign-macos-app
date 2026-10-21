@@ -2,7 +2,7 @@
 # Sign a fully assembled Glassmacs.app with an installed Developer ID identity.
 set -euo pipefail
 
-app=${1:?Usage: GLASSMACS_SIGN_IDENTITY=<certificate SHA-1> bash scripts/sign-macos-app /path/to/Glassmacs.app}
+app=${1:?Usage: GLASSMACS_SIGN_IDENTITY=<certificate SHA-1> scripts/sign-macos-app /path/to/Glassmacs.app}
 identity=${GLASSMACS_SIGN_IDENTITY:?Set GLASSMACS_SIGN_IDENTITY to a Developer ID Application certificate SHA-1}
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 entitlements="$root/macos/Glassmacs.entitlements.plist"

@@ -10,10 +10,84 @@
 (ert-deftest glassmacs-configuration-loads ()
   (dolist (feature '(glassmacs glassmacs-core glassmacs-keys glassmacs-r
                      glassmacs-sessions glassmacs-r-ui glassmacs-remote
-                     glassmacs-documents glassmacs-frames
+                     glassmacs-documents glassmacs-frames glassmacs-macos
                      glassmacs-diagnostics glassmacs-shiny
                      glassmacs-appearance))
     (should (featurep feature))))
+
+(ert-deftest glassmacs-macos-final-frame-close-keeps-process-frame ()
+  (let ((system-type 'darwin)
+        (frame 'glassmacs-test-frame)
+        (glassmacs--hidden-final-frame nil)
+        hidden
+        deleted)
+    (cl-letf (((symbol-function 'frame-list) (lambda () (list frame)))
+              ((symbol-function 'frame-live-p) (lambda (candidate) (eq candidate frame)))
+              ((symbol-function 'display-graphic-p) (lambda (&optional _candidate) t))
+              ((symbol-function 'selected-frame) (lambda () frame))
+              ((symbol-function 'make-frame-invisible)
+               (lambda (candidate) (setq hidden candidate))))
+      (should-not
+       (glassmacs--delete-frame-preserving-app
+        (lambda (&rest _arguments) (setq deleted t))
+        frame))
+      (should (eq hidden frame))
+      (should (eq glassmacs--hidden-final-frame frame))
+      (should-not deleted))))
+
+(ert-deftest glassmacs-macos-closing-nonfinal-frame-deletes-only-that-frame ()
+  (let ((system-type 'darwin)
+        (frame 'glassmacs-test-frame)
+        (other-frame 'glassmacs-test-other-frame)
+        deleted)
+    (cl-letf (((symbol-function 'frame-list)
+               (lambda () (list frame other-frame)))
+              ((symbol-function 'frame-live-p)
+               (lambda (candidate) (memq candidate (list frame other-frame))))
+              ((symbol-function 'display-graphic-p)
+               (lambda (&optional _candidate) t)))
+      (should
+       (eq (glassmacs--delete-frame-preserving-app
+            (lambda (candidate force)
+              (setq deleted (list candidate force))
+              'deleted)
+            frame)
+           'deleted))
+      (should (equal deleted (list frame nil))))))
+
+(ert-deftest glassmacs-macos-focus-restores-final-hidden-frame ()
+  (let ((system-type 'darwin)
+        (frame 'glassmacs-test-frame)
+        (glassmacs--hidden-final-frame 'glassmacs-test-frame)
+        visible
+        focused)
+    (cl-letf (((symbol-function 'frame-list) (lambda () (list frame)))
+              ((symbol-function 'frame-live-p) (lambda (candidate) (eq candidate frame)))
+              ((symbol-function 'display-graphic-p) (lambda (&optional _candidate) t))
+              ((symbol-function 'frame-visible-p) (lambda (_candidate) visible))
+              ((symbol-function 'make-frame-visible)
+               (lambda (candidate) (setq visible candidate)))
+              ((symbol-function 'select-frame-set-input-focus)
+               (lambda (candidate) (setq focused candidate))))
+      (glassmacs--restore-hidden-frame)
+      (should (eq visible frame))
+      (should (eq focused frame))
+      (should-not glassmacs--hidden-final-frame))))
+
+(ert-deftest glassmacs-macos-new-window-creates-a-frame ()
+  (let (created)
+    (cl-letf (((symbol-function 'make-frame-command)
+               (lambda () (setq created t))))
+      (glassmacs-new-window)
+      (should created))))
+
+(ert-deftest glassmacs-macos-focus-does-not-restore-unrelated-invisible-frames ()
+  (let ((system-type 'darwin)
+        (glassmacs--hidden-final-frame nil))
+    (cl-letf (((symbol-function 'frame-live-p)
+               (lambda (&rest _arguments)
+                 (ert-fail "No frame should be restored"))))
+      (glassmacs--restore-hidden-frame))))
 
 (ert-deftest glassmacs-native-jit-is-disabled-by-default-before-packages ()
   (should (boundp 'native-comp-jit-compilation))
@@ -375,7 +449,9 @@
     (should (commandp (cdr binding))))
   (should (eq (cdr (assoc [super-o] glassmacs-hybrid-keybindings))
               'glassmacs-open-file))
-  (should (eq (cdr (assoc [super-S] glassmacs-hybrid-keybindings)) 'write-file)))
+  (should (eq (cdr (assoc [super-S] glassmacs-hybrid-keybindings)) 'write-file))
+  (should (eq (cdr (assoc [super-q] glassmacs-hybrid-keybindings))
+              'save-buffers-kill-emacs)))
 
 (ert-deftest glassmacs-does-not-rebind-emacs-prefix-keys ()
   (should (eq (lookup-key global-map (kbd "C-x")) 'Control-X-prefix))

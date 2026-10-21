@@ -28,6 +28,37 @@ two-application identity of an AppKit helper that launches a nested
 document events behave after process replacement. Those behaviors require GUI
 verification on macOS.
 
+### Dock icon and final-window lifecycle
+
+Finder reads the bundle icon from `CFBundleIconFile`. Cocoa Emacs also has a
+fallback initialization path that explicitly sets `NSApp.applicationIconImage`
+from `icons/hicolor/128x128/apps/emacs.png` when the application activation
+policy is prohibited (upstream `src/nsterm.m`). Emacs loads that image through
+`src/nsimage.m`'s `image_find_image_file`, which searches
+`data-directory/images` (upstream `src/image.c`). The observed GNU Emacs Dock
+artwork indicates this fallback path is overriding Glassmacs's correct Finder
+icon. The build now installs
+`assets/icon/glass-gnu.png` at Emacs's expected data-image path,
+`Contents/Resources/etc/images/icons/hicolor/128x128/apps/emacs.png`, before
+any signing. This uses Emacs's existing image lookup rather than changing
+Cocoa code or starting a second application.
+
+Closing a Cocoa window deletes its Emacs frame; Emacs is also the process that
+owns the application event loop. Deleting its final graphical frame therefore
+can end the process and remove the Dock application. Glassmacs now intercepts
+deletion of the final macOS graphical frame and makes that frame invisible
+instead. It does not kill buffers or processes, and does not save or discard
+buffer changes. Focus hooks restore and focus the retained frame when Emacs
+receives focus; **⌘Q** remains bound to `save-buffers-kill-emacs`, preserving
+Emacs's normal save and quit prompts. Nonfinal frames still delete normally.
+`File → New Window` invokes Emacs's normal new-frame command.
+
+The invisible-frame and focus-notification behavior is platform-specific and
+has not yet been verified interactively on a physical Mac. If Dock activation
+does not trigger the Emacs focus hooks on a supported macOS version, that
+activation behavior requires a native Cocoa reopen callback; Glassmacs does
+not add an AppKit helper process or patch the signed Emacs executable.
+
 This decision is informed by GNU Emacs's Cocoa bundle structure and
 self-contained installation instructions: the app bundle includes the
 executable, runtime resources, and application metadata, and a self-contained
@@ -83,7 +114,7 @@ Developer ID Application identity by its certificate SHA-1:
 ./scripts/build-macos-app
 GLASSMACS_SKIP_EMACS_STARTUP=1 ./scripts/validate-macos-app build/Glassmacs.app
 GLASSMACS_SIGN_IDENTITY="<Developer ID Application certificate SHA-1>" \
-  bash ./scripts/sign-macos-app build/Glassmacs.app
+  ./scripts/sign-macos-app build/Glassmacs.app
 ./scripts/validate-macos-app build/Glassmacs.app
 ```
 
@@ -267,18 +298,26 @@ output suppression, or native Quartz `plot(cars)`.
 
 Before calling those behaviors verified, manually test on supported macOS:
 
-1. Copy the app to `/Applications`, launch from Finder, Dock, and Spotlight,
-   and confirm one Glassmacs identity and a working reopen.
-2. Open `.R`, `.Rmd`, `.qmd`, and `.Rnw` files from Finder, including paths with
+1. Copy the app to `/Applications` and confirm Finder displays the Glassmacs
+   icon.
+2. Launch Glassmacs and confirm exactly one Dock icon displays Glassmacs
+   artwork, not the GNU Emacs icon.
+3. Close the final window and confirm the application remains in the Dock and
+   menu bar without a visible window.
+4. Click the Dock icon and confirm the existing editing frame returns. Create a
+   new frame through `File → New Window`, close multiple frames in turn, and
+   verify closing a nonfinal frame affects only that frame.
+5. Press **⌘Q** and confirm Emacs quits normally, including any applicable
+   unsaved-buffer prompts.
+6. Open a file, edit it, save it, and confirm the saved contents are correct.
+7. Open `.R`, `.Rmd`, `.qmd`, and `.Rnw` files from Finder, including paths with
    spaces and Unicode; open several documents and confirm no unintended
    duplicate Emacs instance and that the configured frame/tab policy is used.
-3. Edit an unsaved file and quit through Emacs; confirm the save prompt appears.
-   Check that launching/opening another document does not terminate Emacs.
-4. With R and ESS installed, start multiple sessions, verify explicit
+8. With R and ESS installed, start multiple sessions, verify explicit
    source-buffer execution targets and queued commands, edit command history,
    exercise output suppression, and evaluate `plot(cars)` using the installed
    R's native Quartz device.
-5. Check native menus and keyboard shortcuts, plus app startup after moving the
+9. Check native menus and keyboard shortcuts, plus app startup after moving the
    bundle to a different directory.
 
 Known limitations: local builds are unsigned by default; notarization requires
