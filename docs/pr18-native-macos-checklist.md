@@ -8,8 +8,8 @@ This is an initial checkpoint for the draft PR. The Aquamacs-inspired macOS impl
 - Glassmacs Dock icon and close-last-window/reopen lifecycle.
 - Native application, File, Window and preferences menu foundations.
 - Hybrid macOS/Emacs and Traditional Emacs keyboard profiles.
-- Safe native Lisp loading exclusively from signed, bundled `.eln` files; disable native JIT and unsafe overrides.
-- Emacs 31 compatibility, including `when-let*` migration.
+- Safe native Lisp loading exclusively from signed, bundled `.eln` files; disable native JIT and runtime trampolines.
+- Emacs 31 compatibility, including `when-let*` migration and cache isolation.
 - Regression tests and user-facing documentation.
 
 ## Physical Mac release gate
@@ -20,7 +20,7 @@ This is an initial checkpoint for the draft PR. The Aquamacs-inspired macOS impl
   Command-Q retain their distinct expected behaviors.
 - [ ] Verify closing the final window leaves Emacs/Glassmacs running and that
   closing nonfinal windows only closes the selected frame.
-- [ ] Confirm signed bundled `.eln` files load without Team ID / library-validation errors; no unsigned cache `.eln` loads.
+- [ ] Confirm signed bundled `.eln` files load with normal library validation; no user-cache `.eln` loads.
 - [ ] Verify document opening, frame policy and persisted preferences.
 - [ ] Verify the runtime Dock icon is Glassmacs artwork (not just the Finder bundle icon).
 - [ ] Verify Glassmacs, File, and Window menus, native Cocoa Quit, and the

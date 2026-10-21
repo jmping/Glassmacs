@@ -636,6 +636,9 @@ open(binary, "w").write("\\n".join(lines))
 
     def test_native_compilation_is_configured_before_package_loading(self):
         startup = (ROOT / "init.el").read_text()
+        launcher = (
+            ROOT / "macos/Sources/GlassmacsLauncherCore/LaunchConfiguration.swift"
+        ).read_text()
         policy = re.search(
             r"^\(glassmacs--configure-native-compilation\)$",
             startup,
@@ -646,20 +649,25 @@ open(binary, "w").write("\\n".join(lines))
             policy.start(),
             startup.index("(require 'glassmacs)"),
         )
-        self.assertIn('GLASSMACS_NATIVE_COMP', startup)
         self.assertIn("native-comp-jit-compilation", startup)
+        self.assertIn("native-comp-enable-subr-trampolines", startup)
+        self.assertIn("native-comp-eln-load-path", startup)
+        self.assertNotIn("GLASSMACS_NATIVE_COMP", startup)
+        self.assertIn("nativeCompilationPolicy", launcher)
+        self.assertIn("native-comp-enable-subr-trampolines", launcher)
+        self.assertIn("native-comp-eln-load-path", launcher)
+        self.assertNotIn("GLASSMACS_NATIVE_COMP", launcher)
         self.assertIn("13.0", (ROOT / "macos/Sources/GlassmacsLauncherCore/LaunchConfiguration.swift").read_text())
 
-    def test_entitlements_are_valid_and_signing_order_is_preserved(self):
-        entitlements = plistlib.loads(
-            (ROOT / "macos/Glassmacs.entitlements.plist").read_bytes()
-        )
-        self.assertIs(entitlements["com.apple.security.cs.disable-library-validation"], True)
-
+    def test_hardened_signing_preserves_library_validation_and_signing_order(self):
         signing = (ROOT / "scripts/sign-macos-app").read_text()
+        self.assertFalse((ROOT / "macos/Glassmacs.entitlements.plist").exists())
+        self.assertNotIn("--entitlements", signing)
+        self.assertNotIn("disable-library-validation", signing)
+        self.assertIn("--options runtime", signing)
         nested_sign = signing.index('/usr/bin/codesign --force --sign "$identity"')
-        emacs_sign = signing.index('--entitlements "$entitlements" "$emacs"')
-        outer_sign = signing.index('--entitlements "$entitlements" "$app"')
+        emacs_sign = signing.index('--options runtime --timestamp \\\n  "$emacs"')
+        outer_sign = signing.index('--options runtime --timestamp \\\n  "$app"')
         verification = signing.index(
             '/usr/bin/codesign --verify --deep --strict --verbose=2 "$app"'
         )

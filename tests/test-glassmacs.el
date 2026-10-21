@@ -132,18 +132,61 @@
 
 (ert-deftest glassmacs-native-jit-is-disabled-by-default-before-packages ()
   (should (boundp 'native-comp-jit-compilation))
-  (should (eq native-comp-jit-compilation
-              (equal (getenv "GLASSMACS_NATIVE_COMP") "1")))
+  (should-not native-comp-jit-compilation)
+  (should (boundp 'native-comp-enable-subr-trampolines))
+  (should-not native-comp-enable-subr-trampolines)
   (should package--initialized)
-  (cl-letf (((symbol-function 'getenv)
-             (lambda (name)
-               (if (equal name "GLASSMACS_NATIVE_COMP") "1"))))
-    (glassmacs--configure-native-compilation)
-    (should native-comp-jit-compilation))
-  (cl-letf (((symbol-function 'getenv)
-             (lambda (_name) nil)))
-    (glassmacs--configure-native-compilation)
-    (should-not native-comp-jit-compilation)))
+  (let* ((native-comp-eln-load-path '("/user/cache/eln-cache/"))
+         (bundle (make-temp-file "glassmacs-native-bundle-" t))
+         (contents (expand-file-name "Contents/" bundle))
+         (data-directory (expand-file-name "Resources/etc/" contents))
+         (native-lisp (expand-file-name "Frameworks/native-lisp/" contents)))
+    (unwind-protect
+        (progn
+          (make-directory data-directory t)
+          (make-directory native-lisp t)
+          (write-region "" nil (expand-file-name "Info.plist" contents))
+          (let ((system-type 'darwin))
+            (glassmacs--configure-native-compilation)
+            (should (equal native-comp-eln-load-path
+                           (list (file-name-as-directory
+                                  (file-truename native-lisp))))))
+          (let ((system-type 'gnu/linux))
+            (glassmacs--configure-native-compilation)
+            (should-not native-comp-eln-load-path)))
+      (delete-directory bundle t))))
+
+(ert-deftest glassmacs-native-compilation-does-not-use-user-cache ()
+  (should-not native-comp-enable-subr-trampolines)
+  (should-not
+   (member (expand-file-name "eln-cache/" user-emacs-directory)
+           native-comp-eln-load-path)))
+
+(ert-deftest glassmacs-emacs-31-when-let-star-is-supported ()
+  (should (equal (when-let* ((first 1)
+                             (second (1+ first)))
+                   (list first second))
+                 '(1 2))))
+
+(ert-deftest glassmacs-ordinary-elisp-and-bytecode-remain-loadable ()
+  (let* ((directory (make-temp-file "glassmacs-lisp-package-" t))
+         (source (expand-file-name "glassmacs-test-package.el" directory))
+         (load-path (cons directory load-path)))
+    (unwind-protect
+        (progn
+          (with-temp-file source
+            (insert "(defun glassmacs-test-package-value () 'loaded)\n"
+                    "(provide 'glassmacs-test-package)\n"))
+          (should (byte-compile-file source))
+          (require 'glassmacs-test-package)
+          (should (eq (glassmacs-test-package-value) 'loaded))
+          (unload-feature 'glassmacs-test-package t)
+          (delete-file source)
+          (require 'glassmacs-test-package)
+          (should (eq (glassmacs-test-package-value) 'loaded)))
+      (when (featurep 'glassmacs-test-package)
+        (unload-feature 'glassmacs-test-package t))
+      (delete-directory directory t))))
 
 (ert-deftest glassmacs-document-classification-excludes-special-buffers ()
   (let ((document (generate-new-buffer "glassmacs-document"))
@@ -472,7 +515,19 @@
                     "   (error \"unexpected package-user-dir: %s\""
                     "          package-user-dir))"
                     " (unless (equal custom-file %S)"
-                    "   (error \"unexpected custom-file: %s\" custom-file)))")
+                    "   (error \"unexpected custom-file: %s\" custom-file))"
+                    " (when (and (boundp 'native-comp-jit-compilation)"
+                    "            native-comp-jit-compilation)"
+                    "   (error \"Glassmacs left native JIT enabled\"))"
+                    " (when (and (boundp 'native-comp-enable-subr-trampolines)"
+                    "            native-comp-enable-subr-trampolines)"
+                    "   (error \"Glassmacs left trampoline generation enabled\"))"
+                    " (when (and (boundp 'native-comp-eln-load-path)"
+                    "            (member (expand-file-name \"eln-cache/\""
+                    "                                     (expand-file-name \".emacs.d/\""
+                    "                                                       (getenv \"HOME\")))"
+                    "                    native-comp-eln-load-path))"
+                    "   (error \"Glassmacs included the ordinary user .eln cache\")))")
                    (file-name-as-directory isolated-home)
                    (file-name-as-directory isolated-home)
                    (expand-file-name "elpa" isolated-home)

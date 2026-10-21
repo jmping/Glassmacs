@@ -168,8 +168,15 @@ policy = re.search(
 glassmacs_load = startup.find("(require 'glassmacs)")
 if not policy or glassmacs_load < 0 or policy.start() > glassmacs_load:
     sys.exit("Native-compilation policy must run before Glassmacs package initialization")
-if 'GLASSMACS_NATIVE_COMP' not in startup or 'native-comp-jit-compilation' not in startup:
-    sys.exit("Bundled startup does not configure native JIT compilation")
+for setting in (
+    "native-comp-jit-compilation",
+    "native-comp-enable-subr-trampolines",
+    "native-comp-eln-load-path",
+):
+    if setting not in startup:
+        sys.exit(f"Bundled startup does not configure native-compilation setting: {setting}")
+if "GLASSMACS_NATIVE_COMP" in startup:
+    sys.exit("Bundled startup must not expose an unsafe native-compilation opt-in")
 
 print(f"Checked {len(binaries)} bundled Mach-O files and startup policy")
 PY

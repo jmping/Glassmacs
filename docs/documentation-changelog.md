@@ -25,7 +25,7 @@ Future entries should state date, affected document IDs, old/new coverage or aut
 
 ## 2026-10-20 — Native compilation and signed macOS release pipeline
 
-- **Updated DOC-MAC-LAUNCHER:** documented deployment-target propagation, default-off native JIT and developer opt-in, the unresolved generated-`.eln` Team ID issue, entitlements, Developer ID signing, notarization, stapling, Gatekeeper, and final distribution archive.
+- **Updated DOC-MAC-LAUNCHER:** documented deployment-target propagation, native-code trust boundaries, signed bundled `.eln` loading with normal library validation, Developer ID signing, notarization, stapling, Gatekeeper, and final distribution archive.
 - **Updated DOC-ARCH, DOC-DEV, DOC-ROADMAP and DOC-README:** distinguish portable build/mocked release validation from actual local signing/notarization and interactive macOS verification.
 - No document status or authority changed; no signing credentials or generated app artifacts are documented or committed.
 

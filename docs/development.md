@@ -24,13 +24,14 @@ Run ERT in isolated batch mode:
 ./scripts/test
 ```
 
-**Known Emacs 31 macOS test failure:** the full suite currently fails
-`glassmacs-startup-does-not-touch-ordinary-emacs-home` because an Emacs 31
-subprocess creates an `ordinary-home/.emacs.d/eln-cache/...trampoline...eln`
-file while Glassmacs is starting with `-Q` and `GLASSMACS_HOME` set. This is a
-native-compilation cache-isolation issue; it has not been resolved. Do not
-count the full suite as green or suppress the failure by weakening native
-compilation security.
+Glassmacs disables native JIT compilation and on-demand native subr trampoline
+generation before loading its modules. It restricts the `.eln` search path to
+the Emacs app bundle's `Contents/Frameworks/native-lisp` directory; source
+checkouts without that bundled directory load no native `.eln` files. Ordinary
+`.el` and `.elc` packages continue to load from the regular Emacs load path.
+The startup isolation test runs a child Emacs with a separate ordinary home
+and verifies that Glassmacs neither reads its configuration nor writes to its
+`.emacs.d/eln-cache`.
 
 GitHub Actions runs the ERT suite, including remote-workflow stubs, and byte-compiles all Lisp modules on Ubuntu
 24.04 with `emacs-nox`. A separate integration job installs `r-base-core` and
@@ -70,12 +71,17 @@ temporary directory:
 
 ```sh
 emacs -Q --batch -l init.el \
-  --eval '(let ((byte-compile-dest-file-function
-                 (lambda (file)
-                   (expand-file-name (file-name-nondirectory file)
-                                     temporary-file-directory))))
+  --eval '(progn
+            (require (quote bytecomp))
+            (let ((byte-compile-dest-file-function
+                   (lambda (file)
+                     (expand-file-name
+                      (concat (file-name-sans-extension
+                               (file-name-nondirectory file))
+                              ".elc")
+                      temporary-file-directory))))
             (dolist (file (directory-files "lisp" t "\\.el$"))
-              (byte-compile-file file)))'
+              (byte-compile-file file))))'
 ```
 
 `tests/test-glassmacs-sessions.el` covers sessions and the queue with mocked
@@ -133,13 +139,14 @@ launch to choose another directory. Optional user customizations belong in
 neither loaded nor modified. To return to ordinary GNU Emacs, start it directly
 with `emacs` rather than `./scripts/glassmacs`.
 
-For the bundled macOS app, automatic native JIT compilation is disabled before
-Glassmacs modules/package initialization; `GLASSMACS_NATIVE_COMP=1` opts into
-JIT for controlled testing. The bootstrap exports `MACOSX_DEPLOYMENT_TARGET`
-13.0 by default, matching the app's minimum supported macOS version, while
-preserving a valid explicit override. See the
+For the bundled macOS app, native JIT and runtime trampoline generation are
+disabled before Glassmacs modules/package initialization. `.eln` loading is
+limited to the bundled Emacs native-lisp directory; there is no unsafe
+environment-variable opt-in. The bootstrap exports
+`MACOSX_DEPLOYMENT_TARGET=13.0` by default, matching the app's minimum
+supported macOS version, while preserving a valid explicit override. See the
 [macOS application guide](macos-launcher.md#native-lisp-compilation) for the
-separate generated-`.eln` Team ID limitation and release signing/notarization.
+native-code trust boundary and signed-app verification requirements.
 
 The core editor has no required Emacs packages beyond GNU Emacs. ESS and
 document-editing packages (markdown-mode, Quarto mode, polymode/poly-R, and
