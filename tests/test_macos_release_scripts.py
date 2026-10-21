@@ -3,14 +3,193 @@ from pathlib import Path
 import plistlib
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from macos_macho import (
+    MACHO_MAGICS,
+    discover_macho_binaries,
+    index_macho_names,
+    run_tool,
+)
 
 
 class MacOSReleaseScriptTests(unittest.TestCase):
+    def test_macho_magic_detection_covers_endian_and_fat_variants(self):
+        self.assertEqual(len(MACHO_MAGICS), 8)
+        for magic in MACHO_MAGICS:
+            with self.subTest(magic=magic):
+                with tempfile.TemporaryDirectory() as temp:
+                    contents = Path(temp) / "Contents"
+                    contents.mkdir()
+                    (contents / "binary").write_bytes(magic + b"rest")
+                    self.assertEqual(
+                        discover_macho_binaries(contents, progress_interval=0),
+                        [(contents / "binary").resolve()],
+                    )
+
+    def test_macho_discovery_deduplicates_and_rejects_outside_symlink(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            contents = root / "Contents"
+            contents.mkdir()
+            binary = contents / "Emacs"
+            binary.write_bytes(b"\xcf\xfa\xed\xfe" + b"payload")
+            (contents / "Emacs-alias").symlink_to(binary)
+            self.assertEqual(
+                discover_macho_binaries(contents, progress_interval=0),
+                [binary.resolve()],
+            )
+            self.assertEqual(
+                index_macho_names(contents, [binary.resolve()])["Emacs-alias"],
+                {binary.resolve()},
+            )
+
+            outside = root / "outside"
+            outside.write_bytes(b"\xca\xfe\xba\xbf" + b"payload")
+            (contents / "escaped").symlink_to(outside)
+            with self.assertRaisesRegex(RuntimeError, "resolves outside"):
+                discover_macho_binaries(contents, progress_interval=0)
+
+    def test_macho_discovery_reports_files_it_cannot_inspect(self):
+        with tempfile.TemporaryDirectory() as temp:
+            contents = Path(temp) / "Contents"
+            contents.mkdir()
+            (contents / "unreadable").write_bytes(b"not macho")
+            with mock.patch.object(Path, "open", side_effect=PermissionError("denied")):
+                with self.assertRaisesRegex(RuntimeError, "Could not inspect bundle file"):
+                    discover_macho_binaries(contents, progress_interval=0)
+
+    def test_macho_tool_failures_are_bounded_and_actionable(self):
+        with mock.patch(
+            "macos_macho.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["otool", "-L"], 30),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Timed out.*otool"):
+                run_tool("otool", "-L", "binary", context="inspect binary")
+
+        failure = subprocess.CalledProcessError(9, ["otool", "-L"], stderr="bad file")
+        with mock.patch("macos_macho.subprocess.run", side_effect=failure):
+            with self.assertRaisesRegex(RuntimeError, "exit 9.*bad file"):
+                run_tool("otool", "-L", "binary", context="inspect binary")
+
+    def run_dependency_relocator(self, dependencies, extra_libraries=(), fail_otool=False):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        app = root / "Glassmacs.app"
+        contents = app / "Contents"
+        executable_dir = contents / "MacOS"
+        executable_dir.mkdir(parents=True)
+
+        def make_binary(path, arch, dependency=None):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            lines = [f"ARCH={arch}"]
+            if dependency:
+                lines.append(f"DEP={dependency}")
+            path.write_bytes(b"\xcf\xfa\xed\xfe" + ("\n".join(lines) + "\n").encode())
+            return path
+
+        executable = make_binary(executable_dir / "Emacs", "arm64")
+        libraries = [
+            make_binary(contents / relative, "arm64")
+            for relative in extra_libraries
+        ]
+        executable.write_bytes(
+            b"\xcf\xfa\xed\xfe"
+            + (f"ARCH=arm64\n" + "".join(f"DEP={item}\n" for item in dependencies)).encode()
+        )
+        tools = root / "tools"
+        tools.mkdir()
+        otool = tools / "otool"
+        otool.write_text("""#!/usr/bin/env python3
+import os, sys
+if os.environ.get("OTOOL_FAIL") == "1":
+    sys.exit(8)
+operation, binary = sys.argv[1], sys.argv[2]
+data = open(binary, "rb").read()[4:].decode()
+if operation == "-L":
+    print(binary + ":")
+    for line in data.splitlines():
+        if line.startswith("DEP="):
+            print("    " + line[4:] + " (compatibility version 1.0.0, current version 1.0.0)")
+elif operation == "-D":
+    print(binary + ":")
+    for line in data.splitlines():
+        if line.startswith("ID="):
+            print(line[3:])
+""")
+        otool.chmod(0o755)
+        lipo = tools / "lipo"
+        lipo.write_text("""#!/usr/bin/env python3
+import sys
+data = open(sys.argv[2], "rb").read()[4:].decode()
+print(next(line[5:] for line in data.splitlines() if line.startswith("ARCH=")))
+""")
+        lipo.chmod(0o755)
+        installer = tools / "install_name_tool"
+        installer.write_text("""#!/usr/bin/env python3
+import sys
+_, old, new, binary = sys.argv[1:]
+data = open(binary, "rb").read()
+text = data[4:].decode().replace("DEP=" + old + "\\n", "DEP=" + new + "\\n")
+open(binary, "wb").write(data[:4] + text.encode())
+""")
+        installer.chmod(0o755)
+        environment = os.environ.copy()
+        environment.update({
+            "GLASSMACS_OTOOL": str(otool),
+            "GLASSMACS_LIPO": str(lipo),
+            "GLASSMACS_INSTALL_NAME_TOOL": str(installer),
+        })
+        if fail_otool:
+            environment["OTOOL_FAIL"] = "1"
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/relocate-macos-dependencies"), str(app)],
+            text=True, capture_output=True, check=False, env=environment,
+        )
+        return result, executable, libraries
+
+    def test_dependency_relocator_targets_the_unique_arch_compatible_bundle_library(self):
+        external = "/nix/store/abcd-gettext-0.25.1/lib/libintl.8.dylib"
+        result, executable, libraries = self.run_dependency_relocator(
+            [external], ["MacOS/lib-arm64-11/libintl.8.dylib"]
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "DEP=@loader_path/lib-arm64-11/libintl.8.dylib",
+            executable.read_bytes()[4:].decode(),
+        )
+        self.assertIn("Relocated 1 external", result.stdout)
+        self.assertEqual(libraries[0].name, "libintl.8.dylib")
+
+    def test_dependency_relocator_fails_on_ambiguous_or_unresolved_matches(self):
+        external = "/nix/store/abcd-gettext/lib/libintl.8.dylib"
+        ambiguous, _, _ = self.run_dependency_relocator(
+            [external],
+            ["MacOS/lib-arm64-11/libintl.8.dylib", "Frameworks/libintl.8.dylib"],
+        )
+        self.assertNotEqual(ambiguous.returncode, 0)
+        self.assertIn("Ambiguous external dependency", ambiguous.stderr)
+
+        unresolved, _, _ = self.run_dependency_relocator([external])
+        self.assertNotEqual(unresolved.returncode, 0)
+        self.assertIn("Unresolved external dependency", unresolved.stderr)
+
+    def test_dependency_relocator_reports_subprocess_failure(self):
+        result, _, _ = self.run_dependency_relocator(
+            ["/nix/store/abcd-gettext/lib/libintl.8.dylib"],
+            ["MacOS/lib-arm64-11/libintl.8.dylib"],
+            fail_otool=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Could not inspect install name", result.stderr)
+
     def test_bundle_icon_and_minimum_os_are_declared_and_packaged(self):
         plist = plistlib.loads((ROOT / "macos/Info.plist").read_bytes())
         builder = (ROOT / "scripts/build-macos-app").read_text()
@@ -29,7 +208,11 @@ class MacOSReleaseScriptTests(unittest.TestCase):
         validator_call = builder.index(
             'GLASSMACS_SKIP_EMACS_STARTUP=1 "$root/scripts/validate-macos-app" "$output"'
         )
-        self.assertLess(sanitizer_call, validator_call)
+        relocator_call = builder.index(
+            '"$root/scripts/relocate-macos-dependencies" "$output"'
+        )
+        self.assertLess(sanitizer_call, relocator_call)
+        self.assertLess(relocator_call, validator_call)
         self.assertIn("install_name_tool", (ROOT / "scripts/sanitize-macos-rpaths").read_text())
 
     def run_rpath_sanitizer(

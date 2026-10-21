@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Relocate external absolute Mach-O dependencies to unique bundled libraries."""
+
+import os
+from pathlib import Path
+import re
+import sys
+
+from macos_macho import (
+    discover_macho_binaries,
+    index_macho_names,
+    is_within_bundle,
+    run_tool,
+)
+
+
+SYSTEM_PREFIXES = (
+    "/System/Library/",
+    "/System/Volumes/Preboot/Cryptexes/OS/System/Library/",
+    "/usr/lib/",
+    "/Library/Apple/System/Library/",
+)
+DEPENDENCY_RE = re.compile(r"^\s*(.*?)\s+\(compatibility version.*$")
+
+
+def main(app):
+    contents = (Path(app) / "Contents").resolve(strict=True)
+    binaries = discover_macho_binaries(contents)
+    by_name = index_macho_names(contents, binaries)
+
+    otool = os.environ.get("GLASSMACS_OTOOL", "/usr/bin/otool")
+    lipo = os.environ.get("GLASSMACS_LIPO", "/usr/bin/lipo")
+    install_name_tool = os.environ.get("GLASSMACS_INSTALL_NAME_TOOL")
+    if not install_name_tool:
+        if Path("/usr/bin/xcrun").is_file():
+            install_name_tool = run_tool(
+                "/usr/bin/xcrun", "--find", "install_name_tool",
+                context="locate Apple install_name_tool",
+            ).strip()
+        elif Path("/usr/bin/install_name_tool").is_file():
+            install_name_tool = "/usr/bin/install_name_tool"
+        else:
+            raise RuntimeError("Could not locate Apple install_name_tool")
+
+    architecture_cache = {}
+
+    def architectures(binary):
+        if binary not in architecture_cache:
+            output = run_tool(
+                lipo, "-archs", str(binary),
+                context=f"inspect architectures in {binary}",
+            ).strip()
+            architecture_cache[binary] = set(output.split())
+            if not architecture_cache[binary]:
+                raise RuntimeError(f"No CPU architectures reported for {binary}")
+        return architecture_cache[binary]
+
+    def load_dependencies(binary):
+        lines = run_tool(
+            otool, "-L", str(binary),
+            context=f"inspect dependencies in {binary}",
+        ).splitlines()[1:]
+        dependencies = []
+        for line in lines:
+            match = DEPENDENCY_RE.match(line)
+            if match:
+                dependencies.append(match.group(1))
+        return dependencies
+
+    def install_name(binary):
+        lines = run_tool(
+            otool, "-D", str(binary),
+            context=f"inspect install name in {binary}",
+        ).splitlines()
+        return lines[1].strip() if len(lines) > 1 else None
+
+    changed = 0
+    for index, binary in enumerate(binaries, start=1):
+        if index == 1 or index % 100 == 0 or index == len(binaries):
+            print(
+                f"Checking dependency relocation {index}/{len(binaries)}: {binary}",
+                flush=True,
+            )
+
+        own_name = install_name(binary)
+        for dependency in load_dependencies(binary):
+            if dependency == str(binary) or dependency == own_name:
+                continue
+            if not dependency.startswith("/") or dependency.startswith(SYSTEM_PREFIXES):
+                continue
+            try:
+                resolved_dependency = Path(dependency).resolve(strict=True)
+            except OSError:
+                resolved_dependency = None
+            if resolved_dependency and is_within_bundle(resolved_dependency, contents):
+                continue
+
+            matches = by_name.get(Path(dependency).name, set())
+            compatible = [
+                candidate for candidate in matches
+                if architectures(candidate) & architectures(binary)
+            ]
+            if len(compatible) != 1:
+                reason = "unresolved" if not compatible else "ambiguous"
+                names = ", ".join(str(candidate) for candidate in compatible or matches)
+                suffix = f" Candidates: {names}" if names else ""
+                raise RuntimeError(
+                    f"{reason.capitalize()} external dependency in {binary}: "
+                    f"{dependency}.{suffix}"
+                )
+
+            target = compatible[0]
+            relative = os.path.relpath(target, binary.parent)
+            replacement = "@loader_path/" + relative
+            replacement_target = (binary.parent / relative).resolve(strict=True)
+            if replacement_target != target or not is_within_bundle(target, contents):
+                raise RuntimeError(
+                    f"Relocation target does not resolve to the selected bundled library: "
+                    f"{binary}: {dependency} -> {replacement}"
+                )
+
+            run_tool(
+                install_name_tool, "-change", dependency, replacement, str(binary),
+                context=f"relocate dependency {dependency} in {binary}",
+            )
+            if replacement not in load_dependencies(binary):
+                raise RuntimeError(
+                    f"Dependency relocation was not recorded in {binary}: "
+                    f"{dependency} -> {replacement}"
+                )
+            changed += 1
+            print(f"Relocated {dependency} in {binary} to {replacement}", flush=True)
+
+    print(f"Relocated {changed} external Mach-O dependency(s) in {contents}", flush=True)
+
+
+if __name__ == "__main__":
+    try:
+        if len(sys.argv) != 2:
+            raise RuntimeError("Usage: relocate-macos-dependencies /path/to/Glassmacs.app")
+        main(sys.argv[1])
+    except (OSError, RuntimeError) as error:
+        sys.exit(str(error))

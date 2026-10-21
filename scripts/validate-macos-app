@@ -27,11 +27,13 @@ for extension in R r Rmd qmd Rnw; do
     "$plist" | grep -Eq "^[[:space:]]*${extension}[[:space:]]*$"
 done
 
-python3 - "$contents" "$emacs" <<'PY'
+python3 - "$contents" "$emacs" "$root/scripts" <<'PY'
 from pathlib import Path
 import re
-import subprocess
 import sys
+
+sys.path.insert(0, sys.argv[3])
+from macos_macho import discover_macho_binaries, is_within_bundle, run_tool
 
 contents = Path(sys.argv[1]).resolve()
 main_executable = Path(sys.argv[2]).resolve()
@@ -44,14 +46,16 @@ system_prefixes = (
 bare_tokens = {"@rpath", "@loader_path", "@executable_path"}
 
 def output(*arguments):
-    return subprocess.run(arguments, check=True, text=True, capture_output=True).stdout
+    try:
+        return run_tool(
+            *arguments,
+            context=f"inspect Mach-O load commands for {arguments[-1]}",
+        )
+    except RuntimeError as error:
+        sys.exit(str(error))
 
 def within_bundle(path):
-    try:
-        path.resolve(strict=True).relative_to(contents)
-        return True
-    except (OSError, ValueError):
-        return False
+    return is_within_bundle(path, contents)
 
 def runtime_path_allowed(path, binary):
     if path in bare_tokens:
@@ -104,30 +108,23 @@ def dependency_resolves(candidate):
     return within_bundle(resolved) or str(resolved).startswith(system_prefixes)
 
 def own_install_name(binary):
-    try:
-        lines = output("/usr/bin/otool", "-D", str(binary)).splitlines()
-    except subprocess.CalledProcessError:
-        return None
+    lines = output("/usr/bin/otool", "-D", str(binary)).splitlines()
     return lines[1].strip() if len(lines) > 1 else None
 
-binaries = []
-for candidate in contents.rglob("*"):
-    if not candidate.is_file():
-        continue
-    description = subprocess.run(
-        ["/usr/bin/file", "-b", str(candidate)],
-        check=True, text=True, capture_output=True,
-    ).stdout
-    if "Mach-O" in description:
-        resolved = candidate.resolve()
-        if not within_bundle(resolved):
-            sys.exit(f"Bundled Mach-O symlink resolves outside the app: {candidate}")
-        binaries.append(resolved)
+try:
+    binaries = discover_macho_binaries(contents)
+except RuntimeError as error:
+    sys.exit(str(error))
 
 if main_executable not in binaries:
     sys.exit(f"Expected Emacs Mach-O executable was not found: {main_executable}")
 
-for binary in binaries:
+for binary_index, binary in enumerate(binaries, start=1):
+    if binary_index == 1 or binary_index % 100 == 0 or binary_index == len(binaries):
+        print(
+            f"Inspecting Mach-O dependencies {binary_index}/{len(binaries)}: {binary}",
+            flush=True,
+        )
     rpaths = rpaths_for(binary)
     for rpath in rpaths:
         if not runtime_path_allowed(rpath, binary):

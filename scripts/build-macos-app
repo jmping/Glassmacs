@@ -81,6 +81,7 @@ PY
 cp "$root/assets/icon/Glassmacs.icns" "$output/Contents/Resources/Glassmacs.icns"
 
 "$root/scripts/sanitize-macos-rpaths" "$output"
+"$root/scripts/relocate-macos-dependencies" "$output"
 GLASSMACS_SKIP_EMACS_STARTUP=1 "$root/scripts/validate-macos-app" "$output"
 
 if [ -n "${GLASSMACS_UPSTREAM_EMACS_APP:-}" ]; then
