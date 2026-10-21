@@ -1,0 +1,26 @@
+#!/bin/bash
+set -euo pipefail
+
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+upstream_app=${1:?Usage: scripts/build-macos-lifecycle /path/to/Emacs.app /path/to/output.dylib}
+output=${2:?Usage: scripts/build-macos-lifecycle /path/to/Emacs.app /path/to/output.dylib}
+header="$upstream_app/Contents/Resources/include/emacs-module.h"
+
+if [ ! -f "$header" ]; then
+  printf 'Emacs dynamic-module header is missing: %s\n' "$header" >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname -- "$output")"
+/usr/bin/clang \
+  -dynamiclib \
+  -fobjc-arc \
+  -mmacosx-version-min=13.0 \
+  -arch arm64 \
+  -arch x86_64 \
+  -I "$upstream_app/Contents/Resources/include" \
+  "$root/macos/GlassmacsLifecycle.m" \
+  -framework AppKit \
+  -o "$output"
+
+printf 'Built universal Cocoa lifecycle bridge: %s\n' "$output"

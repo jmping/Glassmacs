@@ -126,6 +126,9 @@ POLICY must be `new-frame', `new-tab', or `reuse-current'."
 (defun glassmacs--install-document-menu ()
   "Route macOS File menu open commands through Glassmacs' document policy."
   (when (and (eq system-type 'darwin) (display-graphic-p))
+    (define-key global-map [menu-bar file new-document]
+      '(menu-item "New Document" glassmacs-new-document
+                  :enable (menu-bar-non-minibuffer-window-p)))
     (define-key global-map [menu-bar file open-file]
       '(menu-item "Open File..." glassmacs-open-file
                   :enable (menu-bar-non-minibuffer-window-p)))

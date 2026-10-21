@@ -45,19 +45,35 @@ Cocoa code or starting a second application.
 
 Closing a Cocoa window deletes its Emacs frame; Emacs is also the process that
 owns the application event loop. Deleting its final graphical frame therefore
-can end the process and remove the Dock application. Glassmacs now intercepts
+can end the process and remove the Dock application. Glassmacs intercepts
 deletion of the final macOS graphical frame and makes that frame invisible
 instead. It does not kill buffers or processes, and does not save or discard
-buffer changes. Focus hooks restore and focus the retained frame when Emacs
-receives focus; **⌘Q** remains bound to `save-buffers-kill-emacs`, preserving
-Emacs's normal save and quit prompts. Nonfinal frames still delete normally.
-`File → New Window` invokes Emacs's normal new-frame command.
+buffer changes. The retained frame is restored by the native Cocoa
+Dock-reopen callback. That callback is a small Emacs dynamic module,
+compiled from `macos/GlassmacsLifecycle.m` against the bundled Emacs 31 module
+header and AppKit. It adds `applicationShouldHandleReopen:hasVisibleWindows:`
+to Emacs's existing `EmacsApp` delegate and asks Emacs's existing `newFrame:`
+event path to reopen only when Cocoa reports no visible windows. Emacs Lisp
+maps that native event to `glassmacs-reopen`, which restores the retained frame
+or creates a frame when none was retained. For the no-window case, the
+delegate returns `NO` after dispatching the Emacs event, suppressing AppKit's
+default untitled-document creation; when a window is already visible it
+returns `YES` to preserve normal activation and session-restoration behavior.
+The module is a nested Mach-O resource and the existing signing script signs
+it with the rest of the app.
+No Emacs source, runtime library-validation policy, or process architecture is
+changed. **⌘Q** and Cocoa Quit remain on Emacs's normal save-and-quit path.
+Nonfinal frames still delete normally. `File → New Window` always requests a
+new frame; `File → New Document` uses the persisted document-opening policy.
 
-The invisible-frame and focus-notification behavior is platform-specific and
-has not yet been verified interactively on a physical Mac. If Dock activation
-does not trigger the Emacs focus hooks on a supported macOS version, that
-activation behavior requires a native Cocoa reopen callback; Glassmacs does
-not add an AppKit helper process or patch the signed Emacs executable.
+On a source checkout without a built bridge, closing the final frame still
+keeps Emacs running, but Dock reopen is unavailable; Glassmacs emits a warning
+that the native module is missing. `scripts/validate-macos-app` rejects a
+bundle missing the module.
+Native callback registration, Dock activation, final-window close, and state
+restoration still require interactive verification in the signed Glassmacs
+application on macOS; ERT and bundle structure checks alone do not prove these
+behaviors.
 
 This decision is informed by GNU Emacs's Cocoa bundle structure and
 self-contained installation instructions: the app bundle includes the
@@ -94,9 +110,10 @@ native-compiler deployment target.
 ./scripts/validate-macos-app build/Glassmacs.app
 ```
 
-The result is `build/Glassmacs.app`. The build copies only `init.el`, `lisp/`,
-the package bootstrap, and the committed `assets/icon/Glassmacs.icns` into the
-bundle; it does not depend on the source checkout at runtime. The validation
+The result is `build/Glassmacs.app`. The build copies `init.el`, `lisp/`, the
+package bootstrap, the compiled Cocoa-reopen module, and the committed
+`assets/icon/Glassmacs.icns` into the bundle; it does not depend on the source
+checkout at runtime. The validation
 script checks bundle metadata and icon, document extensions, required files,
 all bundled Mach-O dependencies and runtime search paths, and a batch startup
 of the bundled Emacs. Use `GLASSMACS_SKIP_EMACS_STARTUP=1` to run structural

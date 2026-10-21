@@ -17,6 +17,7 @@ test -x "$emacs"
 test -f "$contents/Resources/Glassmacs/init.el"
 test -f "$contents/Resources/Glassmacs/lisp/glassmacs.el"
 test -f "$contents/Resources/Glassmacs/scripts/bootstrap"
+test -f "$contents/Resources/Glassmacs/macos/libglassmacs-lifecycle.dylib"
 test -f "$contents/Resources/Glassmacs.icns"
 /usr/bin/env "$plutil" -lint "$plist"
 test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundlePackageType' "$plist")" = APPL

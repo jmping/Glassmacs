@@ -14,9 +14,14 @@ This is an initial checkpoint for the draft PR. The Aquamacs-inspired macOS impl
 
 ## Physical Mac release gate
 
+- [ ] Verify Cocoa reopen callback in the signed app restores the retained final
+  frame from the Dock and does not create duplicate frames after session restore.
+- [ ] Verify `File → New Document`, `File → New Window`, Cocoa Quit, and
+  Command-Q retain their distinct expected behaviors.
+- [ ] Verify closing the final window leaves Emacs/Glassmacs running and that
+  closing nonfinal windows only closes the selected frame.
 - [ ] Confirm signed bundled `.eln` files load without Team ID / library-validation errors; no unsigned cache `.eln` loads.
 - [ ] Verify running Dock icon uses Glassmacs artwork.
-- [ ] Verify closing the last document window leaves the application running and reopening works from Dock.
 - [ ] Verify document opening, frame policy and persisted preferences.
 - [ ] Verify native menus and Hybrid/Traditional shortcuts.
 - [ ] Execute ERT and byte compilation with bundled Emacs 31.

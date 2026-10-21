@@ -434,6 +434,11 @@ open(binary, "wb").write(data[:32] + text.encode())
             (resources / "scripts").mkdir()
             (resources / "scripts/bootstrap").write_text("#!/bin/sh\n")
             (contents / "Resources/Glassmacs.icns").write_bytes(b"icon")
+            lifecycle_module = (
+                contents / "Resources/Glassmacs/macos/libglassmacs-lifecycle.dylib"
+            )
+            lifecycle_module.parent.mkdir()
+            lifecycle_module.write_bytes(b"fixture lifecycle module")
             archive = contents / "MacOS/lib-x86_64-11/libgccjit/sdk-libs/libkmod.a"
             archive.parent.mkdir(parents=True)
             archive.write_bytes(make_fat_macho(

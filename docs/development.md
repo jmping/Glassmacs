@@ -24,6 +24,14 @@ Run ERT in isolated batch mode:
 ./scripts/test
 ```
 
+**Known Emacs 31 macOS test failure:** the full suite currently fails
+`glassmacs-startup-does-not-touch-ordinary-emacs-home` because an Emacs 31
+subprocess creates an `ordinary-home/.emacs.d/eln-cache/...trampoline...eln`
+file while Glassmacs is starting with `-Q` and `GLASSMACS_HOME` set. This is a
+native-compilation cache-isolation issue; it has not been resolved. Do not
+count the full suite as green or suppress the failure by weakening native
+compilation security.
+
 GitHub Actions runs the ERT suite, including remote-workflow stubs, and byte-compiles all Lisp modules on Ubuntu
 24.04 with `emacs-nox`. A separate integration job installs `r-base-core` and
 `elpa-ess`, adds the packaged ESS directory to `EMACSLOADPATH`, and runs the
@@ -151,12 +159,23 @@ or set it in `$GLASSMACS_HOME/custom.el`, for example:
 ```
 
 Use `reuse-current` instead of `new-tab` to keep opening in the current frame/tab.
-Special-mode and Dired buffers and non-graphical sessions are not redirected.
+Special-mode, Dired, comint, and process-backed buffers and non-graphical
+sessions are not redirected.
 Cocoa `[ns-open-file]` events use the same policy through a narrow adapter around
 Emacs `ns-find-file`; this depends on the pinned Cocoa Emacs NS event interface.
 Existing visible document views are focused instead of duplicated. ERT covers
 the Lisp policy and a simulated NS event, but Finder delivery, startup ordering,
 and Cocoa frame behavior have not been manually verified on macOS.
+
+The standalone bundle also loads a small AppKit module that installs Emacs's
+native application-reopen delegate callback. The callback routes a Dock reopen
+with no visible windows into Emacs's normal `ns-new-frame` event, which Glassmacs
+maps to restoring the retained final frame or creating one. Reopen is handled
+through that event rather than a competing focus hook, so Cocoa session
+restoration of already-visible windows does not create an extra frame. The Lisp
+lifecycle tests cover these command decisions; they do not validate runtime
+Objective-C method installation or Dock delivery. Build and sign the standalone
+bundle before the required interactive lifecycle check.
 
 Run `M-x glassmacs-diagnostics` for a local report of Emacs/OS/window-system,
 Glassmacs home, ESS/R/Rscript availability and graphics guidance. It does not

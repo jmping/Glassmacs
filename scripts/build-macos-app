@@ -66,6 +66,8 @@ mkdir -p "$glassmacs_resources/scripts"
 cp "$root/init.el" "$glassmacs_resources/init.el"
 ditto "$root/lisp" "$glassmacs_resources/lisp"
 cp "$root/scripts/bootstrap" "$glassmacs_resources/scripts/bootstrap"
+"$root/scripts/build-macos-lifecycle" "$upstream_app" \
+  "$glassmacs_resources/macos/libglassmacs-lifecycle.dylib"
 
 python3 - "$output/Contents/Info.plist" "$root/macos/Info.plist" <<'PY'
 import plistlib

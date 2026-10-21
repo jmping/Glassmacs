@@ -44,10 +44,9 @@ See the [proposed Aquamacs behavior inventory](aquamacs-compatibility.md) and [m
 
 ## Aquamacs-specific command and conflict audit
 
-The current Glassmacs profile binds Command-N/O/S/Shift-S/W/Q/C/V/X/A/Z/F to `glassmacs-new-document`, `find-file`, `save-buffer`, `write-file`, `delete-frame`, `save-buffers-kill-emacs`, `kill-ring-save`, `yank`, `kill-region`, `mark-whole-buffer`, `undo`, and `isearch-forward`. Command-O applies the configurable interactive document-opening policy; Command-N creates an untitled document under the same policy. This is a partial macOS convenience layer, not full Aquamacs compatibility. In particular:
+The current Glassmacs profile binds Command-N/O/S/Shift-S/W/Q/C/V/X/A/Z/F to `glassmacs-new-document`, `find-file`, `save-buffer`, `write-file`, `delete-frame`, `save-buffers-kill-emacs`, `kill-ring-save`, `yank`, `kill-region`, `mark-whole-buffer`, `undo`, and `isearch-forward`. Command-O applies the configurable interactive document-opening policy; Command-N creates an untitled document under the same policy. Command-W closes a frame and preserves the app on final-frame close; Command-Q follows Emacs's save-and-quit path. Dock reopen is bridged to Cocoa's native application-reopen callback in the packaged app, but requires signed-app GUI verification. This is a partial macOS convenience layer, not full Aquamacs compatibility. In particular:
 
 - Command-W currently deletes the selected frame. Target behavior is a context-aware close-document/view command with GNU Emacs' unsaved-buffer protection. Closing a frame must not kill a buffer shown in another frame.
-- Command-Q currently exits Emacs through the normal save-buffers prompt; it is not proof of a native app remains-open/reopen lifecycle.
 - `aquamacs-menu.el` constructs menu shortcut labels dynamically from effective bindings. One historical File > Open declaration appears to annotate Command-S; do not copy that text. Verify the command's effective keymap at runtime.
 - Preserve `C-x`, `C-c`, `M-x`, and ESS commands such as `C-c C-c` and `C-c C-r`. Bindings installed globally must not displace a mode-local command with a stronger context-specific meaning.
 - Command-Shift-S is the current `write-file` binding. Tests must verify shifted Cocoa key event normalization instead of assuming `[super-S]` behaves identically for every layout.
