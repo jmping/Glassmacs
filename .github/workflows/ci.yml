@@ -19,6 +19,8 @@ jobs:
           emacs --version
       - name: Run ERT tests
         run: ./scripts/test
+      - name: Test macOS release scripts with mocked Apple tools
+        run: python3 -m unittest discover -s tests -p 'test_macos_release_scripts.py'
       - name: Byte-compile Lisp modules
         run: |
           emacs -Q --batch -l init.el \
@@ -45,13 +47,39 @@ jobs:
 
   macos-launcher:
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Test Swift launcher package
+      - name: Test Glassmacs bootstrap package
         run: swift test --package-path macos
-      - name: Build unsigned app bundle
+      - name: Build standalone app bundle
         run: |
           ./scripts/build-macos-app "$RUNNER_TEMP/Glassmacs.app"
-          test -x "$RUNNER_TEMP/Glassmacs.app/Contents/MacOS/GlassmacsLauncher"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' \
-            "$RUNNER_TEMP/Glassmacs.app/Contents/Info.plist" | grep -qx APPL
+          ./scripts/validate-macos-app "$RUNNER_TEMP/Glassmacs.app"
+      - name: Run ERT with the bundled Emacs
+        env:
+          GLASSMACS_EMACS: ${{ runner.temp }}/Glassmacs.app/Contents/MacOS/Emacs
+          GLASSMACS_HOME: ${{ runner.temp }}/glassmacs-test-home
+        run: ./scripts/test
+      - name: Verify bootstrap with bundled configuration
+        env:
+          GLASSMACS_HOME: ${{ runner.temp }}/glassmacs-bootstrap-test-home
+        run: |
+          "$RUNNER_TEMP/Glassmacs.app/Contents/MacOS/GlassmacsBootstrap" \
+            --batch --eval '(progn (require (quote glassmacs)) (princ "glassmacs-ready"))' \
+            | grep -qx glassmacs-ready
+      - name: Verify relocation
+        run: |
+          mkdir -p "$RUNNER_TEMP/relocated"
+          ditto "$RUNNER_TEMP/Glassmacs.app" "$RUNNER_TEMP/relocated/Glassmacs.app"
+          ./scripts/validate-macos-app "$RUNNER_TEMP/relocated/Glassmacs.app"
+      - name: Archive app
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$RUNNER_TEMP/Glassmacs.app" "$RUNNER_TEMP/Glassmacs-macOS.zip"
+      - name: Upload app archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Glassmacs-macOS-app
+          path: ${{ runner.temp }}/Glassmacs-macOS.zip
+          if-no-files-found: error

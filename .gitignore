@@ -1,1 +1,18 @@
+# Generated application bundles
 /build/
+
+# Distribution archives
+/dist/
+
+# macOS Finder metadata
+.DS_Store
+
+# Temporary backups
+*.app.bak
+
+# Python test bytecode
+__pycache__/
+*.py[cod]
+
+# Intermediate macOS icon generation files
+*.iconset/

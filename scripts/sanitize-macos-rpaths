@@ -1,0 +1,111 @@
+#!/bin/bash
+set -euo pipefail
+
+app=${1:?Usage: sanitize-macos-rpaths /path/to/Glassmacs.app}
+if [ ! -d "$app/Contents" ]; then
+  printf 'Not an application bundle: %s\n' "$app" >&2
+  exit 1
+fi
+app=$(CDPATH='' cd -- "$app" && pwd)
+
+file_tool=${GLASSMACS_FILE_TOOL:-/usr/bin/file}
+otool=${GLASSMACS_OTOOL:-/usr/bin/otool}
+if [ -n "${GLASSMACS_INSTALL_NAME_TOOL:-}" ]; then
+  install_name_tool=$GLASSMACS_INSTALL_NAME_TOOL
+elif [ -x /usr/bin/xcrun ]; then
+  install_name_tool=$(/usr/bin/xcrun --find install_name_tool)
+elif [ -x /usr/bin/install_name_tool ]; then
+  install_name_tool=/usr/bin/install_name_tool
+else
+  printf 'Could not locate Apple install_name_tool using xcrun.\n' >&2
+  exit 1
+fi
+
+for tool in "$file_tool" "$otool" "$install_name_tool"; do
+  if [ ! -x "$tool" ]; then
+    printf 'Required Mach-O tool is not executable: %s\n' "$tool" >&2
+    exit 1
+  fi
+done
+
+is_obsolete_build_rpath() {
+  case "$1" in
+    /nix/store/*|/private/tmp/nix-build-*|/tmp/nix-build-*|\
+    /Applications/Xcode.app/*|*/Xcode*.app/Contents/Developer/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+extract_rpaths() {
+  "$otool" -l "$1" | awk '
+    /cmd LC_RPATH/ {
+      if (getline <= 0 || getline <= 0)
+        exit 1
+      sub(/^[[:space:]]*path /, "")
+      sub(/ \(offset [0-9]+\)$/, "")
+      print
+    }
+  '
+}
+
+is_macho() {
+  local description
+  if ! description=$("$file_tool" -b "$1"); then
+    printf 'Could not identify file type: %s\n' "$1" >&2
+    return 2
+  fi
+  [[ "$description" == *Mach-O* ]]
+}
+
+file_list=$(mktemp "${TMPDIR:-/tmp}/glassmacs-mach-o.XXXXXX")
+trap 'rm -f -- "$file_list"' EXIT
+
+find "$app/Contents" -type f -print0 > "$file_list"
+
+count=0
+while IFS= read -r -d '' binary; do
+  if is_macho "$binary"; then
+    :
+  else
+    file_type_status=$?
+    [ "$file_type_status" -eq 1 ] && continue
+    exit 1
+  fi
+
+  rpaths=$(extract_rpaths "$binary")
+  [ -n "$rpaths" ] || continue
+  while IFS= read -r rpath_entry; do
+    [ -n "$rpath_entry" ] || continue
+    if is_obsolete_build_rpath "$rpath_entry"; then
+      printf 'Removing obsolete LC_RPATH from %s: %s\n' "$binary" "$rpath_entry"
+      "$install_name_tool" -delete_rpath "$rpath_entry" "$binary"
+      count=$((count + 1))
+    fi
+  done <<< "$rpaths"
+done < "$file_list"
+
+while IFS= read -r -d '' binary; do
+  if is_macho "$binary"; then
+    :
+  else
+    file_type_status=$?
+    [ "$file_type_status" -eq 1 ] && continue
+    exit 1
+  fi
+  rpaths=$(extract_rpaths "$binary")
+  [ -n "$rpaths" ] || continue
+  while IFS= read -r rpath_entry; do
+    [ -n "$rpath_entry" ] || continue
+    if is_obsolete_build_rpath "$rpath_entry"; then
+      printf 'Obsolete LC_RPATH remains after sanitization in %s: %s\n' \
+        "$binary" "$rpath_entry" >&2
+      exit 1
+    fi
+  done <<< "$rpaths"
+done < "$file_list"
+
+printf 'Sanitized %s obsolete Mach-O runtime path(s) in %s\n' "$count" "$app"

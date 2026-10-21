@@ -1,337 +1,83 @@
-#if os(macOS)
-import AppKit
+import Foundation
 import GlassmacsLauncherCore
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
 
-@MainActor
-final class LauncherDelegate: NSObject, NSApplicationDelegate {
-    private let defaults = UserDefaults.standard
-    private var emacsProcess: Process?
-    private var serverAvailable = false
-    private var pendingFiles: [URL] = []
-    private var statusItem: NSStatusItem?
+@main
+enum GlassmacsBootstrap {
+    static func main() {
+        let configuration = LaunchConfiguration(bundleURL: Bundle.main.bundleURL)
 
-    func applicationDidFinishLaunching(_ _notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
-        installStatusMenu()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.launchEmacsIfNeeded()
-        }
-    }
-
-    func application(_ application: NSApplication, openFiles filenames: [String]) {
-        open(filenames.map { URL(fileURLWithPath: $0) })
-        application.reply(toOpenOrPrint: .success)
-    }
-
-    func application(_ application: NSApplication, open urls: [URL]) {
-        open(urls.filter(\.isFileURL))
-    }
-
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        guard let process = emacsProcess, process.isRunning else {
-            launchEmacsIfNeeded()
-            return false
-        }
-        NSRunningApplication(processIdentifier: process.processIdentifier)?
-            .activate(options: [.activateIgnoringOtherApps])
-        return false
-    }
-
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if emacsProcess?.isRunning == true {
-            showError("Glassmacs is still running in Emacs. Quit from Emacs so its unsaved-document prompts are honored.")
-            return .terminateCancel
-        }
-        return .terminateNow
-    }
-
-    private func open(_ files: [URL]) {
-        guard !files.isEmpty else { return }
-        guard let process = emacsProcess else {
-            if serverAvailable {
-                forward(files, attemptsRemaining: 20)
-            } else {
-                pendingFiles.append(contentsOf: files)
-                launchEmacsIfNeeded()
-            }
-            return
-        }
-        guard process.isRunning else {
-            emacsProcess = nil
-            pendingFiles.append(contentsOf: files)
-            launchEmacsIfNeeded()
-            return
-        }
-        forward(files, attemptsRemaining: 20)
-    }
-
-    private func launchEmacsIfNeeded() {
-        guard emacsProcess == nil else { return }
         do {
-            let configuration = try loadConfiguration()
-            guard FileManager.default.isExecutableFile(atPath: configuration.emacsExecutable) else {
-                throw LauncherError.invalidExecutable(configuration.emacsExecutable)
+            guard FileManager.default.isExecutableFile(atPath: configuration.emacsExecutable.path) else {
+                throw BootstrapError.missingExecutable(configuration.emacsExecutable.path)
             }
-            guard FileManager.default.fileExists(atPath: configuration.initFilePath) else {
-                throw LauncherError.invalidCheckout(configuration.checkoutPath)
-            }
-            if try forwardToExistingServer(configuration, files: pendingFiles) {
-                serverAvailable = true
-                pendingFiles.removeAll()
-                return
+            guard FileManager.default.fileExists(atPath: configuration.initFile.path) else {
+                throw BootstrapError.missingConfiguration(configuration.initFile.path)
             }
 
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: configuration.emacsExecutable)
-            let initialFiles = pendingFiles
-            process.arguments = configuration.emacsArguments(opening: [])
-            process.currentDirectoryURL = URL(fileURLWithPath: configuration.checkoutPath)
-            var childEnvironment = ProcessInfo.processInfo.environment
-            childEnvironment["GLASSMACS_LAUNCHER_SERVER"] = "1"
-            if let home = configuration.homePath, !home.isEmpty {
-                childEnvironment["GLASSMACS_HOME"] = home
-            }
-            process.environment = childEnvironment
-            process.terminationHandler = { [weak self] terminatedProcess in
-                let processID = ObjectIdentifier(terminatedProcess)
-                let exitStatus = terminatedProcess.terminationStatus
-                Task { @MainActor in
-                    guard let self, let activeProcess = self.emacsProcess,
-                          ObjectIdentifier(activeProcess) == processID else { return }
-                    if exitStatus != 0 {
-                        self.showError("Emacs exited with status \(exitStatus). Check the selected executable and Glassmacs configuration.")
-                    }
-                    self.emacsProcess = nil
-                    self.serverAvailable = false
-                    NSApp.terminate(nil)
-                }
-            }
-            try process.run()
-            emacsProcess = process
-            pendingFiles.removeAll()
-            if !initialFiles.isEmpty {
-                forward(initialFiles, attemptsRemaining: 20)
-            }
-        } catch {
-            showError(error.localizedDescription, offerPreferences: true)
-        }
-    }
-
-    private func makeClientProcess(
-        _ configuration: LaunchConfiguration,
-        arguments: [String]
-    ) throws -> Process {
-        let client = configuration.emacsClientExecutable
-        let executable = client.flatMap { $0.hasPrefix("/") ? $0 : nil } ?? "/usr/bin/env"
-        let command = client.flatMap { $0.hasPrefix("/") ? nil : $0 } ?? "emacsclient"
-        guard executable == "/usr/bin/env" || FileManager.default.isExecutableFile(atPath: executable) else {
-            throw LauncherError.invalidExecutable(executable)
-        }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = (executable == "/usr/bin/env" ? [command] : []) + arguments
-        var environment = ProcessInfo.processInfo.environment
-        environment["GLASSMACS_LAUNCHER_SERVER"] = "1"
-        if let home = configuration.homePath, !home.isEmpty {
-            environment["GLASSMACS_HOME"] = home
-        }
-        process.environment = environment
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        return process
-    }
-
-    private func forwardToExistingServer(_ configuration: LaunchConfiguration, files: [URL]) throws -> Bool {
-        let socketPath = configuration.emacsServerSocketPath
-        guard FileManager.default.fileExists(atPath: socketPath) else { return false }
-        let clientProcess = try makeClientProcess(
-            configuration,
-            arguments: files.isEmpty
-                ? configuration.emacsServerProbeArguments
-                : configuration.emacsClientArguments(opening: files)
-        )
-        try clientProcess.run()
-        clientProcess.waitUntilExit()
-        guard clientProcess.terminationStatus == 0 else {
-            throw LauncherError.serverSocketUnavailable(socketPath)
-        }
-        return true
-    }
-
-    private func forward(_ files: [URL], attemptsRemaining: Int) {
-        do {
-            let configuration = try loadConfiguration()
-            let clientProcess = try makeClientProcess(
-                configuration,
-                arguments: configuration.emacsClientArguments(opening: files)
+            let home = try configuration.glassmacsHome(
+                environment: ProcessInfo.processInfo.environment,
+                defaultHome: FileManager.default
+                    .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("Glassmacs", isDirectory: true)
             )
-            clientProcess.terminationHandler = { [weak self] client in
-                guard client.terminationStatus != 0, attemptsRemaining > 0 else {
-                    if client.terminationStatus != 0 {
-                        Task { @MainActor in
-                            self?.showError("Could not forward files to the running Emacs. Check the configured emacsclient and Glassmacs home; no second Emacs instance was launched.")
-                        }
-                    }
-                    return
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    self?.forward(files, attemptsRemaining: attemptsRemaining - 1)
-                }
+            try FileManager.default.createDirectory(
+                at: home,
+                withIntermediateDirectories: true
+            )
+            guard setenv("GLASSMACS_HOME", home.path, 1) == 0 else {
+                throw BootstrapError.cannotConfigureHome(home.path)
             }
-            try clientProcess.run()
+            let environment = configuration.emacsEnvironment(
+                environment: ProcessInfo.processInfo.environment
+            )
+            guard let deploymentTarget = environment["MACOSX_DEPLOYMENT_TARGET"],
+                  setenv("MACOSX_DEPLOYMENT_TARGET", deploymentTarget, 1) == 0 else {
+                throw BootstrapError.cannotConfigureDeploymentTarget
+            }
+
+            let arguments = configuration.emacsArguments(
+                forwarding: Array(CommandLine.arguments.dropFirst())
+            )
+            let cArguments: [UnsafeMutablePointer<CChar>?] =
+                arguments.map { strdup($0) } + [nil]
+            cArguments.withUnsafeBufferPointer { buffer in
+                _ = execv(configuration.emacsExecutable.path, buffer.baseAddress!)
+            }
+            throw BootstrapError.cannotLaunchEmacs(String(cString: strerror(errno)))
         } catch {
-            showError(error.localizedDescription)
-        }
-    }
-
-    private func loadConfiguration() throws -> LaunchConfiguration {
-        let environment = ProcessInfo.processInfo.environment
-        guard let emacs = environment["GLASSMACS_EMACS"] ?? defaults.string(forKey: "emacsExecutable"),
-              !emacs.isEmpty else {
-            throw LauncherError.missingSetting("Set the upstream Cocoa Emacs executable in Glassmacs Launcher Preferences.")
-        }
-        guard let checkout = environment["GLASSMACS_ROOT"] ?? defaults.string(forKey: "checkoutPath"),
-              !checkout.isEmpty else {
-            throw LauncherError.missingSetting("Set the Glassmacs checkout path in Glassmacs Launcher Preferences.")
-        }
-        let emacsPath = (emacs as NSString).expandingTildeInPath
-        let checkoutPath = (checkout as NSString).expandingTildeInPath
-        guard (emacsPath as NSString).isAbsolutePath else {
-            throw LauncherError.missingSetting("The Emacs executable must be an absolute path.")
-        }
-        guard (checkoutPath as NSString).isAbsolutePath else {
-            throw LauncherError.missingSetting("The Glassmacs checkout must be an absolute path.")
-        }
-        let configuredHome = environment["GLASSMACS_HOME"] ?? defaults.string(forKey: "homePath")
-        let homePath = configuredHome.map { ($0 as NSString).expandingTildeInPath }
-        guard homePath.map({ ($0 as NSString).isAbsolutePath }) ?? true else {
-            throw LauncherError.missingSetting("GLASSMACS_HOME must be an absolute path.")
-        }
-        return LaunchConfiguration(
-            emacsExecutable: emacsPath,
-            checkoutPath: checkoutPath,
-            homePath: homePath,
-            emacsClientExecutable: (environment["GLASSMACS_EMACSCLIENT"] ?? defaults.string(forKey: "emacsClientExecutable"))
-                .flatMap { $0.isEmpty ? nil : ($0 as NSString).expandingTildeInPath }
-        )
-    }
-
-    private func installStatusMenu() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "Glassmacs"
-        let menu = NSMenu()
-        let preferences = menu.addItem(withTitle: "Preferences…", action: #selector(showPreferences), keyEquivalent: ",")
-        preferences.target = self
-        menu.addItem(.separator())
-        let quit = menu.addItem(withTitle: "Quit Launcher", action: #selector(quitLauncher), keyEquivalent: "q")
-        quit.target = self
-        item.menu = menu
-        statusItem = item
-    }
-
-    @objc private func showPreferences() {
-        let alert = NSAlert()
-        alert.messageText = "Glassmacs Launcher"
-        alert.informativeText = "Configure upstream Cocoa Emacs and the Glassmacs checkout. Glassmacs Lisp remains the settings authority."
-
-        let fields = [
-            ("emacsExecutable", "Emacs executable", defaults.string(forKey: "emacsExecutable") ?? "/Applications/Emacs.app/Contents/MacOS/Emacs"),
-            ("checkoutPath", "Glassmacs checkout", defaults.string(forKey: "checkoutPath") ?? ""),
-            ("homePath", "Glassmacs home (optional)", defaults.string(forKey: "homePath") ?? ""),
-            ("emacsClientExecutable", "emacsclient (optional)", defaults.string(forKey: "emacsClientExecutable") ?? "")
-        ]
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        var controls: [(String, NSTextField)] = []
-        for (key, label, value) in fields {
-            let row = NSStackView()
-            row.orientation = .vertical
-            row.alignment = .leading
-            row.spacing = 3
-            let title = NSTextField(labelWithString: label)
-            let field = NSTextField(string: value)
-            field.placeholderString = label
-            field.frame.size.width = 420
-            row.addArrangedSubview(title)
-            row.addArrangedSubview(field)
-            stack.addArrangedSubview(row)
-            controls.append((key, field))
-        }
-        stack.frame = NSRect(x: 0, y: 0, width: 440, height: 280)
-        alert.accessoryView = stack
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        for (key, field) in controls {
-            if field.stringValue.isEmpty {
-                defaults.removeObject(forKey: key)
-            } else {
-                defaults.set(field.stringValue, forKey: key)
+            let message = "Glassmacs: \(error.localizedDescription)\n"
+            message.withCString {
+                _ = write(STDERR_FILENO, $0, strlen($0))
             }
-        }
-        launchEmacsIfNeeded()
-    }
-
-    @objc private func quitLauncher() {
-        if emacsProcess?.isRunning == true {
-            showError("Quit Glassmacs from Emacs to preserve its save and shutdown behavior.")
-        } else {
-            NSApp.terminate(nil)
-        }
-    }
-
-    private func showError(_ message: String, offerPreferences: Bool = false) {
-        let alert = NSAlert()
-        alert.messageText = "Glassmacs could not continue"
-        alert.informativeText = message
-        if offerPreferences {
-            alert.addButton(withTitle: "Preferences…")
-            alert.addButton(withTitle: "Quit")
-            if alert.runModal() == .alertFirstButtonReturn {
-                showPreferences()
-            } else {
-                NSApp.terminate(nil)
-            }
-        } else {
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+            exit(EXIT_FAILURE)
         }
     }
 }
 
-enum LauncherError: LocalizedError {
-    case missingSetting(String)
-    case invalidExecutable(String)
-    case invalidCheckout(String)
-    case serverSocketUnavailable(String)
+enum BootstrapError: LocalizedError {
+    case missingExecutable(String)
+    case missingConfiguration(String)
+    case cannotConfigureHome(String)
+    case cannotConfigureDeploymentTarget
+    case cannotLaunchEmacs(String)
 
     var errorDescription: String? {
         switch self {
-        case .missingSetting(let message): return message
-        case .invalidExecutable(let path): return "Emacs executable is not executable: \(path)"
-        case .invalidCheckout(let path): return "No init.el was found in the Glassmacs checkout: \(path)"
-        case .serverSocketUnavailable(let path):
-            return "A Glassmacs server socket exists but is not reachable: \(path). Check its Emacs process and configured emacsclient; no second instance was launched."
+        case .missingExecutable(let path):
+            return "Bundled Emacs is missing or not executable: \(path)"
+        case .missingConfiguration(let path):
+            return "Bundled Glassmacs configuration is missing: \(path)"
+        case .cannotConfigureHome(let path):
+            return "Could not set GLASSMACS_HOME to \(path)"
+        case .cannotConfigureDeploymentTarget:
+            return "Could not set MACOSX_DEPLOYMENT_TARGET for bundled Emacs"
+        case .cannotLaunchEmacs(let reason):
+            return "Could not start bundled Emacs: \(reason)"
         }
     }
 }
-
-@main
-enum GlassmacsLauncherMain {
-    static func main() {
-        let application = NSApplication.shared
-        let delegate = LauncherDelegate()
-        application.delegate = delegate
-        application.run()
-    }
-}
-#else
-@main
-enum GlassmacsLauncherMain {
-    static func main() {
-        print("Glassmacs Launcher is a macOS AppKit application; use scripts/glassmacs on this platform.")
-    }
-}
-#endif
