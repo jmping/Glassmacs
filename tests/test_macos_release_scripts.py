@@ -373,6 +373,7 @@ open(binary, "wb").write(data[:32] + text.encode())
         plist = plistlib.loads((ROOT / "macos/Info.plist").read_bytes())
         builder = (ROOT / "scripts/build-macos-app").read_text()
         package = (ROOT / "macos/Package.swift").read_text()
+        lifecycle = (ROOT / "macos/GlassmacsLifecycle.m").read_text()
 
         self.assertTrue((ROOT / "assets/icon/Glassmacs.icns").is_file())
         self.assertIn('CFBundleIconFile', plist)
@@ -381,6 +382,8 @@ open(binary, "wb").write(data[:32] + text.encode())
         self.assertIn(".macOS(.v13)", package)
         self.assertIn('cp "$root/assets/icon/Glassmacs.icns"', builder)
         self.assertIn('cp "$root/assets/icon/glass-gnu.png" "$emacs_icon"', builder)
+        self.assertIn('pathForResource:@"Glassmacs" ofType:@"icns"', lifecycle)
+        self.assertIn("setApplicationIconImage:", lifecycle)
 
     def test_build_sanitizes_before_strict_bundle_validation(self):
         builder = (ROOT / "scripts/build-macos-app").read_text()

@@ -21,10 +21,19 @@ This is an initial checkpoint for the draft PR. The Aquamacs-inspired macOS impl
 - [ ] Verify closing the final window leaves Emacs/Glassmacs running and that
   closing nonfinal windows only closes the selected frame.
 - [ ] Confirm signed bundled `.eln` files load without Team ID / library-validation errors; no unsigned cache `.eln` loads.
-- [ ] Verify running Dock icon uses Glassmacs artwork.
 - [ ] Verify document opening, frame policy and persisted preferences.
-- [ ] Verify native menus and Hybrid/Traditional shortcuts.
+- [ ] Verify the runtime Dock icon is Glassmacs artwork (not just the Finder bundle icon).
+- [ ] Verify Glassmacs, File, and Window menus, native Cocoa Quit, and the
+  document-opening and keyboard-profile preference controls.
+- [ ] Verify Hybrid and Traditional profiles switch back and forth, preserve
+  Control/Meta and ESS mode-local bindings, and persist across restart.
 - [ ] Execute ERT and byte compilation with bundled Emacs 31.
 - [ ] Rebuild, sign, notarize, staple and Gatekeeper-assess the finished app.
+
+Before marking the lifecycle and menu work complete, execute the
+[signed-app integration test plan](macos-launcher.md#signed-app-integration-test-plan)
+on macOS with a Developer ID-signed hardened-runtime build. Record passes,
+failures, and tests not run separately; do not treat ERT or unsigned bundle
+validation as a substitute for Dock, Cocoa menu, or physical-key verification.
 
 Native macOS tabs and full Settings UI remain deferred. This checkpoint alone does not implement any of these features.

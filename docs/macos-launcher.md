@@ -61,10 +61,21 @@ default untitled-document creation; when a window is already visible it
 returns `YES` to preserve normal activation and session-restoration behavior.
 The module is a nested Mach-O resource and the existing signing script signs
 it with the rest of the app.
+When the module loads in the graphical app, it also reads
+`Contents/Resources/Glassmacs.icns` from the main app bundle and explicitly
+sets `NSApp.applicationIconImage`. This supplements the upstream Emacs image
+fallback path: the bundle icon is used both by Finder and by the running Dock
+application. Batch tests can verify the resource and bridge wiring, but only
+the signed GUI integration test can establish which icon macOS actually shows.
 No Emacs source, runtime library-validation policy, or process architecture is
 changed. **⌘Q** and Cocoa Quit remain on Emacs's normal save-and-quit path.
 Nonfinal frames still delete normally. `File → New Window` always requests a
 new frame; `File → New Document` uses the persisted document-opening policy.
+The Glassmacs menu exposes document-opening policy and the Hybrid/Traditional
+keyboard profile. The File and Window menus add New Window without replacing
+Emacs's standard entries. Cocoa's native application menu retains About,
+Preferences, Hide, Services, and Quit; the native Preferences item opens the
+same Glassmacs Customize group.
 
 On a source checkout without a built bridge, closing the final frame still
 keeps Emacs running, but Dock reopen is unavailable; Glassmacs emits a warning
@@ -311,6 +322,49 @@ written to standard error; when launched from Finder, inspect them in Console
 if available. To debug a build, run
 `./scripts/validate-macos-app /path/to/Glassmacs.app` and inspect the Emacs
 binary with `otool -L`.
+
+## Signed-app integration test plan
+
+Lifecycle, Dock artwork, native menus, and Cocoa keyboard delivery must be
+tested in the Developer ID-signed, hardened-runtime app before these changes
+are called complete. The plan intentionally does not weaken hardened runtime,
+alter entitlements, or use a generated unsigned `.eln` as a workaround.
+
+Build and verify the exact app under test, then sign and verify it with the
+release signing script:
+
+```sh
+./scripts/build-macos-app
+GLASSMACS_SKIP_EMACS_STARTUP=1 ./scripts/validate-macos-app build/Glassmacs.app
+GLASSMACS_SIGN_IDENTITY="<Developer ID Application certificate SHA-1>" \
+  ./scripts/sign-macos-app build/Glassmacs.app
+./scripts/validate-macos-app build/Glassmacs.app
+codesign --verify --deep --strict --verbose=2 build/Glassmacs.app
+spctl --assess --type execute --verbose=2 build/Glassmacs.app
+```
+
+Use a dedicated macOS test account with fresh Glassmacs user data. Launch that
+same signed bundle from Finder or LaunchServices (not a separately rebuilt
+copy), and record macOS version, Emacs version, signing Team ID, bundle path,
+and `codesign`/Gatekeeper results. For each lifecycle scenario, record visible
+and hidden frame counts using `M-x list-frames`, Dock presence/artwork, and
+relevant `*Messages*` or Console errors:
+
+| Area | Integration steps | Pass condition |
+| --- | --- | --- |
+| Runtime icon | Launch from Finder; inspect the running Dock icon and app switcher. | Glassmacs artwork appears at runtime, not only in Finder's bundle listing. |
+| Final-window lifecycle | Open two documents; close one, then close the final window; click the Dock icon. Repeat after a normal session restore. | Nonfinal close affects only its frame; the process and Dock item persist; reopen restores one usable frame without duplicates. |
+| File/Window menus | Invoke New Document, Open, New Window, and document-opening choices from menus; verify their key equivalents; cancel a dirty-document close. | Commands follow their policy, Emacs menu items remain present, and canceled saves preserve edits. |
+| Keyboard profiles | Switch Hybrid → Traditional → Hybrid from the menu; test Command-N/O/S/W/Q and Control/Meta prefixes in an ordinary buffer and ESS buffer. | Hybrid bindings work; Traditional restores prior bindings; profile indicator matches the selected setting after restart. |
+| Cocoa quit | Quit from the native application menu and with ⌘Q, with clean and dirty buffers. | Both take the normal Emacs save/quit path, honor prompts, and terminate only after confirmation. |
+| Signed native code | Open representative bundled Lisp modules and an allowed bundled `.eln`; inspect logs and the runtime-loaded library path. | No signature/library-validation failures and no unsigned generated cache `.eln` is loaded. |
+
+Also repeat the keyboard checks with a non-US input source, verifying composed
+characters and Option/Meta behavior. Record each result as **pass**, **fail**,
+or **not run**; any failure in icon, reopen/frame counts, menu dispatch, or
+profile restoration blocks declaring Milestone 2/3 macOS runtime behavior
+complete. Keep the existing native-compilation cache-isolation failure
+documented; do not change hardened-runtime policy to make this test pass.
 
 ## Verification and limitations
 

@@ -43,6 +43,18 @@ emacs_module_init(struct emacs_runtime *runtime)
       return 1;
     }
 
+  NSString *icon_path =
+    [[NSBundle mainBundle] pathForResource:@"Glassmacs" ofType:@"icns"];
+  NSImage *icon = icon_path != nil
+    ? [[NSImage alloc] initWithContentsOfFile:icon_path]
+    : nil;
+  if (icon == nil)
+    {
+      fputs("Glassmacs lifecycle bridge: bundled Glassmacs.icns is missing or unreadable\n",
+            stderr);
+      return 1;
+    }
+
   SEL selector =
     @selector(applicationShouldHandleReopen:hasVisibleWindows:);
   struct objc_method_description description =
@@ -65,5 +77,6 @@ emacs_module_init(struct emacs_runtime *runtime)
       return 1;
     }
 
+  [application setApplicationIconImage:icon];
   return 0;
 }

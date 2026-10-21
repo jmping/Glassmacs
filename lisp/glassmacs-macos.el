@@ -46,6 +46,56 @@ the arguments passed to it."
   (interactive)
   (make-frame-command))
 
+(defun glassmacs-open-preferences ()
+  "Open the Glassmacs Customize group."
+  (interactive)
+  (customize-group 'glassmacs))
+
+(defun glassmacs--install-native-preferences-command ()
+  "Route Cocoa's native Preferences item to Glassmacs settings."
+  (when (eq system-type 'darwin)
+    (define-key global-map [ns-show-prefs] #'glassmacs-open-preferences)))
+
+(defun glassmacs--install-macos-menus ()
+  "Install Glassmacs menu items while preserving upstream menus."
+  (when (and (eq system-type 'darwin) (display-graphic-p))
+    (let ((glassmacs-menu (make-sparse-keymap "Glassmacs"))
+          (keyboard-menu (make-sparse-keymap "Keyboard Profile"))
+          (file-menu (lookup-key global-map [menu-bar file]))
+          (window-menu (lookup-key global-map [menu-bar window])))
+      (define-key glassmacs-menu [document-opening]
+        '(menu-item "Document Opening..." glassmacs-set-document-opening-policy))
+      (define-key glassmacs-menu [keyboard-profile] keyboard-menu)
+      (define-key keyboard-menu [hybrid]
+        '(menu-item "Hybrid macOS / Emacs"
+                    glassmacs-select-hybrid-keyboard-profile
+                    :button (:radio
+                             (eq glassmacs-keyboard-profile
+                                 'glassmacs-hybrid))))
+      (define-key keyboard-menu [traditional]
+        '(menu-item "Traditional Emacs"
+                    glassmacs-select-traditional-keyboard-profile
+                    :button (:radio
+                             (eq glassmacs-keyboard-profile
+                                 'traditional-emacs))))
+      (define-key global-map [menu-bar glassmacs] glassmacs-menu)
+      (when (keymapp file-menu)
+        (define-key file-menu [glassmacs-new-window]
+          '(menu-item "New Window" glassmacs-new-window
+                      :enable (display-graphic-p))))
+      (unless (keymapp window-menu)
+        (setq window-menu (make-sparse-keymap "Window"))
+        (define-key global-map [menu-bar window] window-menu))
+      (define-key-after window-menu [glassmacs-new-window]
+        '(menu-item "New Window" glassmacs-new-window
+                    :enable (display-graphic-p))))))
+
+(defun glassmacs--install-macos-menus-for-frame (&optional frame)
+  "Install macOS menu entries when FRAME is graphical."
+  (when (and (eq system-type 'darwin)
+             (display-graphic-p (or frame (selected-frame))))
+    (glassmacs--install-macos-menus)))
+
 (defun glassmacs-reopen ()
   "Reopen Glassmacs, restoring its retained frame or creating a new one."
   (interactive)
@@ -79,13 +129,16 @@ the arguments passed to it."
   (when (eq system-type 'darwin)
     (advice-add 'delete-frame :around #'glassmacs--delete-frame-preserving-app)
     (with-eval-after-load 'ns-win
-      (glassmacs--install-reopen-event-handler))
+      (glassmacs--install-reopen-event-handler)
+      (glassmacs--install-native-preferences-command))
     (when (featurep 'ns-win)
-      (glassmacs--install-reopen-event-handler))
+      (glassmacs--install-reopen-event-handler)
+      (glassmacs--install-native-preferences-command))
     (glassmacs--load-native-reopen-bridge)
+    (add-hook 'after-make-frame-functions
+              #'glassmacs--install-macos-menus-for-frame)
     (with-eval-after-load 'menu-bar
-      (define-key menu-bar-file-menu [glassmacs-new-window]
-        '(menu-item "New Window" glassmacs-new-window)))))
+      (glassmacs--install-macos-menus))))
 
 (glassmacs--install-macos-frame-lifecycle)
 
