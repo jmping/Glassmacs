@@ -38,7 +38,12 @@ import re
 import sys
 
 sys.path.insert(0, sys.argv[3])
-from macos_macho import discover_macho_binaries, is_within_bundle, run_tool
+from macos_macho import (
+    discover_macho_binaries,
+    is_within_bundle,
+    parse_otool_dependencies,
+    run_tool,
+)
 
 contents = Path(sys.argv[1]).resolve()
 main_executable = Path(sys.argv[2]).resolve()
@@ -136,10 +141,14 @@ for binary_index, binary in enumerate(binaries, start=1):
         if not runtime_path_allowed(rpath, binary):
             sys.exit(f"Unexpected or non-relocatable LC_RPATH in {binary}: {rpath}")
 
-    dependencies = output("/usr/bin/otool", "-L", str(binary)).splitlines()[1:]
+    try:
+        dependencies = parse_otool_dependencies(
+            output("/usr/bin/otool", "-L", str(binary))
+        )
+    except RuntimeError as error:
+        sys.exit(f"Could not parse dependencies in {binary}: {error}")
     install_name = own_install_name(binary)
-    for line in dependencies:
-        dependency = re.sub(r"^\s*(.*?)\s+\(compatibility version.*$", r"\1", line)
+    for dependency in dependencies:
         if dependency in {str(binary), install_name}:
             continue
         if dependency.startswith(system_prefixes):

@@ -3,6 +3,7 @@
 
 import os
 from pathlib import Path
+import re
 import shlex
 import stat
 import subprocess
@@ -18,6 +19,101 @@ MACHO_MAGICS = {
     b"\xca\xfe\xba\xbf",  # FAT_MAGIC_64
     b"\xbf\xba\xfe\xca",  # FAT_CIGAM_64
 }
+MACHO_IMAGE_FILETYPES = {2, 6, 8}
+
+
+def _thin_filetype(header):
+    if len(header) < 16:
+        raise RuntimeError("Truncated Mach-O header")
+    magic = header[:4]
+    byte_order = {
+        b"\xfe\xed\xfa\xce": ">",
+        b"\xce\xfa\xed\xfe": "<",
+        b"\xfe\xed\xfa\xcf": ">",
+        b"\xcf\xfa\xed\xfe": "<",
+    }.get(magic)
+    if byte_order is None:
+        return None
+    return int.from_bytes(header[12:16], "big" if byte_order == ">" else "little")
+
+
+def _image_filetypes(file_handle, magic):
+    if magic in {
+        b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe",
+        b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe",
+    }:
+        file_handle.seek(0)
+        return [_thin_filetype(file_handle.read(32))]
+
+    fat_formats = {
+        b"\xca\xfe\xba\xbe": (">", False),
+        b"\xbe\xba\xfe\xca": ("<", False),
+        b"\xca\xfe\xba\xbf": (">", True),
+        b"\xbf\xba\xfe\xca": ("<", True),
+    }
+    fat_format = fat_formats.get(magic)
+    if fat_format is None:
+        return []
+
+    byte_order, is_64_bit = fat_format
+    file_handle.seek(0)
+    header = file_handle.read(8)
+    if len(header) < 8:
+        raise RuntimeError("Truncated universal Mach-O header")
+    slice_count = int.from_bytes(header[4:8], "big" if byte_order == ">" else "little")
+    if slice_count == 0 or slice_count > 4096:
+        raise RuntimeError(f"Invalid universal Mach-O slice count: {slice_count}")
+
+    entry_size = 32 if is_64_bit else 20
+    entries = file_handle.read(slice_count * entry_size)
+    if len(entries) != slice_count * entry_size:
+        raise RuntimeError("Truncated universal Mach-O architecture table")
+
+    filetypes = []
+    for index in range(slice_count):
+        entry = entries[index * entry_size:(index + 1) * entry_size]
+        if is_64_bit:
+            offset = int.from_bytes(entry[8:16], "big" if byte_order == ">" else "little")
+        else:
+            offset = int.from_bytes(entry[8:12], "big" if byte_order == ">" else "little")
+        file_handle.seek(offset)
+        slice_header = file_handle.read(32)
+        if slice_header.startswith(b"!<arch>\n"):
+            filetypes.append(None)
+            continue
+        if slice_header[:4] not in {
+            b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe",
+            b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe",
+        }:
+            raise RuntimeError(
+                f"Invalid universal Mach-O slice at offset {offset}: "
+                f"{slice_header[:4].hex()}"
+            )
+        filetypes.append(_thin_filetype(slice_header))
+    return filetypes
+
+
+def is_runtime_macho_image(file_handle, magic):
+    """Return whether a Mach-O file contains only runtime-loadable image slices."""
+    filetypes = _image_filetypes(file_handle, magic)
+    return bool(filetypes) and all(
+        filetype in MACHO_IMAGE_FILETYPES for filetype in filetypes
+    )
+
+
+def parse_otool_dependencies(output):
+    """Return dependency load-command lines, excluding image/archive member headings."""
+    dependencies = []
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.endswith(":"):
+            continue
+        match = re.match(r"^\s*(.+?)\s+\(compatibility version [^)]+\)", line)
+        if match:
+            dependencies.append(match.group(1))
+        else:
+            raise RuntimeError(f"Unrecognized otool -L dependency line: {stripped}")
+    return dependencies
 
 
 def run_tool(*arguments, context, timeout=30):
@@ -72,10 +168,17 @@ def discover_macho_binaries(contents, progress_interval=1000):
                 continue
             with candidate.open("rb") as bundled_file:
                 magic = bundled_file.read(4)
+                is_macho_magic = magic in MACHO_MAGICS
+                runtime_image = (
+                    is_runtime_macho_image(bundled_file, magic)
+                    if is_macho_magic else False
+                )
         except OSError as error:
             raise RuntimeError(f"Could not inspect bundle file {candidate}: {error}") from error
+        except RuntimeError as error:
+            raise RuntimeError(f"Could not classify Mach-O file {candidate}: {error}") from error
 
-        if magic in MACHO_MAGICS:
+        if is_macho_magic:
             try:
                 resolved = candidate.resolve(strict=True)
                 resolved.relative_to(contents)
@@ -83,7 +186,7 @@ def discover_macho_binaries(contents, progress_interval=1000):
                 raise RuntimeError(
                     f"Bundled Mach-O symlink resolves outside the app or is unavailable: {candidate}"
                 ) from error
-            if resolved not in resolved_binaries:
+            if runtime_image and resolved not in resolved_binaries:
                 resolved_binaries.add(resolved)
                 binaries.append(resolved)
 

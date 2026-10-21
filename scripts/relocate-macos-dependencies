@@ -10,6 +10,7 @@ from macos_macho import (
     discover_macho_binaries,
     index_macho_names,
     is_within_bundle,
+    parse_otool_dependencies,
     run_tool,
 )
 
@@ -20,9 +21,6 @@ SYSTEM_PREFIXES = (
     "/usr/lib/",
     "/Library/Apple/System/Library/",
 )
-DEPENDENCY_RE = re.compile(r"^\s*(.*?)\s+\(compatibility version.*$")
-
-
 def main(app):
     contents = (Path(app) / "Contents").resolve(strict=True)
     binaries = discover_macho_binaries(contents)
@@ -56,16 +54,14 @@ def main(app):
         return architecture_cache[binary]
 
     def load_dependencies(binary):
-        lines = run_tool(
+        output = run_tool(
             otool, "-L", str(binary),
             context=f"inspect dependencies in {binary}",
-        ).splitlines()[1:]
-        dependencies = []
-        for line in lines:
-            match = DEPENDENCY_RE.match(line)
-            if match:
-                dependencies.append(match.group(1))
-        return dependencies
+        )
+        try:
+            return parse_otool_dependencies(output)
+        except RuntimeError as error:
+            raise RuntimeError(f"Could not parse dependencies in {binary}: {error}") from error
 
     def install_name(binary):
         lines = run_tool(

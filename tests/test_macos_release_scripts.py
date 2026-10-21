@@ -15,8 +15,55 @@ from macos_macho import (
     MACHO_MAGICS,
     discover_macho_binaries,
     index_macho_names,
+    parse_otool_dependencies,
     run_tool,
 )
+
+
+THIN_MAGIC_FORMATS = {
+    b"\xfe\xed\xfa\xce": ">",
+    b"\xce\xfa\xed\xfe": "<",
+    b"\xfe\xed\xfa\xcf": ">",
+    b"\xcf\xfa\xed\xfe": "<",
+}
+FAT_MAGIC_FORMATS = {
+    b"\xca\xfe\xba\xbe": (">", False),
+    b"\xbe\xba\xfe\xca": ("<", False),
+    b"\xca\xfe\xba\xbf": (">", True),
+    b"\xbf\xba\xfe\xca": ("<", True),
+}
+
+
+def make_thin_macho(magic, filetype):
+    byte_order = THIN_MAGIC_FORMATS[magic]
+    endian = "big" if byte_order == ">" else "little"
+    return magic + bytes(8) + filetype.to_bytes(4, endian) + bytes(16)
+
+
+def make_fat_macho(magic, slices):
+    byte_order, is_64_bit = FAT_MAGIC_FORMATS[magic]
+    endian = "big" if byte_order == ">" else "little"
+    record_size = 32 if is_64_bit else 20
+    data_offset = 8 + record_size * len(slices)
+    records = []
+    for index, data in enumerate(slices):
+        record = (
+            index.to_bytes(4, endian)
+            + bytes(4)
+            + data_offset.to_bytes(8 if is_64_bit else 4, endian)
+            + len(data).to_bytes(8 if is_64_bit else 4, endian)
+            + bytes(4)
+        )
+        if is_64_bit:
+            record += bytes(4)
+        records.append(record)
+        data_offset += len(data)
+    return (
+        magic
+        + len(slices).to_bytes(4, endian)
+        + b"".join(records)
+        + b"".join(slices)
+    )
 
 
 class MacOSReleaseScriptTests(unittest.TestCase):
@@ -27,11 +74,64 @@ class MacOSReleaseScriptTests(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as temp:
                     contents = Path(temp) / "Contents"
                     contents.mkdir()
-                    (contents / "binary").write_bytes(magic + b"rest")
+                    if magic in THIN_MAGIC_FORMATS:
+                        data = make_thin_macho(magic, 6)
+                    else:
+                        data = make_fat_macho(
+                            magic,
+                            [make_thin_macho(b"\xcf\xfa\xed\xfe", 6)],
+                        )
+                    (contents / "binary").write_bytes(data)
                     self.assertEqual(
                         discover_macho_binaries(contents, progress_interval=0),
                         [(contents / "binary").resolve()],
                     )
+
+    def test_macho_discovery_skips_objects_and_universal_static_archives(self):
+        with tempfile.TemporaryDirectory() as temp:
+            contents = Path(temp) / "Contents"
+            contents.mkdir()
+            object_file = contents / "relocatable.o"
+            object_file.write_bytes(make_thin_macho(b"\xcf\xfa\xed\xfe", 1))
+            archive = contents / "libkmod.a"
+            archive.write_bytes(make_fat_macho(
+                b"\xca\xfe\xba\xbf",
+                [b"!<arch>\narm64 archive", b"!<arch>\nx86_64 archive"],
+            ))
+            dynamic = contents / "libdynamic.dylib"
+            dynamic.write_bytes(make_fat_macho(
+                b"\xca\xfe\xba\xbe",
+                [
+                    make_thin_macho(b"\xcf\xfa\xed\xfe", 6),
+                    make_thin_macho(b"\xce\xfa\xed\xfe", 6),
+                ],
+            ))
+            self.assertEqual(
+                discover_macho_binaries(contents, progress_interval=0),
+                [dynamic.resolve()],
+            )
+            self.assertTrue(archive.is_file())
+            self.assertTrue(object_file.is_file())
+
+    def test_otool_dependency_parser_skips_archive_member_headings_strictly(self):
+        archive_output = """\
+/bundle/libkmod.a:
+/bundle/libkmod.a(c_stop.o):
+/bundle/libkmod.a(c_init.o):
+"""
+        self.assertEqual(parse_otool_dependencies(archive_output), [])
+        universal_output = """\
+/bundle/libdynamic.dylib (architecture arm64):
+    @rpath/libc++.1.dylib (compatibility version 1.0.0, current version 1.0.0)
+/bundle/libdynamic.dylib (architecture x86_64):
+    /nix/store/missing/libbad.dylib (compatibility version 1.0.0, current version 1.0.0)
+"""
+        self.assertEqual(parse_otool_dependencies(universal_output), [
+            "@rpath/libc++.1.dylib",
+            "/nix/store/missing/libbad.dylib",
+        ])
+        with self.assertRaisesRegex(RuntimeError, "Unrecognized otool"):
+            parse_otool_dependencies("/bundle/libdynamic.dylib:\n    malformed dependency")
 
     def test_macho_discovery_deduplicates_and_rejects_outside_symlink(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -39,7 +139,7 @@ class MacOSReleaseScriptTests(unittest.TestCase):
             contents = root / "Contents"
             contents.mkdir()
             binary = contents / "Emacs"
-            binary.write_bytes(b"\xcf\xfa\xed\xfe" + b"payload")
+            binary.write_bytes(make_thin_macho(b"\xcf\xfa\xed\xfe", 2))
             (contents / "Emacs-alias").symlink_to(binary)
             self.assertEqual(
                 discover_macho_binaries(contents, progress_interval=0),
@@ -51,7 +151,10 @@ class MacOSReleaseScriptTests(unittest.TestCase):
             )
 
             outside = root / "outside"
-            outside.write_bytes(b"\xca\xfe\xba\xbf" + b"payload")
+            outside.write_bytes(make_fat_macho(
+                b"\xca\xfe\xba\xbf",
+                [make_thin_macho(b"\xcf\xfa\xed\xfe", 2)],
+            ))
             (contents / "escaped").symlink_to(outside)
             with self.assertRaisesRegex(RuntimeError, "resolves outside"):
                 discover_macho_binaries(contents, progress_interval=0)
@@ -99,7 +202,10 @@ class MacOSReleaseScriptTests(unittest.TestCase):
             lines = [f"ARCH={arch}"]
             if dependency:
                 lines.append(f"DEP={dependency}")
-            path.write_bytes(b"\xcf\xfa\xed\xfe" + ("\n".join(lines) + "\n").encode())
+            path.write_bytes(
+                make_thin_macho(b"\xcf\xfa\xed\xfe", 6)
+                + ("\n".join(lines) + "\n").encode()
+            )
             return path
 
         executable = make_binary(contents / binary_relative, executable_arch)
@@ -108,12 +214,18 @@ class MacOSReleaseScriptTests(unittest.TestCase):
             relative, arch = item if isinstance(item, tuple) else (item, "arm64")
             libraries.append(make_binary(contents / relative, arch))
         executable.write_bytes(
-            b"\xcf\xfa\xed\xfe"
+            make_thin_macho(b"\xcf\xfa\xed\xfe", 2)
             + (
                 f"ARCH={executable_arch}\n"
                 + "".join(f"DEP={item}\n" for item in dependencies)
             ).encode()
         )
+        archive = contents / "MacOS/lib-x86_64-11/libgccjit/sdk-libs/libkmod.a"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        archive.write_bytes(make_fat_macho(
+            b"\xca\xfe\xba\xbf",
+            [b"!<arch>\narm64 archive", b"!<arch>\nx86_64 archive"],
+        ))
         tools = root / "tools"
         tools.mkdir()
         otool = tools / "otool"
@@ -122,7 +234,9 @@ import os, sys
 if os.environ.get("OTOOL_FAIL") == "1":
     sys.exit(8)
 operation, binary = sys.argv[1], sys.argv[2]
-data = open(binary, "rb").read()[4:].decode()
+if binary.endswith(".a"):
+    sys.exit(77)
+data = open(binary, "rb").read()[32:].decode()
 if operation == "-L":
     print(binary + ":")
     for line in data.splitlines():
@@ -138,7 +252,7 @@ elif operation == "-D":
         lipo = tools / "lipo"
         lipo.write_text("""#!/usr/bin/env python3
 import sys
-data = open(sys.argv[2], "rb").read()[4:].decode()
+data = open(sys.argv[2], "rb").read()[32:].decode()
 print(next(line[5:] for line in data.splitlines() if line.startswith("ARCH=")))
 """)
         lipo.chmod(0o755)
@@ -147,8 +261,8 @@ print(next(line[5:] for line in data.splitlines() if line.startswith("ARCH=")))
 import sys
 _, old, new, binary = sys.argv[1:]
 data = open(binary, "rb").read()
-text = data[4:].decode().replace("DEP=" + old + "\\n", "DEP=" + new + "\\n")
-open(binary, "wb").write(data[:4] + text.encode())
+text = data[32:].decode().replace("DEP=" + old + "\\n", "DEP=" + new + "\\n")
+open(binary, "wb").write(data[:32] + text.encode())
 """)
         installer.chmod(0o755)
         environment = os.environ.copy()
@@ -173,7 +287,7 @@ open(binary, "wb").write(data[:4] + text.encode())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(
             "DEP=@loader_path/lib-arm64-11/libintl.8.dylib",
-            executable.read_bytes()[4:].decode(),
+            executable.read_bytes()[32:].decode(),
         )
         self.assertIn("Relocated 1 external", result.stdout)
         self.assertEqual(libraries[0].name, "libintl.8.dylib")
@@ -193,7 +307,7 @@ open(binary, "wb").write(data[:4] + text.encode())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(
             "DEP=@loader_path/../libintl.8.dylib",
-            binary.read_bytes()[4:].decode(),
+            binary.read_bytes()[32:].decode(),
         )
         self.assertIn("Relocated 1 external", result.stdout)
         self.assertEqual([library.name for library in libraries], [
@@ -289,7 +403,7 @@ open(binary, "wb").write(data[:4] + text.encode())
             bootstrap.write_text("#!/bin/sh\nexit 0\n")
             bootstrap.chmod(0o755)
             emacs = contents / "MacOS/Emacs"
-            emacs.write_bytes(b"\xcf\xfa\xed\xfe" + b"fixture")
+            emacs.write_bytes(make_thin_macho(b"\xcf\xfa\xed\xfe", 2))
             emacs.chmod(0o755)
             resources = contents / "Resources/Glassmacs"
             (resources / "init.el").write_bytes((ROOT / "init.el").read_bytes())
@@ -297,6 +411,16 @@ open(binary, "wb").write(data[:4] + text.encode())
             (resources / "scripts").mkdir()
             (resources / "scripts/bootstrap").write_text("#!/bin/sh\n")
             (contents / "Resources/Glassmacs.icns").write_bytes(b"icon")
+            archive = contents / "MacOS/lib-x86_64-11/libgccjit/sdk-libs/libkmod.a"
+            archive.parent.mkdir(parents=True)
+            archive.write_bytes(make_fat_macho(
+                b"\xca\xfe\xba\xbf",
+                [
+                    b"!<arch>\narm64 archive",
+                    b"!<arch>\nx86_64 archive",
+                    b"!<arch>\nx86_64h archive",
+                ],
+            ))
 
             plutil = root / "plutil"
             plutil.write_text(f"""#!{sys.executable}
@@ -321,8 +445,13 @@ else:
             plist_buddy.chmod(0o755)
             otool = root / "otool"
             otool.write_text(f"""#!{sys.executable}
+import os
 import sys
+if sys.argv[-1].endswith(".a"):
+    sys.exit(77)
 print(sys.argv[-1] + ":")
+if sys.argv[1] == "-L" and os.environ.get("OTool_BAD_DEP") == "1":
+    print("    /nix/store/missing/libbad.dylib (compatibility version 1.0.0, current version 1.0.0)")
 """)
             otool.chmod(0o755)
             environment = os.environ.copy()
@@ -339,11 +468,24 @@ print(sys.argv[-1] + ":")
                 check=False,
                 env=environment,
             )
+            archive_exists = archive.is_file()
+            bad_environment = environment.copy()
+            bad_environment["OTool_BAD_DEP"] = "1"
+            unresolved = subprocess.run(
+                ["bash", str(ROOT / "scripts/validate-macos-app"), str(app)],
+                text=True,
+                capture_output=True,
+                check=False,
+                env=bad_environment,
+            )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotEqual(unresolved.returncode, 0)
+        self.assertIn("Unresolved or non-relocatable dependency", unresolved.stderr)
         self.assertIn("Validated Glassmacs.app structure", result.stdout)
         self.assertNotIn("unbound variable", result.stderr)
         self.assertIn("<<'PY'", (ROOT / "scripts/validate-macos-app").read_text())
+        self.assertTrue(archive_exists)
 
     def run_rpath_sanitizer(
         self, fixture, fail_delete=False, fail_otool=False, fail_file=False
