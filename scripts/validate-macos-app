@@ -1,12 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 app=${1:?Usage: validate-macos-app /path/to/Glassmacs.app}
 app=$(CDPATH='' cd -- "$app" && pwd)
 contents="$app/Contents"
 plist="$contents/Info.plist"
 bootstrap="$contents/MacOS/GlassmacsBootstrap"
 emacs="$contents/MacOS/Emacs"
+plutil=${GLASSMACS_PLUTIL:-/usr/bin/plutil}
+plist_buddy=${GLASSMACS_PLISTBUDDY:-/usr/libexec/PlistBuddy}
 
 test -f "$plist"
 test -x "$bootstrap"
@@ -15,19 +18,21 @@ test -f "$contents/Resources/Glassmacs/init.el"
 test -f "$contents/Resources/Glassmacs/lisp/glassmacs.el"
 test -f "$contents/Resources/Glassmacs/scripts/bootstrap"
 test -f "$contents/Resources/Glassmacs.icns"
-/usr/bin/plutil -lint "$plist"
-test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$plist")" = APPL
-test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = org.glassmacs.Glassmacs
-test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")" = GlassmacsBootstrap
-test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$plist")" = Glassmacs
-test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" = 13.0
+/usr/bin/env "$plutil" -lint "$plist"
+test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundlePackageType' "$plist")" = APPL
+test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundleIdentifier' "$plist")" = org.glassmacs.Glassmacs
+test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundleExecutable' "$plist")" = GlassmacsBootstrap
+test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundleIconFile' "$plist")" = Glassmacs
+test "$(/usr/bin/env "$plist_buddy" -c 'Print :LSMinimumSystemVersion' "$plist")" = 13.0
 
 for extension in R r Rmd qmd Rnw; do
-  /usr/libexec/PlistBuddy -c 'Print :CFBundleDocumentTypes:0:CFBundleTypeExtensions' \
+  /usr/bin/env "$plist_buddy" -c 'Print :CFBundleDocumentTypes:0:CFBundleTypeExtensions' \
     "$plist" | grep -Eq "^[[:space:]]*${extension}[[:space:]]*$"
 done
 
+GLASSMACS_OTOOL=${GLASSMACS_OTOOL:-/usr/bin/otool} \
 python3 - "$contents" "$emacs" "$root/scripts" <<'PY'
+import os
 from pathlib import Path
 import re
 import sys
@@ -37,6 +42,7 @@ from macos_macho import discover_macho_binaries, is_within_bundle, run_tool
 
 contents = Path(sys.argv[1]).resolve()
 main_executable = Path(sys.argv[2]).resolve()
+otool = os.environ["GLASSMACS_OTOOL"]
 system_prefixes = (
     "/System/Library/",
     "/System/Volumes/Preboot/Cryptexes/OS/System/Library/",
@@ -48,7 +54,7 @@ bare_tokens = {"@rpath", "@loader_path", "@executable_path"}
 def output(*arguments):
     try:
         return run_tool(
-            *arguments,
+            otool, *arguments[1:],
             context=f"inspect Mach-O load commands for {arguments[-1]}",
         )
     except RuntimeError as error:

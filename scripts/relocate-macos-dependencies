@@ -74,6 +74,14 @@ def main(app):
         ).splitlines()
         return lines[1].strip() if len(lines) > 1 else None
 
+    def runtime_directory(binary):
+        for parent in binary.parents:
+            if re.fullmatch(r"lib-(?:arm64|x86_64)(?:-.+)?", parent.name):
+                return parent
+            if parent == contents:
+                break
+        return None
+
     changed = 0
     for index, binary in enumerate(binaries, start=1):
         if index == 1 or index % 100 == 0 or index == len(binaries):
@@ -101,16 +109,42 @@ def main(app):
                 candidate for candidate in matches
                 if binary_architectures <= architectures(candidate)
             ]
-            if len(compatible) != 1:
-                reason = "unresolved" if not compatible else "ambiguous"
-                names = ", ".join(str(candidate) for candidate in compatible or matches)
+            if not compatible:
+                names = ", ".join(str(candidate) for candidate in matches)
                 suffix = f" Candidates: {names}" if names else ""
                 raise RuntimeError(
-                    f"{reason.capitalize()} external dependency in {binary}: "
+                    f"Unresolved external dependency in {binary}: "
                     f"{dependency}.{suffix}"
                 )
 
-            target = compatible[0]
+            same_runtime = []
+            source_runtime = runtime_directory(binary)
+            if source_runtime is not None:
+                for candidate in compatible:
+                    try:
+                        candidate.relative_to(source_runtime)
+                        same_runtime.append(candidate)
+                    except ValueError:
+                        pass
+
+            if len(same_runtime) == 1:
+                target = same_runtime[0]
+            elif same_runtime:
+                names = ", ".join(str(candidate) for candidate in same_runtime)
+                suffix = f" Candidates: {names}" if names else ""
+                raise RuntimeError(
+                    f"Ambiguous external dependency in {binary}: "
+                    f"{dependency}.{suffix}"
+                )
+            elif len(compatible) == 1:
+                target = compatible[0]
+            else:
+                names = ", ".join(str(candidate) for candidate in compatible)
+                raise RuntimeError(
+                    f"Ambiguous external dependency in {binary}: "
+                    f"{dependency}. Candidates: {names}"
+                )
+
             relative = os.path.relpath(target, binary.parent)
             replacement = "@loader_path/" + relative
             replacement_target = (binary.parent / relative).resolve(strict=True)

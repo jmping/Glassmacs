@@ -79,7 +79,12 @@ class MacOSReleaseScriptTests(unittest.TestCase):
                 run_tool("otool", "-L", "binary", context="inspect binary")
 
     def run_dependency_relocator(
-        self, dependencies, extra_libraries=(), fail_otool=False, executable_arch="arm64"
+        self,
+        dependencies,
+        extra_libraries=(),
+        fail_otool=False,
+        executable_arch="arm64",
+        binary_relative="MacOS/Emacs",
     ):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -97,7 +102,7 @@ class MacOSReleaseScriptTests(unittest.TestCase):
             path.write_bytes(b"\xcf\xfa\xed\xfe" + ("\n".join(lines) + "\n").encode())
             return path
 
-        executable = make_binary(executable_dir / "Emacs", executable_arch)
+        executable = make_binary(contents / binary_relative, executable_arch)
         libraries = []
         for item in extra_libraries:
             relative, arch = item if isinstance(item, tuple) else (item, "arm64")
@@ -173,6 +178,29 @@ open(binary, "wb").write(data[:4] + text.encode())
         self.assertIn("Relocated 1 external", result.stdout)
         self.assertEqual(libraries[0].name, "libintl.8.dylib")
 
+    def test_dependency_relocator_prefers_the_matching_runtime_directory(self):
+        external = "/nix/store/hcs6-gettext-0.22.5/lib/libintl.8.dylib"
+        source = "MacOS/lib-x86_64-11/libgccjit/libcc1.0.so"
+        result, binary, libraries = self.run_dependency_relocator(
+            [external],
+            [
+                ("MacOS/lib-x86_64-11/libintl.8.dylib", "x86_64"),
+                ("MacOS/lib-x86_64-10_12/libintl.8.dylib", "x86_64"),
+            ],
+            executable_arch="x86_64",
+            binary_relative=source,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "DEP=@loader_path/../libintl.8.dylib",
+            binary.read_bytes()[4:].decode(),
+        )
+        self.assertIn("Relocated 1 external", result.stdout)
+        self.assertEqual([library.name for library in libraries], [
+            "libintl.8.dylib",
+            "libintl.8.dylib",
+        ])
+
     def test_dependency_relocator_fails_on_ambiguous_or_unresolved_matches(self):
         external = "/nix/store/abcd-gettext/lib/libintl.8.dylib"
         ambiguous, _, _ = self.run_dependency_relocator(
@@ -245,6 +273,77 @@ open(binary, "wb").write(data[:4] + text.encode())
         self.assertIn("install_name_tool", (ROOT / "scripts/sanitize-macos-rpaths").read_text())
         self.assertNotIn('"/usr/bin/file"', validator)
         self.assertIn("discover_macho_binaries", validator)
+
+    def test_validator_shell_entrypoint_runs_with_literal_python_heredoc(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            app = root / "Glassmacs.app"
+            contents = app / "Contents"
+            (contents / "MacOS").mkdir(parents=True)
+            (contents / "Resources/Glassmacs/lisp").mkdir(parents=True)
+            (contents / "Resources").mkdir(exist_ok=True)
+            (contents / "Info.plist").write_bytes(
+                (ROOT / "macos/Info.plist").read_bytes()
+            )
+            bootstrap = contents / "MacOS/GlassmacsBootstrap"
+            bootstrap.write_text("#!/bin/sh\nexit 0\n")
+            bootstrap.chmod(0o755)
+            emacs = contents / "MacOS/Emacs"
+            emacs.write_bytes(b"\xcf\xfa\xed\xfe" + b"fixture")
+            emacs.chmod(0o755)
+            resources = contents / "Resources/Glassmacs"
+            (resources / "init.el").write_bytes((ROOT / "init.el").read_bytes())
+            (resources / "lisp/glassmacs.el").write_text(";;; fixture\n")
+            (resources / "scripts").mkdir()
+            (resources / "scripts/bootstrap").write_text("#!/bin/sh\n")
+            (contents / "Resources/Glassmacs.icns").write_bytes(b"icon")
+
+            plutil = root / "plutil"
+            plutil.write_text(f"""#!{sys.executable}
+import plistlib, sys
+plistlib.loads(open(sys.argv[-1], "rb").read())
+print(sys.argv[-1] + ": OK")
+""")
+            plutil.chmod(0o755)
+            plist_buddy = root / "PlistBuddy"
+            plist_buddy.write_text(f"""#!{sys.executable}
+import plistlib, sys
+plist = plistlib.loads(open(sys.argv[-1], "rb").read())
+key = sys.argv[2].removeprefix("Print :")
+if key == "CFBundleDocumentTypes:0:CFBundleTypeExtensions":
+    print("\\n".join(plist["CFBundleDocumentTypes"][0]["CFBundleTypeExtensions"]))
+else:
+    value = plist
+    for component in key.split(":"):
+        value = value[int(component)] if isinstance(value, list) else value[component]
+    print(value)
+""")
+            plist_buddy.chmod(0o755)
+            otool = root / "otool"
+            otool.write_text(f"""#!{sys.executable}
+import sys
+print(sys.argv[-1] + ":")
+""")
+            otool.chmod(0o755)
+            environment = os.environ.copy()
+            environment.update({
+                "GLASSMACS_PLUTIL": str(plutil),
+                "GLASSMACS_PLISTBUDDY": str(plist_buddy),
+                "GLASSMACS_OTOOL": str(otool),
+                "GLASSMACS_SKIP_EMACS_STARTUP": "1",
+            })
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts/validate-macos-app"), str(app)],
+                text=True,
+                capture_output=True,
+                check=False,
+                env=environment,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Validated Glassmacs.app structure", result.stdout)
+        self.assertNotIn("unbound variable", result.stderr)
+        self.assertIn("<<'PY'", (ROOT / "scripts/validate-macos-app").read_text())
 
     def run_rpath_sanitizer(
         self, fixture, fail_delete=False, fail_otool=False, fail_file=False
