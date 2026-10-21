@@ -34,6 +34,11 @@ def _thin_filetype(header):
     }.get(magic)
     if byte_order is None:
         return None
+    expected_size = 32 if magic in {
+        b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe",
+    } else 28
+    if len(header) < expected_size:
+        raise RuntimeError("Truncated Mach-O header")
     return int.from_bytes(header[12:16], "big" if byte_order == ">" else "little")
 
 

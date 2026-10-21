@@ -96,9 +96,13 @@ class MacOSReleaseScriptTests(unittest.TestCase):
             archive = contents / "libkmod.a"
             archive.write_bytes(make_fat_macho(
                 b"\xca\xfe\xba\xbf",
-                [b"!<arch>\narm64 archive", b"!<arch>\nx86_64 archive"],
+                [
+                    b"!<arch>\narm64e archive",
+                    b"!<arch>\nx86_64 archive",
+                    b"!<arch>\nx86_64h archive",
+                ],
             ))
-            dynamic = contents / "libdynamic.dylib"
+            dynamic = contents / "libdynamic.a"
             dynamic.write_bytes(make_fat_macho(
                 b"\xca\xfe\xba\xbe",
                 [
@@ -224,7 +228,11 @@ class MacOSReleaseScriptTests(unittest.TestCase):
         archive.parent.mkdir(parents=True, exist_ok=True)
         archive.write_bytes(make_fat_macho(
             b"\xca\xfe\xba\xbf",
-            [b"!<arch>\narm64 archive", b"!<arch>\nx86_64 archive"],
+            [
+                b"!<arch>\narm64e archive",
+                b"!<arch>\nx86_64 archive",
+                b"!<arch>\nx86_64h archive",
+            ],
         ))
         tools = root / "tools"
         tools.mkdir()
