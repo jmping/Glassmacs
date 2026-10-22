@@ -124,7 +124,9 @@ native-compiler deployment target.
 The result is `build/Glassmacs.app`. The build copies `init.el`, `lisp/`, the
 package bootstrap, the compiled Cocoa-reopen module, and the committed
 `assets/icon/Glassmacs.icns` into the bundle; it does not depend on the source
-checkout at runtime. The validation
+checkout at runtime. The Swift bootstrap is built for both arm64 and x86_64 and
+combined into a universal executable, matching the architecture support of the
+bundled Emacs executable and Cocoa lifecycle bridge. The validation
 script checks bundle metadata and icon, document extensions, required files,
 all bundled Mach-O dependencies and runtime search paths, and a batch startup
 of the bundled Emacs. Use `GLASSMACS_SKIP_EMACS_STARTUP=1` to run structural
@@ -277,8 +279,12 @@ bundled `.eln` libraries, before signing Emacs and the outer app. It enables
 the hardened runtime and passes no entitlements, leaving normal macOS library
 validation enabled. Glassmacs does not modify signature verification, sign
 runtime-generated libraries, or load generated user-cache artifacts. Whether
-the signed app can load bundled native-lisp files must be verified on macOS;
-unsigned development ERT does not prove signed-app compatibility.
+the signed Emacs process can load a bundled `.eln` under library validation
+was verified in the Milestone 5 local record: one bundled native library loaded
+from the signed app, and the isolated test home received no `.eln` cache files.
+All bundled `.eln` signatures were also verified. This focused check does not
+replace the interactive signed-app integration tests or prove every native
+module is exercised.
 
 ## Launch and diagnostics
 
@@ -345,13 +351,14 @@ test pass.
 The macOS CI job validates build inputs, bundle structure and metadata, direct
 Mach-O dependencies, Swift tests, batch startup, existing ERT tests, and app
 relocation. These are **build and batch checks, not interactive GUI tests**.
-This repository change has not been exercised on a macOS GUI. Therefore none of
-the following are claimed as verified: Finder or Dock launch, one coherent
-Dock/application-switcher identity after `execv`, reopening, LaunchServices
-document delivery, multiple document opens, policy-aware new-frame/new-tab
-behavior for Finder opens, save prompts, menus/shortcuts, interactive ESS,
-multiple R sessions, source-buffer targets/queues, editable history, local
-output suppression, or native Quartz `plot(cars)`.
+The signed app was launched through LaunchServices during Milestone 5, but no
+interactive GUI behavior was verified. Therefore none of the following are
+claimed as verified: one coherent Dock/application-switcher identity after
+`execv`, reopening, LaunchServices document delivery, multiple document opens,
+policy-aware new-frame/new-tab behavior for Finder opens, save prompts,
+menus/shortcuts, interactive ESS, multiple R sessions, source-buffer
+targets/queues, editable history, local output suppression, or native Quartz
+`plot(cars)`.
 
 Before calling those behaviors verified, manually test on supported macOS:
 

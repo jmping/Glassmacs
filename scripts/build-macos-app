@@ -56,9 +56,18 @@ if [ ! -f "$root/assets/icon/Glassmacs.icns" ]; then
   exit 1
 fi
 
-swift build --package-path "$root/macos" -c release
+for architecture in arm64 x86_64; do
+  swift build --package-path "$root/macos" -c release \
+    --triple "$architecture-apple-macosx13.0"
+  cp "$root/macos/.build/out/Products/Release/GlassmacsLauncher" \
+    "$tmp/GlassmacsLauncher-$architecture"
+done
+/usr/bin/lipo -create \
+  "$tmp/GlassmacsLauncher-arm64" \
+  "$tmp/GlassmacsLauncher-x86_64" \
+  -output "$tmp/GlassmacsLauncher"
 ditto --rsrc --extattr --acl "$upstream_app" "$output"
-cp "$root/macos/.build/release/GlassmacsLauncher" \
+cp "$tmp/GlassmacsLauncher" \
   "$output/Contents/MacOS/GlassmacsBootstrap"
 chmod 755 "$output/Contents/MacOS/GlassmacsBootstrap"
 glassmacs_resources="$output/Contents/Resources/Glassmacs"

@@ -382,6 +382,10 @@ open(binary, "wb").write(data[:32] + text.encode())
         self.assertIn(".macOS(.v13)", package)
         self.assertIn('cp "$root/assets/icon/Glassmacs.icns"', builder)
         self.assertIn('cp "$root/assets/icon/glass-gnu.png" "$emacs_icon"', builder)
+        self.assertIn('--triple "$architecture-apple-macosx13.0"', builder)
+        self.assertIn('/usr/bin/lipo -create', builder)
+        self.assertIn('"$tmp/GlassmacsLauncher-arm64"', builder)
+        self.assertIn('"$tmp/GlassmacsLauncher-x86_64"', builder)
         self.assertIn('pathForResource:@"Glassmacs" ofType:@"icns"', lifecycle)
         self.assertIn("setApplicationIconImage:", lifecycle)
 
@@ -573,8 +577,10 @@ if os.environ.get("INSTALL_NAME_FAIL") == "1":
 _, operation, entry, binary = sys.argv
 with open(os.environ["INSTALL_NAME_LOG"], "a") as log:
     log.write(f"{binary}\\t{entry}\\n")
-lines = open(binary).read().splitlines()
-lines.remove("RPATH=" + entry)
+lines = [
+    line for line in open(binary).read().splitlines()
+    if line != "RPATH=" + entry
+]
 open(binary, "w").write("\\n".join(lines))
 """)
         installer.chmod(0o755)
@@ -606,7 +612,7 @@ open(binary, "w").write("\\n".join(lines))
         ]
         safe = ["@loader_path/../lib", "@executable_path/../Frameworks", "@rpath"]
         result, binary_a, binary_b, log = self.run_rpath_sanitizer(
-            [obsolete + safe, [obsolete[1], "@loader_path"]]
+            [[obsolete[0], *obsolete, *safe], [obsolete[1], "@loader_path"]]
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(log.read_text().splitlines()), len(obsolete) + 1)
