@@ -15,20 +15,22 @@
   :group 'glassmacs)
 
 (defconst glassmacs-hybrid-keybindings
-  '(([super-o] . glassmacs-open-file)
-    ([super-n] . glassmacs-new-document)
-    ([super-s] . save-buffer)
-    ([super-S] . write-file)
-    ([super-w] . delete-frame)
-    ([super-q] . save-buffers-kill-emacs)
-    ([super-c] . kill-ring-save)
-    ([super-v] . yank)
-    ([super-x] . kill-region)
-    ([super-a] . mark-whole-buffer)
-    ([super-z] . undo)
-    ([super-f] . isearch-forward))
+  '(([?\s-o] . glassmacs-open-file)
+    ([?\s-n] . glassmacs-new-document)
+    ([?\s-s] . save-buffer)
+    ([?\s-S] . write-file)
+    ([?\s-w] . delete-frame)
+    ([?\s-q] . save-buffers-kill-emacs)
+    ([?\s-c] . kill-ring-save)
+    ([?\s-v] . yank)
+    ([?\s-x] . kill-region)
+    ([?\s-a] . mark-whole-buffer)
+    ([?\s-z] . undo)
+    ([?\s-f] . isearch-forward))
   "Command-key bindings for the `glassmacs-hybrid' profile.
-Control and Meta bindings, including C-x, C-c, and M-x, are untouched.")
+Control and Meta bindings, including C-x, C-c, and M-x, are untouched.
+Cocoa delivers Command chords as integer events (`?\\s-n'), so they must
+not be written as `super-n' symbols, which never match a keypress.")
 
 (defvar glassmacs--saved-hybrid-keybindings nil
   "Bindings replaced while the Hybrid keyboard profile is active.")

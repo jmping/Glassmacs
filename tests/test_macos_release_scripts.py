@@ -389,6 +389,18 @@ open(binary, "wb").write(data[:32] + text.encode())
         self.assertIn('pathForResource:@"Glassmacs" ofType:@"icns"', lifecycle)
         self.assertIn("setApplicationIconImage:", lifecycle)
 
+    def test_lifecycle_bridge_routes_windowless_menu_and_key_events(self):
+        # Static source check only; real Cocoa dispatch needs a GUI session.
+        lifecycle = (ROOT / "macos/GlassmacsLifecycle.m").read_text()
+
+        self.assertIn("@selector(menuDown:)", lifecycle)
+        self.assertIn("addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown",
+                      lifecycle)
+        self.assertIn("NSApp.keyWindow == nil", lifecycle)
+        self.assertIn('@"qwhm,"', lifecycle)
+        self.assertNotIn("applicationShouldTerminateAfterLastWindowClosed",
+                         lifecycle)
+
     def test_build_sanitizes_before_strict_bundle_validation(self):
         builder = (ROOT / "scripts/build-macos-app").read_text()
         validator = (ROOT / "scripts/validate-macos-app").read_text()

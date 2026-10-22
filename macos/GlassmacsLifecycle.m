@@ -5,6 +5,11 @@
 
 int plugin_is_GPL_compatible;
 
+@protocol GlassmacsEmacsView
+- (id)menuDown:(id)sender;
+- (void)keyDown:(NSEvent *)event;
+@end
+
 @protocol GlassmacsApplicationReopen
 - (void)newFrame:(id)sender;
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender
@@ -27,6 +32,66 @@ glassmacs_application_should_handle_reopen(id delegate, SEL selector,
     }
 
   return YES;
+}
+
+/* Emacs's menu items (action menuDown:) and Command-key equivalents are
+   handled only by an EmacsView, which AppKit reaches through the key
+   window.  After the last window is hidden there is no key window, so
+   those events are dropped.  Route them to the hidden frame's EmacsView,
+   which is still the selected Emacs frame.  */
+static id<GlassmacsEmacsView>
+glassmacs_hidden_emacs_view(void)
+{
+  id<GlassmacsEmacsView> view = nil;
+  for (NSWindow *window in [NSApp windows])
+    {
+      if (window.isVisible || window.isMiniaturized
+          || ![NSStringFromClass([window class]) hasSuffix:@"EmacsWindow"])
+        continue;
+      id candidate = window.delegate;
+      if ([candidate respondsToSelector:@selector(menuDown:)]
+          && [candidate respondsToSelector:@selector(keyDown:)])
+        view = candidate;
+    }
+  return view;
+}
+
+static BOOL
+glassmacs_no_window_can_receive_events(void)
+{
+  return NSApp.keyWindow == nil && NSApp.mainWindow == nil;
+}
+
+static id
+glassmacs_menu_down(id delegate, SEL selector, id sender)
+{
+  id<GlassmacsEmacsView> view = glassmacs_no_window_can_receive_events()
+    ? glassmacs_hidden_emacs_view() : nil;
+  if (view != nil)
+    return [view menuDown:sender];
+  return delegate;
+}
+
+static void
+glassmacs_install_windowless_key_monitor(void)
+{
+  [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+    handler:^NSEvent *(NSEvent *event) {
+      if (!glassmacs_no_window_can_receive_events() || event.window != nil)
+        return event;
+      /* Leave standard app-level Command shortcuts to the main menu. */
+      if (event.modifierFlags & NSEventModifierFlagCommand)
+        {
+          NSString *key = event.charactersIgnoringModifiers.lowercaseString;
+          if ([@"qwhm," containsString:key] && key.length == 1)
+            return event;
+        }
+      id<GlassmacsEmacsView> view = glassmacs_hidden_emacs_view();
+      if (view == nil)
+        return event;
+      [view keyDown:event];
+      return nil;
+    }];
 }
 
 int
@@ -76,6 +141,12 @@ emacs_module_init(struct emacs_runtime *runtime)
             stderr);
       return 1;
     }
+
+  SEL menu_down = @selector(menuDown:);
+  if (![delegate respondsToSelector:menu_down])
+    class_addMethod(object_getClass(delegate), menu_down,
+                    (IMP) glassmacs_menu_down, "@@:@");
+  glassmacs_install_windowless_key_monitor();
 
   [application setApplicationIconImage:icon];
   return 0;

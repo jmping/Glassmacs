@@ -48,9 +48,14 @@ POLICY must be `new-frame', `new-tab', or `reuse-current'."
     glassmacs-document-opening-policy))
 
 (defun glassmacs--show-document-buffer (buffer action)
-  "Display BUFFER according to ACTION."
+  "Display BUFFER according to ACTION.
+With no visible frame, BUFFER is shown in the retained frame instead of
+creating an additional one."
   (let ((visible-window (get-buffer-window buffer t)))
     (cond
+     ((and (fboundp 'glassmacs--ensure-visible-frame)
+           (glassmacs--ensure-visible-frame))
+      (switch-to-buffer buffer))
      (visible-window
       (select-frame-set-input-focus (window-frame visible-window))
       (select-window visible-window))

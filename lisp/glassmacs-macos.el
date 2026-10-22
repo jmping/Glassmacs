@@ -26,6 +26,45 @@
      (and (frame-live-p frame) (display-graphic-p frame)))
    (frame-list)))
 
+;; Frames hidden by the final-window close stay selected, so a command run
+;; with no visible frame would draw into an invisible window.
+(defun glassmacs--no-visible-graphical-frame-p ()
+  "Return non-nil on macOS when no graphical frame is visible."
+  (and (eq system-type 'darwin)
+       (display-graphic-p)
+       (not (cl-some (lambda (frame)
+                       (and (frame-visible-p frame)
+                            (not (frame-parent frame))))
+                     (glassmacs--macos-graphical-frames)))))
+
+(defun glassmacs--ensure-visible-frame ()
+  "Reveal the retained frame when no graphical frame is visible.
+Return non-nil when a frame was revealed."
+  (and (glassmacs--no-visible-graphical-frame-p)
+       (glassmacs--show-hidden-final-frame)))
+
+(defvar glassmacs--commands-that-stay-windowless
+  '(save-buffers-kill-emacs kill-emacs ns-do-hide-emacs ns-do-hide-others
+    ignore delete-frame handle-delete-frame glassmacs-reopen
+    glassmacs-new-window)
+  "Commands that must not reveal the retained frame afterwards.")
+
+(defvar glassmacs--command-started-windowless nil
+  "Non-nil when the current command began with no visible frame.")
+
+(defun glassmacs--note-windowless-command-start ()
+  "Record whether the command about to run starts with no visible frame."
+  (setq glassmacs--command-started-windowless
+        (glassmacs--no-visible-graphical-frame-p)))
+
+(defun glassmacs--reveal-frame-after-windowless-command ()
+  "Show the retained frame after a menu or key command ran with none visible.
+Commands such as buffer selection otherwise display into an invisible frame."
+  (when (and glassmacs--command-started-windowless
+             (not (memq this-command glassmacs--commands-that-stay-windowless)))
+    (setq glassmacs--command-started-windowless nil)
+    (glassmacs--ensure-visible-frame)))
+
 (defun glassmacs--delete-frame-preserving-app (original &optional frame force)
   "Keep the final macOS graphical frame alive when closing its window.
 ORIGINAL is the original `delete-frame' function.  FRAME and FORCE are
@@ -36,15 +75,43 @@ the arguments passed to it."
              (memq frame frames)
              (= (length frames) 1))
         (progn
-          (make-frame-invisible frame)
+          (make-frame-invisible frame t)
           (setq glassmacs--hidden-final-frame frame)
           nil)
       (funcall original frame force))))
 
+;; Cocoa window-close events reach `handle-delete-frame', which calls
+;; `save-buffers-kill-emacs' when no other frame is visible, bypassing
+;; `delete-frame'.  Explicit Quit does not use this path.
+(defun glassmacs--handle-delete-frame-preserving-app (original event)
+  "Hide the final visible macOS frame instead of killing Emacs.
+ORIGINAL is `handle-delete-frame'; EVENT is the delete-frame event."
+  (let ((frame (posn-window (event-start event))))
+    (if (and (eq system-type 'darwin)
+             (frame-live-p frame)
+             (display-graphic-p frame)
+             (not (frame-parent frame))
+             (not (cl-some
+                   (lambda (other)
+                     (and (not (eq other frame))
+                          (frame-visible-p other)
+                          (not (frame-parent other))
+                          (not (frame-parameter other 'delete-before))))
+                   (frame-list))))
+        (progn
+          (make-frame-invisible frame t)
+          (setq glassmacs--hidden-final-frame frame)
+          nil)
+      (funcall original event))))
+
 (defun glassmacs-new-window ()
-  "Create a new graphical Emacs frame."
+  "Show the retained hidden frame, or create a new graphical frame.
+The new frame displays an existing buffer; use `glassmacs-new-document'
+for a distinct untitled buffer."
   (interactive)
-  (make-frame-command))
+  (unless (and (eq system-type 'darwin)
+               (glassmacs--show-hidden-final-frame))
+    (make-frame-command)))
 
 (defun glassmacs-open-preferences ()
   "Open the Glassmacs Customize group."
@@ -99,9 +166,7 @@ the arguments passed to it."
 (defun glassmacs-reopen ()
   "Reopen Glassmacs, restoring its retained frame or creating a new one."
   (interactive)
-  (unless (and (eq system-type 'darwin)
-               (glassmacs--show-hidden-final-frame))
-    (glassmacs-new-window)))
+  (glassmacs-new-window))
 
 (defun glassmacs--install-reopen-event-handler ()
   "Route Cocoa's native new-frame event to `glassmacs-reopen'."
@@ -128,6 +193,11 @@ the arguments passed to it."
   "Install the macOS final-frame and application-reopen behavior."
   (when (eq system-type 'darwin)
     (advice-add 'delete-frame :around #'glassmacs--delete-frame-preserving-app)
+    (advice-add 'handle-delete-frame :around
+                #'glassmacs--handle-delete-frame-preserving-app)
+    (add-hook 'pre-command-hook #'glassmacs--note-windowless-command-start)
+    (add-hook 'post-command-hook
+              #'glassmacs--reveal-frame-after-windowless-command)
     (with-eval-after-load 'ns-win
       (glassmacs--install-reopen-event-handler)
       (glassmacs--install-native-preferences-command))
