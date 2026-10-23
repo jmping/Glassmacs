@@ -581,7 +581,7 @@ when no live target exists or SOURCE is blank."
      ((and (not (glassmacs-queue-running session))
            (not (glassmacs-session-paused session))
            (not (glassmacs-sessions--process-busy-p process)))
-      (when-let ((next (car (glassmacs-queue-pending session))))
+      (when-let* ((next (car (glassmacs-queue-pending session))))
         (setf (glassmacs-entry-state next) 'running
               (glassmacs-entry-started-at next) (current-time))
         (condition-case err

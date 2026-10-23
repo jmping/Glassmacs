@@ -373,6 +373,7 @@ open(binary, "wb").write(data[:32] + text.encode())
         plist = plistlib.loads((ROOT / "macos/Info.plist").read_bytes())
         builder = (ROOT / "scripts/build-macos-app").read_text()
         package = (ROOT / "macos/Package.swift").read_text()
+        lifecycle = (ROOT / "macos/GlassmacsLifecycle.m").read_text()
 
         self.assertTrue((ROOT / "assets/icon/Glassmacs.icns").is_file())
         self.assertIn('CFBundleIconFile', plist)
@@ -381,6 +382,24 @@ open(binary, "wb").write(data[:32] + text.encode())
         self.assertIn(".macOS(.v13)", package)
         self.assertIn('cp "$root/assets/icon/Glassmacs.icns"', builder)
         self.assertIn('cp "$root/assets/icon/glass-gnu.png" "$emacs_icon"', builder)
+        self.assertIn('--triple "$architecture-apple-macosx13.0"', builder)
+        self.assertIn('/usr/bin/lipo -create', builder)
+        self.assertIn('"$tmp/GlassmacsLauncher-arm64"', builder)
+        self.assertIn('"$tmp/GlassmacsLauncher-x86_64"', builder)
+        self.assertIn('pathForResource:@"Glassmacs" ofType:@"icns"', lifecycle)
+        self.assertIn("setApplicationIconImage:", lifecycle)
+
+    def test_lifecycle_bridge_routes_windowless_menu_and_key_events(self):
+        # Static source check only; real Cocoa dispatch needs a GUI session.
+        lifecycle = (ROOT / "macos/GlassmacsLifecycle.m").read_text()
+
+        self.assertIn("@selector(menuDown:)", lifecycle)
+        self.assertIn("addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown",
+                      lifecycle)
+        self.assertIn("NSApp.keyWindow == nil", lifecycle)
+        self.assertIn('@"qwhm,"', lifecycle)
+        self.assertNotIn("applicationShouldTerminateAfterLastWindowClosed",
+                         lifecycle)
 
     def test_build_sanitizes_before_strict_bundle_validation(self):
         builder = (ROOT / "scripts/build-macos-app").read_text()
@@ -434,6 +453,11 @@ open(binary, "wb").write(data[:32] + text.encode())
             (resources / "scripts").mkdir()
             (resources / "scripts/bootstrap").write_text("#!/bin/sh\n")
             (contents / "Resources/Glassmacs.icns").write_bytes(b"icon")
+            lifecycle_module = (
+                contents / "Resources/Glassmacs/macos/libglassmacs-lifecycle.dylib"
+            )
+            lifecycle_module.parent.mkdir()
+            lifecycle_module.write_bytes(b"fixture lifecycle module")
             archive = contents / "MacOS/lib-x86_64-11/libgccjit/sdk-libs/libkmod.a"
             archive.parent.mkdir(parents=True)
             archive.write_bytes(make_fat_macho(
@@ -565,8 +589,10 @@ if os.environ.get("INSTALL_NAME_FAIL") == "1":
 _, operation, entry, binary = sys.argv
 with open(os.environ["INSTALL_NAME_LOG"], "a") as log:
     log.write(f"{binary}\\t{entry}\\n")
-lines = open(binary).read().splitlines()
-lines.remove("RPATH=" + entry)
+lines = [
+    line for line in open(binary).read().splitlines()
+    if line != "RPATH=" + entry
+]
 open(binary, "w").write("\\n".join(lines))
 """)
         installer.chmod(0o755)
@@ -598,7 +624,7 @@ open(binary, "w").write("\\n".join(lines))
         ]
         safe = ["@loader_path/../lib", "@executable_path/../Frameworks", "@rpath"]
         result, binary_a, binary_b, log = self.run_rpath_sanitizer(
-            [obsolete + safe, [obsolete[1], "@loader_path"]]
+            [[obsolete[0], *obsolete, *safe], [obsolete[1], "@loader_path"]]
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(log.read_text().splitlines()), len(obsolete) + 1)
@@ -628,6 +654,9 @@ open(binary, "w").write("\\n".join(lines))
 
     def test_native_compilation_is_configured_before_package_loading(self):
         startup = (ROOT / "init.el").read_text()
+        launcher = (
+            ROOT / "macos/Sources/GlassmacsLauncherCore/LaunchConfiguration.swift"
+        ).read_text()
         policy = re.search(
             r"^\(glassmacs--configure-native-compilation\)$",
             startup,
@@ -638,20 +667,25 @@ open(binary, "w").write("\\n".join(lines))
             policy.start(),
             startup.index("(require 'glassmacs)"),
         )
-        self.assertIn('GLASSMACS_NATIVE_COMP', startup)
         self.assertIn("native-comp-jit-compilation", startup)
+        self.assertIn("native-comp-enable-subr-trampolines", startup)
+        self.assertIn("native-comp-eln-load-path", startup)
+        self.assertNotIn("GLASSMACS_NATIVE_COMP", startup)
+        self.assertIn("nativeCompilationPolicy", launcher)
+        self.assertIn("native-comp-enable-subr-trampolines", launcher)
+        self.assertIn("native-comp-eln-load-path", launcher)
+        self.assertNotIn("GLASSMACS_NATIVE_COMP", launcher)
         self.assertIn("13.0", (ROOT / "macos/Sources/GlassmacsLauncherCore/LaunchConfiguration.swift").read_text())
 
-    def test_entitlements_are_valid_and_signing_order_is_preserved(self):
-        entitlements = plistlib.loads(
-            (ROOT / "macos/Glassmacs.entitlements.plist").read_bytes()
-        )
-        self.assertIs(entitlements["com.apple.security.cs.disable-library-validation"], True)
-
+    def test_hardened_signing_preserves_library_validation_and_signing_order(self):
         signing = (ROOT / "scripts/sign-macos-app").read_text()
+        self.assertFalse((ROOT / "macos/Glassmacs.entitlements.plist").exists())
+        self.assertNotIn("--entitlements", signing)
+        self.assertNotIn("disable-library-validation", signing)
+        self.assertIn("--options runtime", signing)
         nested_sign = signing.index('/usr/bin/codesign --force --sign "$identity"')
-        emacs_sign = signing.index('--entitlements "$entitlements" "$emacs"')
-        outer_sign = signing.index('--entitlements "$entitlements" "$app"')
+        emacs_sign = signing.index('--options runtime --timestamp \\\n  "$emacs"')
+        outer_sign = signing.index('--options runtime --timestamp \\\n  "$app"')
         verification = signing.index(
             '/usr/bin/codesign --verify --deep --strict --verbose=2 "$app"'
         )

@@ -8,17 +8,36 @@
 
 (defcustom glassmacs-document-opening-policy
   (if (eq system-type 'darwin) 'new-frame 'reuse-current)
-  "How interactive document opens are displayed in graphical Emacs."
+  "How interactive document opens are displayed in graphical Emacs.
+Save changes with `glassmacs-set-document-opening-policy' or Customize."
   :type '(choice (const :tag "New frame" new-frame)
                  (const :tag "New tab" new-tab)
                  (const :tag "Reuse current frame or tab" reuse-current))
   :group 'glassmacs-frames)
 
+(defun glassmacs-set-document-opening-policy (policy)
+  "Set and persist the document opening POLICY.
+POLICY must be `new-frame', `new-tab', or `reuse-current'."
+  (interactive
+   (list
+    (intern
+     (completing-read
+      "Open documents in: "
+      '("new-frame" "new-tab" "reuse-current")
+      nil t nil nil
+      (symbol-name glassmacs-document-opening-policy)))))
+  (unless (memq policy '(new-frame new-tab reuse-current))
+    (user-error "Unknown document opening policy: %s" policy))
+  (let ((user-init-file (or user-init-file custom-file)))
+    (customize-save-variable 'glassmacs-document-opening-policy policy))
+  (message "Glassmacs document opening policy: %s" policy))
+
 (defun glassmacs--ordinary-document-buffer-p (buffer)
   "Return non-nil when BUFFER is an ordinary document buffer."
   (and (buffer-live-p buffer)
        (with-current-buffer buffer
-         (and (not (derived-mode-p 'special-mode 'dired-mode))
+         (and (not (derived-mode-p 'special-mode 'dired-mode 'comint-mode))
+              (not (get-buffer-process buffer))
               (or buffer-file-name
                   (not (string-match-p "\\`\\*" (buffer-name))))))))
 
@@ -29,9 +48,14 @@
     glassmacs-document-opening-policy))
 
 (defun glassmacs--show-document-buffer (buffer action)
-  "Display BUFFER according to ACTION."
+  "Display BUFFER according to ACTION.
+With no visible frame, BUFFER is shown in the retained frame instead of
+creating an additional one."
   (let ((visible-window (get-buffer-window buffer t)))
     (cond
+     ((and (fboundp 'glassmacs--ensure-visible-frame)
+           (glassmacs--ensure-visible-frame))
+      (switch-to-buffer buffer))
      (visible-window
       (select-frame-set-input-focus (window-frame visible-window))
       (select-window visible-window))
@@ -107,6 +131,9 @@
 (defun glassmacs--install-document-menu ()
   "Route macOS File menu open commands through Glassmacs' document policy."
   (when (and (eq system-type 'darwin) (display-graphic-p))
+    (define-key global-map [menu-bar file new-document]
+      '(menu-item "New Document" glassmacs-new-document
+                  :enable (menu-bar-non-minibuffer-window-p)))
     (define-key global-map [menu-bar file open-file]
       '(menu-item "Open File..." glassmacs-open-file
                   :enable (menu-bar-non-minibuffer-window-p)))

@@ -21,8 +21,9 @@ final class LaunchConfigurationTests: XCTestCase {
                 forwarding: ["/Users/test/Research folder/Δ.R"]
             ),
             [
-                "-Q", "--eval",
-                "(setq native-comp-jit-compilation (equal (getenv \"GLASSMACS_NATIVE_COMP\") \"1\"))",
+                "-Q",
+                "--eval",
+                LaunchConfiguration.nativeCompilationPolicy,
                 "--load",
                 "/Applications/Glass macs.app/Contents/Resources/Glassmacs/init.el",
                 "/Users/test/Research folder/Δ.R"

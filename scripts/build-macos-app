@@ -56,9 +56,20 @@ if [ ! -f "$root/assets/icon/Glassmacs.icns" ]; then
   exit 1
 fi
 
-swift build --package-path "$root/macos" -c release
+for architecture in arm64 x86_64; do
+  swift build --package-path "$root/macos" -c release \
+    --triple "$architecture-apple-macosx13.0"
+  bin_path="$(swift build --package-path "$root/macos" -c release \
+    --triple "$architecture-apple-macosx13.0" --show-bin-path)"
+  cp "$bin_path/GlassmacsLauncher" \
+    "$tmp/GlassmacsLauncher-$architecture"
+done
+/usr/bin/lipo -create \
+  "$tmp/GlassmacsLauncher-arm64" \
+  "$tmp/GlassmacsLauncher-x86_64" \
+  -output "$tmp/GlassmacsLauncher"
 ditto --rsrc --extattr --acl "$upstream_app" "$output"
-cp "$root/macos/.build/release/GlassmacsLauncher" \
+cp "$tmp/GlassmacsLauncher" \
   "$output/Contents/MacOS/GlassmacsBootstrap"
 chmod 755 "$output/Contents/MacOS/GlassmacsBootstrap"
 glassmacs_resources="$output/Contents/Resources/Glassmacs"
@@ -66,6 +77,8 @@ mkdir -p "$glassmacs_resources/scripts"
 cp "$root/init.el" "$glassmacs_resources/init.el"
 ditto "$root/lisp" "$glassmacs_resources/lisp"
 cp "$root/scripts/bootstrap" "$glassmacs_resources/scripts/bootstrap"
+"$root/scripts/build-macos-lifecycle" "$upstream_app" \
+  "$glassmacs_resources/macos/libglassmacs-lifecycle.dylib"
 
 python3 - "$output/Contents/Info.plist" "$root/macos/Info.plist" <<'PY'
 import plistlib

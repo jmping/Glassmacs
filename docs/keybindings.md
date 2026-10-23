@@ -9,9 +9,9 @@
 > **Supersedes:** None
 
 
-The configurable `glassmacs-keyboard-profile` currently supports
-`glassmacs-hybrid`. On graphical macOS frames, the Super key (normally
-Command) is mapped as follows:
+The configurable `glassmacs-keyboard-profile` supports
+`glassmacs-hybrid` and `traditional-emacs`. The Hybrid profile is the default
+on graphical macOS. It maps the Super key (normally Command) as follows:
 
 | Shortcut | Command |
 | --- | --- |
@@ -29,9 +29,14 @@ Command) is mapped as follows:
 The bindings are conditional on both macOS and a graphical frame. Terminal
 Emacs and non-macOS sessions retain their normal global keymaps. Control,
 Meta, and language-specific maps are not rewritten, preserving `C-x`, `C-c`,
-`M-x`, and ESS evaluation shortcuts including `C-c C-c` and `C-c C-r`.
-Set `glassmacs-keyboard-profile` to `nil` in the Glassmacs `custom.el` file to
-disable this profile.
+`M-x`, and ESS evaluation shortcuts including `C-c C-c` and `C-c C-r`. Choose
+**Glassmacs → Keyboard Profile → Traditional Emacs** to restore the bindings
+that the Hybrid profile replaced and leave Command shortcuts unmapped by
+Glassmacs. The selection is saved to Glassmacs `custom.el`.
+`glassmacs-keyboard-profile` may also be set to `nil` to disable Glassmacs
+keyboard mappings. Profile switching restores a previous binding only when
+that key still has the Glassmacs Hybrid command, preserving later user
+customizations.
 
 This is a practical macOS mapping, not a claim of complete Aquamacs
 compatibility. In particular, Command-W deletes the current Emacs frame (not
@@ -44,10 +49,9 @@ See the [proposed Aquamacs behavior inventory](aquamacs-compatibility.md) and [m
 
 ## Aquamacs-specific command and conflict audit
 
-The current Glassmacs profile binds Command-N/O/S/Shift-S/W/Q/C/V/X/A/Z/F to `glassmacs-new-document`, `find-file`, `save-buffer`, `write-file`, `delete-frame`, `save-buffers-kill-emacs`, `kill-ring-save`, `yank`, `kill-region`, `mark-whole-buffer`, `undo`, and `isearch-forward`. Command-O applies the configurable interactive document-opening policy; Command-N creates an untitled document under the same policy. This is a partial macOS convenience layer, not full Aquamacs compatibility. In particular:
+The current Glassmacs profile binds Command-N/O/S/Shift-S/W/Q/C/V/X/A/Z/F to `glassmacs-new-document`, `find-file`, `save-buffer`, `write-file`, `delete-frame`, `save-buffers-kill-emacs`, `kill-ring-save`, `yank`, `kill-region`, `mark-whole-buffer`, `undo`, and `isearch-forward`. Command-O applies the configurable interactive document-opening policy; Command-N creates an untitled document under the same policy. Command-W closes a frame and preserves the app on final-frame close; Command-Q follows Emacs's save-and-quit path. Dock reopen is bridged to Cocoa's native application-reopen callback in the packaged app, but requires signed-app GUI verification. This is a partial macOS convenience layer, not full Aquamacs compatibility. In particular:
 
 - Command-W currently deletes the selected frame. Target behavior is a context-aware close-document/view command with GNU Emacs' unsaved-buffer protection. Closing a frame must not kill a buffer shown in another frame.
-- Command-Q currently exits Emacs through the normal save-buffers prompt; it is not proof of a native app remains-open/reopen lifecycle.
 - `aquamacs-menu.el` constructs menu shortcut labels dynamically from effective bindings. One historical File > Open declaration appears to annotate Command-S; do not copy that text. Verify the command's effective keymap at runtime.
 - Preserve `C-x`, `C-c`, `M-x`, and ESS commands such as `C-c C-c` and `C-c C-r`. Bindings installed globally must not displace a mode-local command with a stronger context-specific meaning.
 - Command-Shift-S is the current `write-file` binding. Tests must verify shifted Cocoa key event normalization instead of assuming `[super-S]` behaves identically for every layout.
@@ -75,4 +79,9 @@ Aquamacs' historical keyboard emulation offers layout-specific Option combinatio
 
 Glassmacs does not currently implement Option/Meta or independent left/right modifier preferences. The intended default is that Option remains available for composed characters and international text. Any future Meta mapping must be configurable independently for left/right Option and Command, disclose lost text-entry behavior, and persist in Glassmacs settings. Do not infer modifier intent from one machine's keyboard layout.
 
-**Validation split:** Linux batch ERT can check keymap declarations, preserved Emacs/ESS bindings, profile enablement and shortcut lookup. It cannot validate Cocoa event translation, dead keys, composed characters, right-side physical modifiers or keyboard-layout behavior. Those require macOS GUI testing on US and at least one non-US layout, covering both sides of Option/Command, Option text entry, Meta sequences, isearch and mode-local ESS bindings.
+**Validation split:** batch ERT checks profile switching, saved prior bindings,
+preserved Emacs prefixes, and menu state. It cannot validate Cocoa event
+translation, dead keys, composed characters, right-side physical modifiers or
+keyboard-layout behavior. The signed-app GUI test must cover both profiles on
+US and at least one non-US layout, including Option text entry, Meta
+sequences, isearch, mode-local ESS bindings, and effective shortcut labels.

@@ -5,15 +5,10 @@ set -euo pipefail
 app=${1:?Usage: GLASSMACS_SIGN_IDENTITY=<certificate SHA-1> scripts/sign-macos-app /path/to/Glassmacs.app}
 identity=${GLASSMACS_SIGN_IDENTITY:?Set GLASSMACS_SIGN_IDENTITY to a Developer ID Application certificate SHA-1}
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-entitlements="$root/macos/Glassmacs.entitlements.plist"
 app=$(CDPATH='' cd -- "$app" && pwd)
 
 if [ ! -f "$app/Contents/Info.plist" ]; then
   printf 'Not an application bundle: %s\n' "$app" >&2
-  exit 1
-fi
-if [ ! -f "$entitlements" ]; then
-  printf 'Signing entitlements are missing: %s\n' "$entitlements" >&2
   exit 1
 fi
 emacs="$app/Contents/MacOS/Emacs"
@@ -43,12 +38,10 @@ while IFS= read -r -d '' path; do
 done < <(/usr/bin/find "$app/Contents" -type f -print0)
 
 /usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
-  --entitlements "$entitlements" "$emacs"
+  "$emacs"
 /usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
-  --entitlements "$entitlements" "$app"
+  "$app"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
-/usr/bin/codesign -d --entitlements :- "$emacs" 2>&1 |
-  /usr/bin/grep -Fq 'com.apple.security.cs.disable-library-validation'
 /usr/bin/codesign -dv --verbose=4 "$emacs" 2>&1 |
   /usr/bin/grep -E 'Identifier=|Authority=|TeamIdentifier='
 printf 'Signed and verified %s (%s nested Mach-O files)\n' "$app" "$count"

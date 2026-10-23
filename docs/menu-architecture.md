@@ -25,6 +25,19 @@ Stable command ID; existing command or minimal wrapper; label/description; categ
 
 This is a **documentation contract**, not a proposed command registry or UI framework. Prefer the existing interactive command symbol and its keymap; a menu item should reference that command. Add a wrapper only when Glassmacs policy differs from upstream behavior or needs a useful context-aware prompt. Stable feature IDs in the compatibility inventory identify user-visible requirements; they do not require generating a parallel command database.
 
+### Implemented macOS menu foundation
+
+The current implementation adds a Glassmacs menu with document-opening policy
+and a radio submenu for Hybrid / Traditional keyboard profiles. It adds **New
+Window** to File and the existing Window menu while retaining Emacs's other
+entries, and keeps policy-aware New Document/Open entries in File. Cocoa/Emacs
+continue to own the native application menu, including About, Preferences,
+Services, Hide/Show, and Quit; its Preferences event opens the Glassmacs
+Customize group. Glassmacs does not duplicate those native menu entries or
+replace Cocoa's application menu with a parallel renderer. This is a
+foundation, not implementation of the full inventory below. Menu rendering
+and native event behavior remain signed-app GUI checks.
+
 ### Context, capabilities and state
 
 - Derive context from ordinary Emacs state: `current-buffer`, `major-mode`, active region, selected window/frame, `buffer-file-name`, `file-remote-p`, `project-current`, the associated live process/session, and current frame system. Do not keep a second document/window selection model.

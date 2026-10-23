@@ -8,6 +8,14 @@
 > **Coverage:** Source-traced Aquamacs behavior, required Glassmacs replacements, defaults, acceptance contracts, and parity tracking  
 > **Supersedes:** None
 
+## 0.1.0 parity priority clarification — 2026-10-23
+
+**Contextual code-buffer toolbars are P1 first-release usability, not deferred cosmetic polish.** Aquamacs-style discoverability includes useful actions at the top of code-oriented buffers. Prioritize R source buffers and ESS consoles, then general programming modes; richer language-specific integrations may follow. Audit actual Aquamacs source behavior and GNU Emacs `tool-bar-map` support before implementing. Reuse existing interactive commands and menu actions, respect missing packages, and provide a persisted show/hide setting. Do not mark parity verified until a physical macOS GUI check confirms placement, mode switching, action dispatch and absence of misleading disabled controls.
+
+The PR #18 native lifecycle implementation is committed on its draft branch at `7a14dd7`, not merged. Its Command-W correction is automated-test-only; actual ESS/R macOS testing and release-candidate notarization remain open. See the [0.1.0 roadmap](roadmap.md#010-release-readiness-snapshot--2026-10-23).
+
+---
+
 This is the proposed authoritative **behavioral inventory** for Glassmacs after review/merge. The [architecture](architecture.md) controls technical invariants; [menu architecture](menu-architecture.md) controls presentation/command mapping; [keybindings](keybindings.md) controls effective bindings; [roadmap](roadmap.md) controls delivery sequence. Source inspection does not imply implementation or verified behavior.
 
 ## Product decision: documents open in new macOS windows by default

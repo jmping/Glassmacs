@@ -45,19 +45,46 @@ Cocoa code or starting a second application.
 
 Closing a Cocoa window deletes its Emacs frame; Emacs is also the process that
 owns the application event loop. Deleting its final graphical frame therefore
-can end the process and remove the Dock application. Glassmacs now intercepts
+can end the process and remove the Dock application. Glassmacs intercepts
 deletion of the final macOS graphical frame and makes that frame invisible
 instead. It does not kill buffers or processes, and does not save or discard
-buffer changes. Focus hooks restore and focus the retained frame when Emacs
-receives focus; **⌘Q** remains bound to `save-buffers-kill-emacs`, preserving
-Emacs's normal save and quit prompts. Nonfinal frames still delete normally.
-`File → New Window` invokes Emacs's normal new-frame command.
+buffer changes. The retained frame is restored by the native Cocoa
+Dock-reopen callback. That callback is a small Emacs dynamic module,
+compiled from `macos/GlassmacsLifecycle.m` against the bundled Emacs 31 module
+header and AppKit. It adds `applicationShouldHandleReopen:hasVisibleWindows:`
+to Emacs's existing `EmacsApp` delegate and asks Emacs's existing `newFrame:`
+event path to reopen only when Cocoa reports no visible windows. Emacs Lisp
+maps that native event to `glassmacs-reopen`, which restores the retained frame
+or creates a frame when none was retained. For the no-window case, the
+delegate returns `NO` after dispatching the Emacs event, suppressing AppKit's
+default untitled-document creation; when a window is already visible it
+returns `YES` to preserve normal activation and session-restoration behavior.
+The module is a nested Mach-O resource and the existing signing script signs
+it with the rest of the app.
+When the module loads in the graphical app, it also reads
+`Contents/Resources/Glassmacs.icns` from the main app bundle and explicitly
+sets `NSApp.applicationIconImage`. This supplements the upstream Emacs image
+fallback path: the bundle icon is used both by Finder and by the running Dock
+application. Batch tests can verify the resource and bridge wiring, but only
+the signed GUI integration test can establish which icon macOS actually shows.
+No Emacs source, runtime library-validation policy, or process architecture is
+changed. **⌘Q** and Cocoa Quit remain on Emacs's normal save-and-quit path.
+Nonfinal frames still delete normally. `File → New Window` always requests a
+new frame; `File → New Document` uses the persisted document-opening policy.
+The Glassmacs menu exposes document-opening policy and the Hybrid/Traditional
+keyboard profile. The File and Window menus add New Window without replacing
+Emacs's standard entries. Cocoa's native application menu retains About,
+Preferences, Hide, Services, and Quit; the native Preferences item opens the
+same Glassmacs Customize group.
 
-The invisible-frame and focus-notification behavior is platform-specific and
-has not yet been verified interactively on a physical Mac. If Dock activation
-does not trigger the Emacs focus hooks on a supported macOS version, that
-activation behavior requires a native Cocoa reopen callback; Glassmacs does
-not add an AppKit helper process or patch the signed Emacs executable.
+On a source checkout without a built bridge, closing the final frame still
+keeps Emacs running, but Dock reopen is unavailable; Glassmacs emits a warning
+that the native module is missing. `scripts/validate-macos-app` rejects a
+bundle missing the module.
+Native callback registration, Dock activation, final-window close, and state
+restoration still require interactive verification in the signed Glassmacs
+application on macOS; ERT and bundle structure checks alone do not prove these
+behaviors.
 
 This decision is informed by GNU Emacs's Cocoa bundle structure and
 self-contained installation instructions: the app bundle includes the
@@ -94,9 +121,12 @@ native-compiler deployment target.
 ./scripts/validate-macos-app build/Glassmacs.app
 ```
 
-The result is `build/Glassmacs.app`. The build copies only `init.el`, `lisp/`,
-the package bootstrap, and the committed `assets/icon/Glassmacs.icns` into the
-bundle; it does not depend on the source checkout at runtime. The validation
+The result is `build/Glassmacs.app`. The build copies `init.el`, `lisp/`, the
+package bootstrap, the compiled Cocoa-reopen module, and the committed
+`assets/icon/Glassmacs.icns` into the bundle; it does not depend on the source
+checkout at runtime. The Swift bootstrap is built for both arm64 and x86_64 and
+combined into a universal executable, matching the architecture support of the
+bundled Emacs executable and Cocoa lifecycle bridge. The validation
 script checks bundle metadata and icon, document extensions, required files,
 all bundled Mach-O dependencies and runtime search paths, and a batch startup
 of the bundled Emacs. Use `GLASSMACS_SKIP_EMACS_STARTUP=1` to run structural
@@ -118,27 +148,21 @@ GLASSMACS_SIGN_IDENTITY="<Developer ID Application certificate SHA-1>" \
 ./scripts/validate-macos-app build/Glassmacs.app
 ```
 
-The signing script signs nested Mach-O files first, signs bundled Emacs with
-`macos/Glassmacs.entitlements.plist`, and signs the outer app with the same
-entitlements. It uses Developer ID, hardened runtime, and a secure timestamp,
-then requires `codesign --verify --deep --strict --verbose=2`. The only
-entitlement is `com.apple.security.cs.disable-library-validation`; it is
-included to reproduce the tested signing configuration, **not** because it
-has been shown to fix runtime-generated `.eln` Team ID failures. It broadens
-which libraries the signed process may load, so retain it only while needed by
-this distribution. Do not modify the bundle after signing.
+The signing script signs nested Mach-O files first, then bundled Emacs and the
+outer app with Developer ID, hardened runtime, and a secure timestamp. It uses
+no entitlements, so standard macOS library validation remains enabled, and
+requires `codesign --verify --deep --strict --verbose=2`. Do not modify the
+bundle after signing.
 
 Inspect the signed Emacs executable with:
 
 ```sh
-codesign -d --entitlements :- build/Glassmacs.app/Contents/MacOS/Emacs
 codesign -dv --verbose=4 build/Glassmacs.app/Contents/MacOS/Emacs
 codesign --verify --deep --strict --verbose=2 build/Glassmacs.app
 ```
 
-The entitlements are not a substitute for signing runtime-generated native
-libraries with the same Team ID. Glassmacs never signs generated `.eln` files
-with a developer identity or distributes private keys.
+The nested bundled `.eln` files are signed by the same Developer ID as Emacs.
+Glassmacs never signs runtime-generated libraries or distributes private keys.
 
 ## Notarization and distribution
 
@@ -207,14 +231,40 @@ not add a graphics device or R execution backend. ESS remains responsible for
 process readiness and evaluation. The documented split-prompt limitation is
 unchanged.
 
+### Document-opening preference
+
+On macOS, interactive opens of ordinary documents use a new Emacs frame by
+default; on other platforms they reuse the current frame. Run
+`M-x glassmacs-set-document-opening-policy` to select and save one of:
+`new-frame`, `new-tab`, or `reuse-current`. Emacs frames are macOS application
+windows; the policy does not create a new frame for each buffer switch.
+`new-tab` uses Emacs's built-in tab-bar support. The setting is saved through
+Emacs Customize to `custom.el` in the Glassmacs data directory and restored on
+the next launch. Special and interactive buffers, including help and ESS/R
+process buffers, are not treated as documents by this policy.
+
 ### Native Lisp compilation
 
-The bundled Emacs retains native-compilation support and can load compatible,
-properly signed precompiled `.eln` files. By default Glassmacs disables
-automatic native JIT compilation at the beginning of its `init.el`, before it
-loads Glassmacs modules or initializes packages. Ordinary interpreted and
-byte-compiled Emacs Lisp continue to work; this does not remove GCC JIT or
-disable byte compilation.
+Glassmacs establishes its native-code policy twice: in the launcher's Emacs
+`--eval` argument before loading `init.el`, and again at the beginning of
+`init.el` before loading Glassmacs modules or initializing packages:
+
+- `native-comp-jit-compilation` is set to nil, preventing asynchronous native
+  compilation when `.elc` files load.
+- `native-comp-enable-subr-trampolines` is set to nil. Emacs 31 defaults it to
+  `t` independently of JIT; advice on a primitive could otherwise create a
+  trampoline `.eln` under the first writable native load-path directory.
+- `native-comp-eln-load-path` is replaced with only the running Emacs bundle's
+  `Contents/Frameworks/native-lisp` directory, and only when the bundle's
+  `Info.plist` and native-lisp directory are present. Source checkouts without
+  this bundled directory use no native `.eln` files.
+
+Consequently Glassmacs never loads user-writable `.eln` caches or `.eln` files
+from its package directory. Ordinary `.el` and `.elc` packages still load via
+the standard Emacs `load-path`. Explicit native compilation is not a supported
+Glassmacs package-installation path; there is no environment-variable opt-in.
+This policy changes only Glassmacs launches and does not modify ordinary GNU
+Emacs configuration or behavior.
 
 The bootstrap exports `MACOSX_DEPLOYMENT_TARGET=13.0` unless the launching
 environment already supplies a recognized numeric macOS target at or above the
@@ -224,47 +274,17 @@ explicitly selected version. This default avoids the observed invalid
 `-mmacosx-version-min=18.0` generated by GCC 14.3 on the tested system; it does
 not change the bundle's minimum OS.
 
-The bootstrap also sets the JIT policy with a command-line `--eval` before
-loading the bundled init file; the init file repeats it before requiring any
-Glassmacs module. To explicitly enable JIT while diagnosing a compatible setup,
-launch with:
-
-```sh
-GLASSMACS_NATIVE_COMP=1 \
-  "/Applications/Glassmacs.app/Contents/MacOS/GlassmacsBootstrap"
-```
-
-The setting is read before Glassmacs' package initialization. This mode is for
-controlled developer testing, not a recommended end-user setting.
-
-The separate `.eln` issue is a code-signing library-validation failure:
-the tested Developer ID Emacs rejected a GCC-JIT-generated `.eln` without the
-same Team ID, while signing that library with the same Developer ID allowed it
-to load. Re-signing it ad hoc failed again. Disabling library validation on
-Emacs and removing hardened runtime were also insufficient on the tested
-machine. The cause is not conclusively known; organizational device policy is
-only a possibility, not an established explanation. Glassmacs does not suppress
-native-compilation errors, automatically sign generated libraries, require
-end-user certificates, or claim that the entitlement resolves this failure.
-JIT remains available for systems where both the compiler and generated
-libraries are permitted.
-
-Maintainer-reported local verification: setting the deployment target to 15.0
-allowed GCC 14.3 native compilation on an Apple Silicon macOS 27.0.1 test
-machine. A `.eln` signed with the same Developer ID Team ID as Emacs loaded on
-that machine, while an ad-hoc `.eln` did not. This change does not reproduce
-those macOS experiments in Linux CI; the 13.0 default follows the declared app
-minimum and must be exercised with the packaged toolchain. If an older
-development run left incompatible generated files, inspect and manually clear
-only the Glassmacs cache after quitting Emacs:
-
-```sh
-find "$HOME/Library/Application Support/Glassmacs/eln-cache" \
-  -type f -name '*.eln' -delete
-```
-
-Do not clear the bundled Emacs native Lisp directories: properly signed
-precompiled libraries remain eligible to load.
+The Developer ID signing script signs every nested Mach-O file, including
+bundled `.eln` libraries, before signing Emacs and the outer app. It enables
+the hardened runtime and passes no entitlements, leaving normal macOS library
+validation enabled. Glassmacs does not modify signature verification, sign
+runtime-generated libraries, or load generated user-cache artifacts. Whether
+the signed Emacs process can load a bundled `.eln` under library validation
+was verified in the Milestone 5 local record: one bundled native library loaded
+from the signed app, and the isolated test home received no `.eln` cache files.
+All bundled `.eln` signatures were also verified. This focused check does not
+replace the interactive signed-app integration tests or prove every native
+module is exercised.
 
 ## Launch and diagnostics
 
@@ -283,18 +303,62 @@ if available. To debug a build, run
 `./scripts/validate-macos-app /path/to/Glassmacs.app` and inspect the Emacs
 binary with `otool -L`.
 
+## Signed-app integration test plan
+
+Lifecycle, Dock artwork, native menus, and Cocoa keyboard delivery must be
+tested in the Developer ID-signed, hardened-runtime app before these changes
+are called complete. The plan intentionally does not weaken hardened runtime,
+alter entitlements, or use a generated unsigned `.eln` as a workaround.
+
+Build and verify the exact app under test, then sign and verify it with the
+release signing script:
+
+```sh
+./scripts/build-macos-app
+GLASSMACS_SKIP_EMACS_STARTUP=1 ./scripts/validate-macos-app build/Glassmacs.app
+GLASSMACS_SIGN_IDENTITY="<Developer ID Application certificate SHA-1>" \
+  ./scripts/sign-macos-app build/Glassmacs.app
+./scripts/validate-macos-app build/Glassmacs.app
+codesign --verify --deep --strict --verbose=2 build/Glassmacs.app
+spctl --assess --type execute --verbose=2 build/Glassmacs.app
+```
+
+Use a dedicated macOS test account with fresh Glassmacs user data. Launch that
+same signed bundle from Finder or LaunchServices (not a separately rebuilt
+copy), and record macOS version, Emacs version, signing Team ID, bundle path,
+and `codesign`/Gatekeeper results. For each lifecycle scenario, record visible
+and hidden frame counts using `M-x list-frames`, Dock presence/artwork, and
+relevant `*Messages*` or Console errors:
+
+| Area | Integration steps | Pass condition |
+| --- | --- | --- |
+| Runtime icon | Launch from Finder; inspect the running Dock icon and app switcher. | Glassmacs artwork appears at runtime, not only in Finder's bundle listing. |
+| Final-window lifecycle | Open two documents; close one, then close the final window; click the Dock icon. Repeat after a normal session restore. | Nonfinal close affects only its frame; the process and Dock item persist; reopen restores one usable frame without duplicates. |
+| File/Window menus | Invoke New Document, Open, New Window, and document-opening choices from menus; verify their key equivalents; cancel a dirty-document close. | Commands follow their policy, Emacs menu items remain present, and canceled saves preserve edits. |
+| Keyboard profiles | Switch Hybrid → Traditional → Hybrid from the menu; test Command-N/O/S/W/Q and Control/Meta prefixes in an ordinary buffer and ESS buffer. | Hybrid bindings work; Traditional restores prior bindings; profile indicator matches the selected setting after restart. |
+| Cocoa quit | Quit from the native application menu and with ⌘Q, with clean and dirty buffers. | Both take the normal Emacs save/quit path, honor prompts, and terminate only after confirmation. |
+| Signed native code | Open representative bundled Lisp modules and an allowed bundled `.eln`; inspect logs and the runtime-loaded library path. | No signature/library-validation failures and no unsigned generated cache `.eln` is loaded. |
+
+Also repeat the keyboard checks with a non-US input source, verifying composed
+characters and Option/Meta behavior. Record each result as **pass**, **fail**,
+or **not run**; any failure in icon, reopen/frame counts, menu dispatch,
+profile restoration, or bundled `.eln` validation blocks declaring macOS
+runtime behavior complete. Do not change hardened-runtime policy to make this
+test pass.
+
 ## Verification and limitations
 
 The macOS CI job validates build inputs, bundle structure and metadata, direct
 Mach-O dependencies, Swift tests, batch startup, existing ERT tests, and app
 relocation. These are **build and batch checks, not interactive GUI tests**.
-This repository change has not been exercised on a macOS GUI. Therefore none of
-the following are claimed as verified: Finder or Dock launch, one coherent
-Dock/application-switcher identity after `execv`, reopening, LaunchServices
-document delivery, multiple document opens, policy-aware new-frame/new-tab
-behavior for Finder opens, save prompts, menus/shortcuts, interactive ESS,
-multiple R sessions, source-buffer targets/queues, editable history, local
-output suppression, or native Quartz `plot(cars)`.
+The signed app was launched through LaunchServices during Milestone 5, but no
+interactive GUI behavior was verified. Therefore none of the following are
+claimed as verified: one coherent Dock/application-switcher identity after
+`execv`, reopening, LaunchServices document delivery, multiple document opens,
+policy-aware new-frame/new-tab behavior for Finder opens, save prompts,
+menus/shortcuts, interactive ESS, multiple R sessions, source-buffer
+targets/queues, editable history, local output suppression, or native Quartz
+`plot(cars)`.
 
 Before calling those behaviors verified, manually test on supported macOS:
 
