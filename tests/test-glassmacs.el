@@ -4,6 +4,8 @@
 (require 'cl-lib)
 (require 'comint)
 (defvar custom-file)
+;; Declared by Cocoa Emacs only; make let-bindings dynamic on other builds.
+(defvar ns-input-file)
 (add-to-list 'load-path
              (expand-file-name "../lisp"
                                (file-name-directory (or load-file-name buffer-file-name))))
@@ -59,11 +61,45 @@
     (glassmacs--handle-delete-frame-preserving-app #'ignore 'a)
     (should (eq hidden 'a))))
 
+;; The installer is darwin-gated, so run it with a simulated Cocoa system
+;; and restore global advice and hooks afterwards (Linux batch Emacs lacks them).
+(defmacro glassmacs-test-with-installed-lifecycle (&rest body)
+  "Run BODY after installing the lifecycle on a simulated darwin system."
+  (declare (indent 0))
+  `(let ((pre-command-hook pre-command-hook)
+         (post-command-hook post-command-hook)
+         (after-make-frame-functions after-make-frame-functions)
+         (had-handle (advice-member-p
+                      #'glassmacs--handle-delete-frame-preserving-app
+                      'handle-delete-frame))
+         (had-delete (advice-member-p
+                      #'glassmacs--delete-frame-preserving-app 'delete-frame)))
+     (unwind-protect
+         (cl-letf (((symbol-function 'glassmacs--load-native-reopen-bridge)
+                    #'ignore)
+                   ((symbol-function 'glassmacs--install-reopen-event-handler)
+                    #'ignore)
+                   ((symbol-function
+                     'glassmacs--install-native-preferences-command)
+                    #'ignore)
+                   ((symbol-function 'glassmacs--install-macos-menus)
+                    #'ignore))
+           (let ((system-type 'darwin))
+             (glassmacs--install-macos-frame-lifecycle))
+           ,@body)
+       (unless had-handle
+         (advice-remove 'handle-delete-frame
+                        #'glassmacs--handle-delete-frame-preserving-app))
+       (unless had-delete
+         (advice-remove 'delete-frame
+                        #'glassmacs--delete-frame-preserving-app)))))
+
 (ert-deftest glassmacs-macos-lifecycle-advises-cocoa-close-handler ()
-  (should (advice-member-p #'glassmacs--handle-delete-frame-preserving-app
-                           'handle-delete-frame))
-  (should (advice-member-p #'glassmacs--delete-frame-preserving-app
-                           'delete-frame)))
+  (glassmacs-test-with-installed-lifecycle
+    (should (advice-member-p #'glassmacs--handle-delete-frame-preserving-app
+                             'handle-delete-frame))
+    (should (advice-member-p #'glassmacs--delete-frame-preserving-app
+                             'delete-frame))))
 
 (ert-deftest glassmacs-macos-explicit-quit-is-not-intercepted ()
   (should-not (advice-member-p #'glassmacs--handle-delete-frame-preserving-app
@@ -1133,12 +1169,17 @@
       (should (equal before (buffer-list))))))
 
 (ert-deftest glassmacs-windowless-hooks-are-installed ()
-  (should (memq #'glassmacs--note-windowless-command-start pre-command-hook))
-  (should (memq #'glassmacs--reveal-frame-after-windowless-command
-                post-command-hook)))
+  (glassmacs-test-with-installed-lifecycle
+    (should (memq #'glassmacs--note-windowless-command-start
+                  pre-command-hook))
+    (should (memq #'glassmacs--reveal-frame-after-windowless-command
+                  post-command-hook))))
 
 (ert-deftest glassmacs-windowless-command-n-follows-keyboard-profile ()
   (glassmacs-test-with-profile 'glassmacs-hybrid
     (should (eq (lookup-key global-map [?\s-n]) 'glassmacs-new-document)))
-  (glassmacs-test-with-profile 'traditional-emacs
-    (should (eq (lookup-key global-map [?\s-n]) 'make-frame))))
+  ;; Only Cocoa's ns-win.el binds Command-N to `make-frame'; emulate it.
+  (let ((global-map (copy-keymap global-map)))
+    (define-key global-map [?\s-n] 'make-frame)
+    (glassmacs-test-with-profile 'traditional-emacs
+      (should (eq (lookup-key global-map [?\s-n]) 'make-frame)))))

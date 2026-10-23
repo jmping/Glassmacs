@@ -59,7 +59,9 @@ fi
 for architecture in arm64 x86_64; do
   swift build --package-path "$root/macos" -c release \
     --triple "$architecture-apple-macosx13.0"
-  cp "$root/macos/.build/out/Products/Release/GlassmacsLauncher" \
+  bin_path="$(swift build --package-path "$root/macos" -c release \
+    --triple "$architecture-apple-macosx13.0" --show-bin-path)"
+  cp "$bin_path/GlassmacsLauncher" \
     "$tmp/GlassmacsLauncher-$architecture"
 done
 /usr/bin/lipo -create \

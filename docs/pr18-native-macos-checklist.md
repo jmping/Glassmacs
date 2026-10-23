@@ -214,3 +214,28 @@ notarization (`spctl` rejects the unnotarized build).
 **Automated (unsigned dev run):** ERT 145 run, 134 as expected, 0 unexpected,
 11 skipped; Python release-script tests pass; Swift tests 0 failures;
 affected Lisp byte-compiles without warnings; `git diff --check` clean.
+
+## CI stabilization pass
+
+Root causes (all test/CI-environment assumptions; no product defect found):
+
+- `glassmacs-cocoa-file-open-event-uses-document-policy`: `ns-input-file` is
+  only globally special in Cocoa Emacs, so the test's `let` was lexical on
+  other builds. The test file now declares `(defvar ns-input-file)`.
+- `glassmacs-macos-lifecycle-advises-cocoa-close-handler` and
+  `glassmacs-windowless-hooks-are-installed`: the lifecycle installer is
+  darwin-gated. Tests now run it under a simulated darwin system with native
+  hooks stubbed, then restore advice and hooks.
+- `glassmacs-windowless-command-n-follows-keyboard-profile`: only Cocoa's
+  `ns-win.el` binds ⌘N to `make-frame`. The test emulates that binding.
+- macOS build: `scripts/build-macos-app` hardcoded
+  `.build/out/Products/Release`, which depends on the SwiftPM version. It now
+  asks `swift build --triple … --show-bin-path` for the product directory.
+
+Local results (Cocoa Emacs 31.1): ERT 145 run, 134 expected, 0 unexpected,
+11 skipped (real-ESS tests; ESS is not installed locally and runs in CI);
+Python 27 passed; Swift 5 tests, 0 failures; unsigned temp app build and
+`validate-macos-app` passed with universal bootstrap. Byte-compile clean apart
+from pre-existing free-variable warnings when compiled outside `init.el`.
+Remaining limitations: Linux CI results await the next CI run; no signed
+rebuild, notarization, or GUI retest in this pass.
