@@ -8,6 +8,27 @@
 > **Coverage:** Delivery milestones, priorities, dependencies and acceptance criteria  
 > **Supersedes:** None
 
+## 0.1.0 release readiness snapshot — 2026-10-23
+
+**Status: integration / release-candidate preparation; not release-ready.** PR #18 is open and draft at `7a14dd7`; its seven-file lifecycle fix is committed and pushed, not merged. Do not interpret this snapshot as completed release verification. The earlier milestones and long-term proposals below remain historical/planned unless independently verified.
+
+**P0 — required before public release**
+1. Review PR #18, verify CI and merge only after review. The final Command-W NO-ERROR correction has ERT coverage but was not tested in a rebuilt signed app. The windowless-menu/key monitor remains partly synthetic-test-only; defer further investigation unless reproducible and disruptive.
+2. Test actual ESS and R in the standalone macOS app: install ESS in an isolated profile, open an R file, start R, send line/region/function, inspect editable history and target selection, and run `plot(cars)` with native Quartz graphics. Local ERT: 145 run, 134 expected, 0 unexpected, 11 skipped without ESS. Linux CI ESS coverage is not Mac GUI evidence.
+3. Verify ordinary file opening, editing, saving, modified-file quit prompts, and basic large-file/long-line safeguards. See issues #3 and #12; do not reopen upstream ESS prompt recognition (#16) without a safe, reproducible fix.
+4. Produce a release-candidate build, Developer ID sign, notarize, staple, and validate Gatekeeper on the **candidate itself**. Previous notarization of an older build does not certify PR #18. Audit redistribution licensing/source obligations.
+
+**P1 — strong first-cut usability**
+5. Audit and complete everyday Aquamacs-inspired menu, keyboard-profile, preference-persistence and document/frame behavior, with source/test evidence rather than assumed parity.
+6. Implement **contextual, mode-sensitive toolbars at the top of code-oriented buffers**. Prioritize R source and ESS console actions (run line/selection/function/buffer, start/switch R, help, interrupt/history). Prefer GNU Emacs `tool-bar-map` and existing interactive commands over a new Cocoa command framework. Support show/hide and graceful degradation without ESS. General programming modes follow as feasible; richer Python/LaTeX/Markdown integrations may be deferred.
+7. Improve modern macOS visual coherence only where it directly improves everyday usability.
+
+**P2 — explicitly deferrable:** unusual multiple-hidden-frame targeting, speculative Cocoa lifecycle polishing, optional vterm, advanced appearance customization, remote ESS execution, advanced AI/remote workflow integrations, and full historical Aquamacs parity. Data loss, security issues and ordinary-workflow crashes are never deferrable.
+
+**Evidence:** PR #18 source and checklist; open issues #3, #12, #13, #16. The project has substantial implemented R/session/queue infrastructure already; prioritize verification and finishing over reimplementation. See [PR #18 checklist](pr18-native-macos-checklist.md), [Aquamacs inventory](aquamacs-compatibility.md), and [menu architecture](menu-architecture.md).
+
+---
+
 
 This roadmap translates the [architecture](architecture.md) into staged, testable delivery. It is a planning document, not a statement that planned features are implemented. Keep the README's project vision and Aquamacs-inspired macOS/R emphasis intact. Update milestone status as pull requests merge; do not claim GUI, SSH, performance or language integration was tested unless it actually was.
 
