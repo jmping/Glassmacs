@@ -8,6 +8,15 @@
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
 
+## 2026-10-23 — 0.1.0 readiness and contextual toolbar priority
+
+- **DOC-ROADMAP:** added a dated release-readiness snapshot distinguishing P0 release validation, P1 Aquamacs-style usability, and safely deferred enhancements.
+- **DOC-README:** added a concise current project/release-status statement, including the draft PR #18 and verification limitations.
+- **DOC-AQUA-COMPAT:** clarified that contextual mode-sensitive code-buffer toolbars, especially R/ESS, are a first-release P1 requirement rather than optional polish.
+- No document authority, ownership, or supersession changes. No feature is declared implemented solely by these documentation updates.
+
+---
+
 This log records changes in document **scope, ownership, status and authority**. It is not a substitute for Git history or a complete changelog of prose edits.
 
 ## 2026-10-19 — Documentation governance baseline (PR #2)
