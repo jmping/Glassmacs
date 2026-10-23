@@ -1,0 +1,77 @@
+{
+ "schema_version": 1,
+ "sources": [
+  {
+   "id": "SRC-01",
+   "name": "GitHub issues, aquamacs-emacs/aquamacs-emacs",
+   "location": "https://github.com/aquamacs-emacs/aquamacs-emacs/issues",
+   "historical_coverage": "2009-04-16 to 2026-10-15; 231 issues + 37 PRs (67 open)",
+   "accessibility": "Public, API-readable; fully mined",
+   "limitations": "Pre-2013 issues are mostly forwarded mailing-list reports; resolutions often exist only in comment text (18 issues link commits); issue numbers have gaps (PRs)."
+  },
+  {
+   "id": "SRC-02",
+   "name": "Aquamacs source branches (aquamacs3, aquamacs4, aquamacs-4-dev, master, emacs-24/25)",
+   "location": "https://github.com/aquamacs-emacs/aquamacs-emacs",
+   "historical_coverage": "Code history 2008-2026",
+   "accessibility": "Public",
+   "limitations": "Commit messages not yet mined beyond issue-linked commits; Glassmacs docs reference fork jmping/aquamacs-emacs aquamacs3 @ 5a2833896."
+  },
+  {
+   "id": "SRC-03",
+   "name": "CHANGELOG.Aquamacs.tex",
+   "location": "in-repo, aquamacs-emacs",
+   "historical_coverage": "Releases 0.9.3 to 3.6.1/NEXT; 917 items",
+   "accessibility": "Public; read selectively by line",
+   "limitations": "No issue ids; entries not yet individually cross-linked to issues."
+  },
+  {
+   "id": "SRC-04",
+   "name": "BUGS, ChangeLog.1, ChangeLog.2",
+   "location": "in-repo, aquamacs-emacs",
+   "historical_coverage": "Inherited GNU Emacs files",
+   "accessibility": "Public",
+   "limitations": "Largely upstream material; not mined."
+  },
+  {
+   "id": "SRC-05",
+   "name": "Launchpad bugs.launchpad.net/aquamacs",
+   "location": "https://bugs.launchpad.net/aquamacs",
+   "historical_coverage": "Project 2008",
+   "accessibility": "Public",
+   "limitations": "Official bug tracking disabled; zero bugs. Dead end."
+  },
+  {
+   "id": "SRC-06",
+   "name": "aquamacs-bugs / aquamacs-devel mailing lists (Gmane, Google Groups, SourceForge era)",
+   "location": "referenced in issue bodies",
+   "historical_coverage": "~2008-2013",
+   "accessibility": "Not retrieved",
+   "limitations": "Wayback CDX offline during probing; archives unverified. Needs follow-up; originals of forwarded reports live here."
+  },
+  {
+   "id": "SRC-07",
+   "name": "aquamacs.org bug page",
+   "location": "http://aquamacs.org/bugs",
+   "historical_coverage": "unknown",
+   "accessibility": "404",
+   "limitations": "Not available."
+  },
+  {
+   "id": "SRC-08",
+   "name": "GNU Emacs debbugs / bug-gnu-emacs",
+   "location": "https://debbugs.gnu.org",
+   "historical_coverage": "Upstream",
+   "accessibility": "Public",
+   "limitations": "Only bugs cited by Aquamacs records are listed: 38618, 34762, 26982, 26323, 33713, 33833, 6403, 6264, 6272, 59817, 60295. Not individually verified."
+  },
+  {
+   "id": "SRC-09",
+   "name": "Aquamacs automated tests",
+   "location": "aquamacs-emacs test/",
+   "historical_coverage": "none",
+   "accessibility": "n/a",
+   "limitations": "No Aquamacs-specific tests exist; issue #198 requests one; test/automated is upstream Emacs."
+  }
+ ]
+}

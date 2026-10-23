@@ -10,6 +10,10 @@
 
 This log records changes in document **scope, ownership, status and authority**. It is not a substitute for Git history or a complete changelog of prose edits.
 
+## 2026-10-23 — Aquamacs historical regression inventory
+
+- **Created DOC-AQUA-REGRESSION (Proposed):** sources, classification and prioritized plan for historical regression tests; inventory data in `tests/historical/inventory/`. No tests or code added.
+
 ## 2026-10-19 — Documentation governance baseline (PR #2)
 
 - **Created DOC-INDEX:** central canonical authority and scope register; previously no explicit precedence map existed.
