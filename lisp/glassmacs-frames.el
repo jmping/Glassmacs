@@ -194,6 +194,9 @@ Interactive requests follow the current document-opening policy."
     (define-key global-map [menu-bar file glassmacs-new-in-mode]
       '(menu-item "New Buffer in Mode…" glassmacs-new-buffer-in-mode
                   :enable (menu-bar-non-minibuffer-window-p)))
+    (define-key global-map [menu-bar file glassmacs-change-mode]
+      '(menu-item "Change Buffer Mode…" glassmacs-change-buffer-mode
+                  :enable (menu-bar-non-minibuffer-window-p)))
     (define-key global-map [menu-bar file new-document]
       '(menu-item "New Document" glassmacs-new-document
                   :enable (menu-bar-non-minibuffer-window-p)))
