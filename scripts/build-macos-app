@@ -98,6 +98,7 @@ cp "$root/assets/icon/glass-gnu.png" "$emacs_icon"
 
 "$root/scripts/sanitize-macos-rpaths" "$output"
 "$root/scripts/relocate-macos-dependencies" "$output"
+"$root/scripts/adhoc-sign-macos-app" "$output"
 GLASSMACS_SKIP_EMACS_STARTUP=1 "$root/scripts/validate-macos-app" "$output"
 
 if [ -n "${GLASSMACS_UPSTREAM_EMACS_APP:-}" ]; then
