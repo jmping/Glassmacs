@@ -56,6 +56,7 @@
 
 (ert-deftest glassmacs-r-mode-map-installed-for-r-buffer ()
   (with-temp-buffer
+    (emacs-lisp-mode)
     (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
                (lambda () t)))
       (glassmacs-r-ui--install-controls))
@@ -64,6 +65,7 @@
 
 (ert-deftest glassmacs-r-mode-map-installed-for-console-buffer ()
   (with-temp-buffer
+    (emacs-lisp-mode)
     (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
                (lambda () nil)))
       (glassmacs-r-ui--install-controls))
