@@ -92,9 +92,7 @@
             (label (nth 1 entry))
             (command (nth 2 entry)))
         (define-key map (vector key)
-          `(menu-item ,label ,command
-                      :image (find-image '((:type xpm :file "new.xpm")))
-                      :help ,label))))
+          `(menu-item ,label ,command :help ,label))))
     (setq-local tool-bar-map map)
     (when (display-graphic-p)
       (tool-bar-mode 1))))
