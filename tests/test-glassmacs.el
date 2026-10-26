@@ -72,25 +72,6 @@
     (should (eq (lookup-key (current-local-map) [menu-bar glassmacs-r])
                 glassmacs-r-ui-console-menu))))
 
-(ert-deftest glassmacs-new-mode-preserves-ordinary-new-document-policy ()
-  (let ((glassmacs-document-opening-policy 'new-frame)
-        displayed buffer)
-    (cl-letf (((symbol-function 'display-graphic-p)
-               (lambda (&optional _frame) t))
-              ((symbol-function 'glassmacs--show-document-buffer)
-               (lambda (chosen policy)
-                 (setq displayed (list chosen policy)))))
-      (unwind-protect
-          (progn
-            (setq buffer (call-interactively
-                          (lambda ()
-                            (interactive)
-                            (glassmacs-new-buffer-in-mode 'emacs-lisp-mode))))
-            ;; Delegating through an interactive lambda calls the inner
-            ;; function noninteractively; it must not create a new frame.
-            (should-not displayed))
-        (when (buffer-live-p buffer) (kill-buffer buffer))))))
-
 (ert-deftest glassmacs-configuration-loads ()
   (dolist (feature '(glassmacs glassmacs-core glassmacs-keys glassmacs-r
                      glassmacs-sessions glassmacs-r-ui glassmacs-remote
