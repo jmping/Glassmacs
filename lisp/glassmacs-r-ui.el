@@ -75,7 +75,7 @@
     (glassmacs-r-ui--enable-toolbar)))
 
 (defun glassmacs-r-ui--enable-toolbar ()
-  "Install buffer-local toolbar commands, reusing Emacs toolbar imagery."
+  "Install buffer-local toolbar commands for R source or console buffers."
   (require 'tool-bar)
   (let ((map (make-sparse-keymap)))
     (dolist (entry (if (glassmacs-r-ui--source-buffer-p)
