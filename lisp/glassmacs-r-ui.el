@@ -68,7 +68,7 @@
     (user-error "R help requires ESS")))
 
 (defun glassmacs-r-ui--install-controls ()
-  "Expose R menus and contextual top toolbar in this buffer."
+  "Expose mode-local R commands through menus and toolbar maps."
   (local-set-key [menu-bar glassmacs-r]
                  (if (glassmacs-r-ui--source-buffer-p)
                      glassmacs-r-ui-source-menu
