@@ -2,6 +2,7 @@
 
 (require 'comint)
 (require 'mouse)
+(require 'cl-lib)
 (require 'glassmacs-sessions)
 
 (defgroup glassmacs-r-ui nil
@@ -94,7 +95,7 @@
         (define-key map (vector key)
           `(menu-item ,label ,command :help ,label))))
     (setq-local tool-bar-map map)
-    (when (display-graphic-p)
+    (when (and (display-graphic-p) (fboundp 'tool-bar-mode))
       (tool-bar-mode 1))))
 
 (defun glassmacs-r-ui--configure-console ()
