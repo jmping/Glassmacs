@@ -54,6 +54,22 @@
                 'glassmacs-r-send-buffer))
     (should (local-variable-p 'tool-bar-map))))
 
+(ert-deftest glassmacs-r-mode-map-installed-for-r-buffer ()
+  (with-temp-buffer
+    (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
+               (lambda () t)))
+      (glassmacs-r-ui--install-controls))
+    (should (eq (lookup-key (current-local-map) [menu-bar glassmacs-r])
+                glassmacs-r-ui-source-menu))))
+
+(ert-deftest glassmacs-r-mode-map-installed-for-console-buffer ()
+  (with-temp-buffer
+    (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
+               (lambda () nil)))
+      (glassmacs-r-ui--install-controls))
+    (should (eq (lookup-key (current-local-map) [menu-bar glassmacs-r])
+                glassmacs-r-ui-console-menu))))
+
 (ert-deftest glassmacs-configuration-loads ()
   (dolist (feature '(glassmacs glassmacs-core glassmacs-keys glassmacs-r
                      glassmacs-sessions glassmacs-r-ui glassmacs-remote
