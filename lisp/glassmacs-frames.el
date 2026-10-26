@@ -132,7 +132,7 @@ creating an additional one."
   '(("R (ESS)" . glassmacs-r-mode)
     ("Emacs Lisp" . emacs-lisp-mode)
     ("Python" . python-mode)
-    ("LaTeX" . latex-mode)
+    ("LaTeX" . LaTeX-mode)
     ("Markdown" . markdown-mode)
     ("Org" . org-mode)
     ("Text" . text-mode)
@@ -147,7 +147,7 @@ creating an additional one."
        (or (fboundp mode)
            (and (eq mode 'markdown-mode) (locate-library "markdown-mode"))
            (and (eq mode 'org-mode) (locate-library "org"))
-           (and (eq mode 'latex-mode) (locate-library "tex-mode")))))
+           (and (eq mode 'LaTeX-mode) (locate-library "tex-mode")))))
    glassmacs-common-major-modes))
 
 (defun glassmacs--read-major-mode ()
