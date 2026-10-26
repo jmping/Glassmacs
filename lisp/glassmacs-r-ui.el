@@ -96,7 +96,8 @@
                       :image (find-image '((:type xpm :file "new.xpm")))
                       :help ,label))))
     (setq-local tool-bar-map map)
-    (tool-bar-mode 1)))
+    (when (display-graphic-p)
+      (tool-bar-mode 1))))
 
 (defun glassmacs-r-ui--configure-console ()
   "Use the comint history owned by this ESS R process buffer."
