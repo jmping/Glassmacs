@@ -144,7 +144,8 @@ creating an additional one."
   (cl-remove-if-not
    (lambda (entry)
      (let ((mode (cdr entry)))
-       (or (fboundp mode)
+       (or (and (fboundp mode) (not (eq mode 'glassmacs-r-mode)))
+           (and (eq mode 'glassmacs-r-mode) (locate-library "ess-r-mode"))
            (and (eq mode 'markdown-mode) (locate-library "markdown-mode"))
            (and (eq mode 'org-mode) (locate-library "org"))
            (and (eq mode 'LaTeX-mode) (locate-library "tex-mode")))))
