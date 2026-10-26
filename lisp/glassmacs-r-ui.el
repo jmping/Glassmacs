@@ -96,7 +96,7 @@
           `(menu-item ,label ,command :help ,label))))
     (setq-local tool-bar-map map)
     (when (and (display-graphic-p) (fboundp 'tool-bar-mode))
-      (tool-bar-mode 1))))
+      (funcall 'tool-bar-mode 1))))
 
 (defun glassmacs-r-ui--configure-console ()
   "Use the comint history owned by this ESS R process buffer."
