@@ -71,7 +71,7 @@
                  (if (glassmacs-r-ui--source-buffer-p)
                      glassmacs-r-ui-source-menu
                    glassmacs-r-ui-console-menu))
-  (when (and glassmacs-r-show-toolbar (display-graphic-p))
+  (when glassmacs-r-show-toolbar
     (glassmacs-r-ui--enable-toolbar)))
 
 (defun glassmacs-r-ui--enable-toolbar ()
@@ -95,7 +95,8 @@
           `(menu-item ,label ,command
                       :image (find-image '((:type xpm :file "new.xpm")))
                       :help ,label))))
-    (setq-local tool-bar-map map)))
+    (setq-local tool-bar-map map)
+    (tool-bar-mode 1)))
 
 (defun glassmacs-r-ui--configure-console ()
   "Use the comint history owned by this ESS R process buffer."
