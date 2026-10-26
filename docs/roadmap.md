@@ -8,6 +8,27 @@
 > **Coverage:** Delivery milestones, priorities, dependencies and acceptance criteria  
 > **Supersedes:** None
 
+## 0.1.0 release readiness snapshot — 2026-10-23
+
+**Status: integration / release-candidate preparation; not release-ready.** PR #18 is open and draft at `7a14dd7`; its seven-file lifecycle fix is committed and pushed, not merged. Do not interpret this snapshot as completed release verification. The earlier milestones and long-term proposals below remain historical/planned unless independently verified.
+
+**P0 — required before public release**
+1. Review PR #18, verify CI and merge only after review. The final Command-W NO-ERROR correction has ERT coverage but was not tested in a rebuilt signed app. The windowless-menu/key monitor remains partly synthetic-test-only; defer further investigation unless reproducible and disruptive.
+2. Test actual ESS and R in the standalone macOS app: install ESS in an isolated profile, open an R file, start R, send line/region/function, inspect editable history and target selection, and run `plot(cars)` with native Quartz graphics. Local ERT: 145 run, 134 expected, 0 unexpected, 11 skipped without ESS. Linux CI ESS coverage is not Mac GUI evidence.
+3. Verify ordinary file opening, editing, saving, modified-file quit prompts, and basic large-file/long-line safeguards. See issues #3 and #12; do not reopen upstream ESS prompt recognition (#16) without a safe, reproducible fix.
+4. Produce a release-candidate build, Developer ID sign, notarize, staple, and validate Gatekeeper on the **candidate itself**. Previous notarization of an older build does not certify PR #18. Audit redistribution licensing/source obligations.
+
+**P1 — strong first-cut usability**
+5. Audit and complete everyday Aquamacs-inspired menu, keyboard-profile, preference-persistence and document/frame behavior, with source/test evidence rather than assumed parity.
+6. Implement **contextual, mode-sensitive toolbars at the top of code-oriented buffers**. Prioritize R source and ESS console actions (run line/selection/function/buffer, start/switch R, help, interrupt/history). Prefer GNU Emacs `tool-bar-map` and existing interactive commands over a new Cocoa command framework. Support show/hide and graceful degradation without ESS. General programming modes follow as feasible; richer Python/LaTeX/Markdown integrations may be deferred.
+7. Improve modern macOS visual coherence only where it directly improves everyday usability.
+
+**P2 — explicitly deferrable:** unusual multiple-hidden-frame targeting, speculative Cocoa lifecycle polishing, optional vterm, advanced appearance customization, remote ESS execution, advanced AI/remote workflow integrations, and full historical Aquamacs parity. Data loss, security issues and ordinary-workflow crashes are never deferrable.
+
+**Evidence:** PR #18 source and checklist; open issues #3, #12, #13, #16. The project has substantial implemented R/session/queue infrastructure already; prioritize verification and finishing over reimplementation. See [PR #18 checklist](pr18-native-macos-checklist.md), [Aquamacs inventory](aquamacs-compatibility.md), and [menu architecture](menu-architecture.md).
+
+---
+
 
 This roadmap translates the [architecture](architecture.md) into staged, testable delivery. It is a planning document, not a statement that planned features are implemented. Keep the README's project vision and Aquamacs-inspired macOS/R emphasis intact. Update milestone status as pull requests merge; do not claim GUI, SSH, performance or language integration was tested unless it actually was.
 
@@ -115,7 +136,7 @@ Exit conditions require **actual macOS GUI tests** for window/tab behavior, not 
 - Refine Cocoa window/frame behavior, typography, dark/light appearance, shortcuts, file associations and application conventions.
 - **Standalone app build implemented:** a reproducible macOS build starts from a pinned, checksum-verified Cocoa GNU Emacs bundle, installs Glassmacs Lisp/configuration, uses one top-level `Glassmacs.app` bundle identity, and stores mutable state under `~/Library/Application Support/Glassmacs`. A process-replacing Swift bootstrap loads the bundled Emacs; the app is not an Emacs child-process helper.
 - **Build validation implemented:** macOS CI checks bundle metadata and direct executable dependencies, runs Swift and ERT tests with the bundled Emacs, tests the bundled configuration and relocation, and uploads a ZIP artifact.
-- **Release and native-compilation safeguards implemented:** the bootstrap supplies the macOS 13 deployment target, native JIT defaults off with a developer opt-in, signing applies version-controlled hardened-runtime entitlements, and a mock-tested release script orders notarization, stapling, Gatekeeper assessment, and final ZIP creation. This does not resolve runtime-generated `.eln` Team ID failures.
+- **Release and native-compilation safeguards implemented:** the bootstrap supplies the macOS 13 deployment target; Glassmacs disables native JIT and runtime trampoline generation and restricts `.eln` loading to signed artifacts in the Emacs app bundle. Signing uses Developer ID and hardened runtime with normal library validation enabled; generated user-cache `.eln` files are not loaded. Real signed-app validation remains required.
 - Complete actual GUI validation of Finder/Dock activation, reopen, document-open dispatch and frame policy, save prompts, keyboard shortcuts, menus, interactive ESS/R, and Quartz graphics. Do not mark these verified based only on CI or ERT.
 - Continue assessing lifecycle, document integration, preview coordination and updates; never replace Emacs editing or execution engines.
 - Actual signing and notarization require local Developer ID and Keychain setup; default-handler registration and package-version locking remain future distribution work.

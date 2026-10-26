@@ -24,6 +24,15 @@ Run ERT in isolated batch mode:
 ./scripts/test
 ```
 
+Glassmacs disables native JIT compilation and on-demand native subr trampoline
+generation before loading its modules. It restricts the `.eln` search path to
+the Emacs app bundle's `Contents/Frameworks/native-lisp` directory; source
+checkouts without that bundled directory load no native `.eln` files. Ordinary
+`.el` and `.elc` packages continue to load from the regular Emacs load path.
+The startup isolation test runs a child Emacs with a separate ordinary home
+and verifies that Glassmacs neither reads its configuration nor writes to its
+`.emacs.d/eln-cache`.
+
 GitHub Actions runs the ERT suite, including remote-workflow stubs, and byte-compiles all Lisp modules on Ubuntu
 24.04 with `emacs-nox`. A separate integration job installs `r-base-core` and
 `elpa-ess`, adds the packaged ESS directory to `EMACSLOADPATH`, and runs the
@@ -62,12 +71,17 @@ temporary directory:
 
 ```sh
 emacs -Q --batch -l init.el \
-  --eval '(let ((byte-compile-dest-file-function
-                 (lambda (file)
-                   (expand-file-name (file-name-nondirectory file)
-                                     temporary-file-directory))))
+  --eval '(progn
+            (require (quote bytecomp))
+            (let ((byte-compile-dest-file-function
+                   (lambda (file)
+                     (expand-file-name
+                      (concat (file-name-sans-extension
+                               (file-name-nondirectory file))
+                              ".elc")
+                      temporary-file-directory))))
             (dolist (file (directory-files "lisp" t "\\.el$"))
-              (byte-compile-file file)))'
+              (byte-compile-file file))))'
 ```
 
 `tests/test-glassmacs-sessions.el` covers sessions and the queue with mocked
@@ -125,13 +139,14 @@ launch to choose another directory. Optional user customizations belong in
 neither loaded nor modified. To return to ordinary GNU Emacs, start it directly
 with `emacs` rather than `./scripts/glassmacs`.
 
-For the bundled macOS app, automatic native JIT compilation is disabled before
-Glassmacs modules/package initialization; `GLASSMACS_NATIVE_COMP=1` opts into
-JIT for controlled testing. The bootstrap exports `MACOSX_DEPLOYMENT_TARGET`
-13.0 by default, matching the app's minimum supported macOS version, while
-preserving a valid explicit override. See the
+For the bundled macOS app, native JIT and runtime trampoline generation are
+disabled before Glassmacs modules/package initialization. `.eln` loading is
+limited to the bundled Emacs native-lisp directory; there is no unsafe
+environment-variable opt-in. The bootstrap exports
+`MACOSX_DEPLOYMENT_TARGET=13.0` by default, matching the app's minimum
+supported macOS version, while preserving a valid explicit override. See the
 [macOS application guide](macos-launcher.md#native-lisp-compilation) for the
-separate generated-`.eln` Team ID limitation and release signing/notarization.
+native-code trust boundary and signed-app verification requirements.
 
 The core editor has no required Emacs packages beyond GNU Emacs. ESS and
 document-editing packages (markdown-mode, Quarto mode, polymode/poly-R, and
@@ -151,12 +166,23 @@ or set it in `$GLASSMACS_HOME/custom.el`, for example:
 ```
 
 Use `reuse-current` instead of `new-tab` to keep opening in the current frame/tab.
-Special-mode and Dired buffers and non-graphical sessions are not redirected.
+Special-mode, Dired, comint, and process-backed buffers and non-graphical
+sessions are not redirected.
 Cocoa `[ns-open-file]` events use the same policy through a narrow adapter around
 Emacs `ns-find-file`; this depends on the pinned Cocoa Emacs NS event interface.
 Existing visible document views are focused instead of duplicated. ERT covers
 the Lisp policy and a simulated NS event, but Finder delivery, startup ordering,
 and Cocoa frame behavior have not been manually verified on macOS.
+
+The standalone bundle also loads a small AppKit module that installs Emacs's
+native application-reopen delegate callback. The callback routes a Dock reopen
+with no visible windows into Emacs's normal `ns-new-frame` event, which Glassmacs
+maps to restoring the retained final frame or creating one. Reopen is handled
+through that event rather than a competing focus hook, so Cocoa session
+restoration of already-visible windows does not create an extra frame. The Lisp
+lifecycle tests cover these command decisions; they do not validate runtime
+Objective-C method installation or Dock delivery. Build and sign the standalone
+bundle before the required interactive lifecycle check.
 
 Run `M-x glassmacs-diagnostics` for a local report of Emacs/OS/window-system,
 Glassmacs home, ESS/R/Rscript availability and graphics guidance. It does not

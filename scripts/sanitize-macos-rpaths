@@ -47,7 +47,8 @@ extract_rpaths() {
         exit 1
       sub(/^[[:space:]]*path /, "")
       sub(/ \(offset [0-9]+\)$/, "")
-      print
+      if (!seen[$0]++)
+        print
     }
   '
 }

@@ -8,6 +8,14 @@
 > **Coverage:** Project identity, audience, vision and high-level getting started  
 > **Supersedes:** None
 
+## Current 0.1.0 status (2026-10-23)
+
+Glassmacs has a buildable standalone Cocoa macOS application and substantial implemented R/session infrastructure, but **0.1.0 has not shipped**. The native-experience work in PR #18 is committed on its draft branch at `7a14dd7`, not merged. Signed-build Mac testing has confirmed the Dock icon, red-button final-window close/reopen, and basic new-document behavior. The final Command-W fix is covered by automated tests but has not been tested in a rebuilt signed app; zero-window menu/key handling remains partly unverified. ESS/R integration inside the standalone Mac app and notarization of the release candidate remain outstanding. Earlier signed/notarized builds do not certify this branch.
+
+The 0.1.0 plan prioritizes: (1) safe ordinary editing/saving and real ESS/R/Quartz graphics, (2) an Aquamacs-style experience with discoverable menus, persistent preferences, and **mode-sensitive toolbars above code buffers**, especially R/ESS, and (3) a signed, notarized, license-compliant release package. Rare lifecycle edge cases, optional vterm and advanced remote workflows can follow. See the [dated roadmap snapshot](docs/roadmap.md#010-release-readiness-snapshot--2026-10-23) for priorities and verification boundaries.
+
+---
+
 
 **The power of Emacs. The elegance of macOS. Built for R and research.**
 

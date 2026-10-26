@@ -252,6 +252,15 @@ GNU Emacs's distinct application identity and create a second Dock entry.
 Whether process replacement preserves Glassmacs identity and correct Finder,
 Dock, reopen, and document-open behavior is a macOS GUI verification gate.
 
+The packaged app includes a small, signed Emacs dynamic module for Cocoa's
+`applicationShouldHandleReopen:hasVisibleWindows:` delegate callback. It
+forwards a Dock reopen with no visible windows through Emacs's existing native
+`newFrame:` event path; Emacs Lisp then restores the retained final frame or
+creates one. It does not replace Emacs's application delegate, own documents,
+or launch a second application process. The callback is installed at runtime
+on Emacs's existing `EmacsApp` class and remains subject to GUI verification
+on the packaged, signed application.
+
 For Cocoa open-file events, Emacs 31.1 binds the `[ns-open-file]` event to
 `ns-find-file`, which consumes the NS port's `ns-input-file` queue. Glassmacs
 adds narrow advice around that command to route event paths through the same

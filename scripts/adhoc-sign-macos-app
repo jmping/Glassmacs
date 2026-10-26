@@ -1,0 +1,26 @@
+#!/bin/bash
+# Re-seal a Glassmacs.app after install_name_tool edits. Editing a Mach-O
+# invalidates its code signature, and arm64 macOS kills such binaries (SIGKILL)
+# at exec. This ad-hoc seal is local only; release signing replaces it.
+set -euo pipefail
+
+app=${1:?Usage: adhoc-sign-macos-app /path/to/Glassmacs.app}
+app=$(CDPATH='' cd -- "$app" && pwd)
+if [ ! -f "$app/Contents/Info.plist" ]; then
+  printf 'Not an application bundle: %s\n' "$app" >&2
+  exit 1
+fi
+
+count=0
+while IFS= read -r -d '' path; do
+  case "$(/usr/bin/file -b "$path")" in
+    *Mach-O*)
+      /usr/bin/codesign --force --sign - "$path"
+      count=$((count + 1))
+      ;;
+  esac
+done < <(/usr/bin/find "$app/Contents" -type f -print0)
+
+/usr/bin/codesign --force --sign - "$app"
+/usr/bin/codesign --verify --deep --strict "$app"
+printf 'Ad-hoc sealed %s (%s nested Mach-O files)\n' "$app" "$count"
