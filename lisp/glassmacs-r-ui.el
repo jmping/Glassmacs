@@ -3,6 +3,7 @@
 (require 'comint)
 (require 'mouse)
 (require 'cl-lib)
+(require 'tool-bar)
 (require 'glassmacs-sessions)
 
 (defgroup glassmacs-r-ui nil
@@ -95,8 +96,8 @@
         (define-key map (vector key)
           `(menu-item ,label ,command :help ,label))))
     (setq-local tool-bar-map map)
-    (when (and (display-graphic-p) (fboundp 'tool-bar-mode))
-      (funcall #'tool-bar-mode 1))))
+    (when (display-graphic-p)
+      (tool-bar-mode 1))))
 
 (defun glassmacs-r-ui--configure-console ()
   "Use the comint history owned by this ESS R process buffer."
