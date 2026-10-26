@@ -128,9 +128,71 @@ creating an additional one."
       (switch-to-buffer buffer))
     buffer))
 
+(defconst glassmacs-common-major-modes
+  '(("R (ESS)" . glassmacs-r-mode)
+    ("Emacs Lisp" . emacs-lisp-mode)
+    ("Python" . python-mode)
+    ("LaTeX" . latex-mode)
+    ("Markdown" . markdown-mode)
+    ("Org" . org-mode)
+    ("Text" . text-mode)
+    ("Fundamental" . fundamental-mode))
+  "Common modes offered when creating or changing Glassmacs buffers.")
+
+(defun glassmacs--available-major-modes ()
+  "Return available (DISPLAY . COMMAND) modes without loading packages."
+  (cl-remove-if-not
+   (lambda (entry)
+     (let ((mode (cdr entry)))
+       (or (fboundp mode)
+           (and (eq mode 'markdown-mode) (locate-library "markdown-mode"))
+           (and (eq mode 'org-mode) (locate-library "org"))
+           (and (eq mode 'latex-mode) (locate-library "tex-mode")))))
+   glassmacs-common-major-modes))
+
+(defun glassmacs--read-major-mode ()
+  "Read a supported major mode using completion."
+  (let* ((choices (glassmacs--available-major-modes))
+         (selection (completing-read "Major mode: " choices nil t)))
+    (or (cdr (assoc selection choices))
+        (user-error "No major mode selected"))))
+
+(defun glassmacs-new-buffer-in-mode (mode)
+  "Create a fresh untitled document using major MODE.
+Interactive requests follow the current document-opening policy."
+  (interactive (list (glassmacs--read-major-mode)))
+  (unless (memq mode (mapcar #'cdr (glassmacs--available-major-modes)))
+    (user-error "Unavailable major mode: %s" mode))
+  (let ((buffer (generate-new-buffer "Untitled"))
+        (interactive-call (called-interactively-p 'interactive)))
+    (condition-case error-data
+        (progn
+          (with-current-buffer buffer
+            (funcall mode))
+          (let ((action (and interactive-call
+                             (glassmacs--document-opening-action buffer))))
+            (glassmacs--show-document-buffer buffer action))
+          buffer)
+      (error
+       (when (buffer-live-p buffer) (kill-buffer buffer))
+       (signal (car error-data) (cdr error-data))))))
+
+(defun glassmacs-change-buffer-mode (mode)
+  "Change the current buffer to major MODE after confirmation."
+  (interactive (list (glassmacs--read-major-mode)))
+  (unless (memq mode (mapcar #'cdr (glassmacs--available-major-modes)))
+    (user-error "Unavailable major mode: %s" mode))
+  (unless (or (eq major-mode mode)
+              (yes-or-no-p (format "Change buffer mode to %s? " mode)))
+    (user-error "Mode change canceled"))
+  (funcall mode))
+
 (defun glassmacs--install-document-menu ()
   "Route macOS File menu open commands through Glassmacs' document policy."
   (when (and (eq system-type 'darwin) (display-graphic-p))
+    (define-key global-map [menu-bar file glassmacs-new-in-mode]
+      '(menu-item "New Buffer in Mode…" glassmacs-new-buffer-in-mode
+                  :enable (menu-bar-non-minibuffer-window-p)))
     (define-key global-map [menu-bar file new-document]
       '(menu-item "New Document" glassmacs-new-document
                   :enable (menu-bar-non-minibuffer-window-p)))
