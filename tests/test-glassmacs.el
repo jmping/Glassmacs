@@ -11,6 +11,49 @@
                                (file-name-directory (or load-file-name buffer-file-name))))
 (require 'glassmacs)
 
+
+(ert-deftest glassmacs-new-buffer-in-mode-creates-distinct-mode-buffer ()
+  (let (buffer)
+    (unwind-protect
+        (progn
+          (setq buffer (glassmacs-new-buffer-in-mode 'emacs-lisp-mode))
+          (should (buffer-live-p buffer))
+          (with-current-buffer buffer
+            (should (eq major-mode 'emacs-lisp-mode))
+            (should-not buffer-file-name)))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-new-buffer-in-mode-rejects-unknown-mode ()
+  (should-error (glassmacs-new-buffer-in-mode 'glassmacs-not-real-mode)
+                :type 'user-error))
+
+(ert-deftest glassmacs-mode-chooser-excludes-missing-optional-modes ()
+  (cl-letf (((symbol-function 'locate-library)
+             (lambda (name &rest _)
+               (unless (equal name "markdown-mode") "available"))))
+    (unless (fboundp 'markdown-mode)
+      (should-not (assoc "Markdown" (glassmacs--available-major-modes))))))
+
+(ert-deftest glassmacs-r-source-and-console-menus-have-distinct-actions ()
+  (should (eq (lookup-key glassmacs-r-ui-source-menu [line])
+              'glassmacs-r-send-line))
+  (should (eq (lookup-key glassmacs-r-ui-source-menu [buffer])
+              'glassmacs-r-send-buffer))
+  (should (eq (lookup-key glassmacs-r-ui-console-menu [interrupt])
+              'glassmacs-r-interrupt)))
+
+(ert-deftest glassmacs-r-toolbar-has-relevant-command-bindings ()
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
+               (lambda () t)))
+      (glassmacs-r-ui--enable-toolbar))
+    (should (eq (lookup-key tool-bar-map [glassmacs-line])
+                'glassmacs-r-send-line))
+    (should (eq (lookup-key tool-bar-map [glassmacs-buffer])
+                'glassmacs-r-send-buffer))
+    (should (local-variable-p 'tool-bar-map))))
+
 (ert-deftest glassmacs-configuration-loads ()
   (dolist (feature '(glassmacs glassmacs-core glassmacs-keys glassmacs-r
                      glassmacs-sessions glassmacs-r-ui glassmacs-remote
