@@ -192,7 +192,10 @@ creating an additional one."
               (not (called-interactively-p 'interactive))
               (yes-or-no-p (format "Change buffer mode to %s? " mode)))
     (user-error "Mode change canceled"))
-  (funcall mode))
+  (funcall mode)
+  (when (and (eq mode 'glassmacs-r-mode)
+             (not (derived-mode-p 'ess-r-mode 'R-mode)))
+    (user-error "ESS R mode is unavailable; install ESS first")))
 
 (defun glassmacs--install-document-menu ()
   "Route macOS File menu open commands through Glassmacs' document policy."
