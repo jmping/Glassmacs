@@ -183,6 +183,7 @@ Interactive requests follow the current document-opening policy."
   (unless (memq mode (mapcar #'cdr (glassmacs--available-major-modes)))
     (user-error "Unavailable major mode: %s" mode))
   (unless (or (eq major-mode mode)
+              (not (called-interactively-p 'interactive))
               (yes-or-no-p (format "Change buffer mode to %s? " mode)))
     (user-error "Mode change canceled"))
   (funcall mode))
