@@ -168,7 +168,10 @@ Interactive requests follow the current document-opening policy."
     (condition-case error-data
         (progn
           (with-current-buffer buffer
-            (funcall mode))
+            (funcall mode)
+            (when (eq mode 'glassmacs-r-mode)
+              (unless (derived-mode-p 'ess-r-mode 'R-mode)
+                (user-error "ESS R mode is unavailable; install ESS first"))))
           (let ((action (and interactive-call
                              (glassmacs--document-opening-action buffer))))
             (glassmacs--show-document-buffer buffer action))
