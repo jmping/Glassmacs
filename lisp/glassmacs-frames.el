@@ -159,8 +159,7 @@ creating an additional one."
         (user-error "No major mode selected"))))
 
 (defun glassmacs-new-buffer-in-mode (mode)
-  "Create a fresh untitled document using major MODE.
-Interactive requests follow the current document-opening policy."
+  "Create an untitled buffer using major MODE and the document-opening policy."
   (interactive (list (glassmacs--read-major-mode)))
   (unless (memq mode (mapcar #'cdr (glassmacs--available-major-modes)))
     (user-error "Unavailable major mode: %s" mode))
@@ -170,15 +169,18 @@ Interactive requests follow the current document-opening policy."
         (progn
           (with-current-buffer buffer
             (funcall mode)
-            (when (eq mode 'glassmacs-r-mode)
-              (unless (derived-mode-p 'ess-r-mode 'R-mode)
-                (user-error "ESS R mode is unavailable; install ESS first"))))
+            (when (and (eq mode 'glassmacs-r-mode)
+                       (not (derived-mode-p 'ess-r-mode 'R-mode)))
+              (user-error "ESS R mode is unavailable; install ESS first")))
           (let ((action (and interactive-call
                              (glassmacs--document-opening-action buffer))))
-            (glassmacs--show-document-buffer buffer action))
+            (if action
+                (glassmacs--show-document-buffer buffer action)
+              (switch-to-buffer buffer)))
           buffer)
       (error
-       (when (buffer-live-p buffer) (kill-buffer buffer))
+       (when (buffer-live-p buffer)
+         (kill-buffer buffer))
        (signal (car error-data) (cdr error-data))))))
 
 (defun glassmacs-change-buffer-mode (mode)
