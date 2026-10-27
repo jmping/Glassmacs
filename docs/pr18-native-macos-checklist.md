@@ -1,7 +1,6 @@
 # PR #18: Native macOS experience — implementation and validation
 
-Milestones 1–4 implement the native macOS experience on the existing PR #18
-branch. This checklist records its scope and release validation. PR #17 is
+Milestones 1–4 implemented the native macOS experience in PR #18, now merged into `main`. This checklist records its scope and release validation. PR #17 is
 merged into `main`.
 
 ## Implemented scope
@@ -239,3 +238,12 @@ Python 27 passed; Swift 5 tests, 0 failures; unsigned temp app build and
 from pre-existing free-variable warnings when compiled outside `init.el`.
 Remaining limitations: Linux CI results await the next CI run; no signed
 rebuild, notarization, or GUI retest in this pass.
+
+## Integrated 0.1 development status — 2026-10-27
+
+PRs [#18](https://github.com/jmping/Glassmacs/pull/18), [#19](https://github.com/jmping/Glassmacs/pull/19), [#20](https://github.com/jmping/Glassmacs/pull/20), [#21](https://github.com/jmping/Glassmacs/pull/21), and [#22](https://github.com/jmping/Glassmacs/pull/22) have merged into `main` (most recently #22 at `604e44e`). Their PR CI succeeded (Emacs ERT, ESS/R integration, macOS launcher), **not** interactive Cocoa GUI acceptance.
+
+Implemented: native Cocoa application/menu/window infrastructure; configurable document opening; New Buffer in Mode; ESS-based R menus and contextual toolbar actions; R sessions, explicit targeting, queue/output controls; Save As and modified-document review; keyboard, toolbar and document preferences. R Markdown, Quarto, Sweave, Shiny and remote workflows have partial integrations, not fully verified end-to-end behavior.
+
+Outstanding: real macOS testing for reopening, document safety, keyboard/menu dispatch, R execution/session targets, native Quartz plotting, toolbar image/layout and preference persistence; release candidate signing/notarization, Gatekeeper and licensing/source obligations. **The next separate audit** will compare current menus against Aquamacs historical source, followed by historical issue triage; do not equate design inventory with demonstrated parity.
+

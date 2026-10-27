@@ -4,28 +4,19 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-20  
+> **Last reviewed:** 2026-10-27  
 > **Coverage:** Delivery milestones, priorities, dependencies and acceptance criteria  
 > **Supersedes:** None
 
-## 0.1.0 release readiness snapshot — 2026-10-23
+## Integrated 0.1 development status — 2026-10-27
 
-**Status: integration / release-candidate preparation; not release-ready.** PR #18 is open and draft at `7a14dd7`; its seven-file lifecycle fix is committed and pushed, not merged. Do not interpret this snapshot as completed release verification. The earlier milestones and long-term proposals below remain historical/planned unless independently verified.
+PRs [#18](https://github.com/jmping/Glassmacs/pull/18), [#19](https://github.com/jmping/Glassmacs/pull/19), [#20](https://github.com/jmping/Glassmacs/pull/20), [#21](https://github.com/jmping/Glassmacs/pull/21), and [#22](https://github.com/jmping/Glassmacs/pull/22) have merged into `main`. The most recent merge was #22 at `604e44e`. Their pull-request CI completed successfully (Emacs ERT, ESS/R integration, and macOS launcher build). These results establish code integration and automated validation, **not interactive Cocoa GUI acceptance**.
 
-**P0 — required before public release**
-1. Review PR #18, verify CI and merge only after review. The final Command-W NO-ERROR correction has ERT coverage but was not tested in a rebuilt signed app. The windowless-menu/key monitor remains partly synthetic-test-only; defer further investigation unless reproducible and disruptive.
-2. Test actual ESS and R in the standalone macOS app: install ESS in an isolated profile, open an R file, start R, send line/region/function, inspect editable history and target selection, and run `plot(cars)` with native Quartz graphics. Local ERT: 145 run, 134 expected, 0 unexpected, 11 skipped without ESS. Linux CI ESS coverage is not Mac GUI evidence.
-3. Verify ordinary file opening, editing, saving, modified-file quit prompts, and basic large-file/long-line safeguards. See issues #3 and #12; do not reopen upstream ESS prompt recognition (#16) without a safe, reproducible fix.
-4. Produce a release-candidate build, Developer ID sign, notarize, staple, and validate Gatekeeper on the **candidate itself**. Previous notarization of an older build does not certify PR #18. Audit redistribution licensing/source obligations.
+Implemented capabilities include native application/menu/window infrastructure; configurable new-frame/new-tab/reuse-current document opens; New Buffer in Mode and Change Buffer Mode; ESS-backed R source/console menus and contextual toolbar actions; explicit R session start, targeting, inspection and listing; execution-queue and output controls; Save Document As and non-destructive unsaved-document review; and keyboard/document/toolbar preferences. R Markdown, Quarto, Sweave, Shiny and remote workflows have preliminary integrations and still require separate end-to-end validation. Neither complete historical Aquamacs parity nor a production release is claimed.
 
-**P1 — strong first-cut usability**
-5. Audit and complete everyday Aquamacs-inspired menu, keyboard-profile, preference-persistence and document/frame behavior, with source/test evidence rather than assumed parity.
-6. Implement **contextual, mode-sensitive toolbars at the top of code-oriented buffers**. Prioritize R source and ESS console actions (run line/selection/function/buffer, start/switch R, help, interrupt/history). Prefer GNU Emacs `tool-bar-map` and existing interactive commands over a new Cocoa command framework. Support show/hide and graceful degradation without ESS. General programming modes follow as feasible; richer Python/LaTeX/Markdown integrations may be deferred.
-7. Improve modern macOS visual coherence only where it directly improves everyday usability.
+**Still outstanding:** signed-app testing of Cocoa reopen/close, document safety and focus, R source-to-console execution, session targeting, native R/Quartz plotting, toolbar image/layout, persistent preferences, and optional rendering/Shiny workflows. A releasable 0.1 build also needs candidate-specific signing, notarization, Gatekeeper checks and license/source-distribution review. Earlier signed builds do not certify the current `main` tree.
 
-**P2 — explicitly deferrable:** unusual multiple-hidden-frame targeting, speculative Cocoa lifecycle polishing, optional vterm, advanced appearance customization, remote ESS execution, advanced AI/remote workflow integrations, and full historical Aquamacs parity. Data loss, security issues and ordinary-workflow crashes are never deferrable.
-
-**Evidence:** PR #18 source and checklist; open issues #3, #12, #13, #16. The project has substantial implemented R/session/queue infrastructure already; prioritize verification and finishing over reimplementation. See [PR #18 checklist](pr18-native-macos-checklist.md), [Aquamacs inventory](aquamacs-compatibility.md), and [menu architecture](menu-architecture.md).
+**Next audit, separate from this documentation sync:** compare current Glassmacs menu commands against historical Aquamacs menu inventory and then triage historical Aquamacs issues, recording evidence, priority and disposition without treating proposed parity as implemented behavior.
 
 ---
 

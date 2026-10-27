@@ -4,9 +4,18 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-20
+> **Last reviewed:** 2026-10-27
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
+
+## 2026-10-27 — integrated implementation and validation-state synchronization
+
+- Updated README and roadmap to reflect merged PRs #18–22 and distinguish CI from physical macOS acceptance.
+- Reconciled UI, macOS, ESS/R, architecture, development, keyboard and Aquamacs documentation with the merged implementation.
+- Reserved source-level Aquamacs menu parity and historical issue comparisons for the next separate audit.
+- No document authority or ownership changes.
+
+---
 
 ## 2026-10-23 — 0.1.0 readiness and contextual toolbar priority
 

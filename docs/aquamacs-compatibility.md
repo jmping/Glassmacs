@@ -4,7 +4,7 @@
 > **Status:** Proposed  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-20
+> **Last reviewed:** 2026-10-27
 > **Coverage:** Source-traced Aquamacs behavior, required Glassmacs replacements, defaults, acceptance contracts, and parity tracking  
 > **Supersedes:** None
 
@@ -12,9 +12,20 @@
 
 **Contextual code-buffer toolbars are P1 first-release usability, not deferred cosmetic polish.** Aquamacs-style discoverability includes useful actions at the top of code-oriented buffers. Prioritize R source buffers and ESS consoles, then general programming modes; richer language-specific integrations may follow. Audit actual Aquamacs source behavior and GNU Emacs `tool-bar-map` support before implementing. Reuse existing interactive commands and menu actions, respect missing packages, and provide a persisted show/hide setting. Do not mark parity verified until a physical macOS GUI check confirms placement, mode switching, action dispatch and absence of misleading disabled controls.
 
-The PR #18 native lifecycle implementation is committed on its draft branch at `7a14dd7`, not merged. Its Command-W correction is automated-test-only; actual ESS/R macOS testing and release-candidate notarization remain open. See the [0.1.0 roadmap](roadmap.md#010-release-readiness-snapshot--2026-10-23).
+PRs #18–22 are merged into `main`; the Command-W and Cocoa lifecycle paths still require verification in a newly built GUI app. Actual ESS/R macOS testing and release-candidate notarization remain open. See the [current 0.1.0 roadmap](roadmap.md).
 
 ---
+
+## Integrated 0.1 development status — 2026-10-27
+
+PRs [#18](https://github.com/jmping/Glassmacs/pull/18), [#19](https://github.com/jmping/Glassmacs/pull/19), [#20](https://github.com/jmping/Glassmacs/pull/20), [#21](https://github.com/jmping/Glassmacs/pull/21), and [#22](https://github.com/jmping/Glassmacs/pull/22) have merged into `main`. The most recent merge was #22 at `604e44e`. Their pull-request CI completed successfully (Emacs ERT, ESS/R integration, and macOS launcher build). These results establish code integration and automated validation, **not interactive Cocoa GUI acceptance**.
+
+Implemented capabilities include native application/menu/window infrastructure; configurable new-frame/new-tab/reuse-current document opens; New Buffer in Mode and Change Buffer Mode; ESS-backed R source/console menus and contextual toolbar actions; explicit R session start, targeting, inspection and listing; execution-queue and output controls; Save Document As and non-destructive unsaved-document review; and keyboard/document/toolbar preferences. R Markdown, Quarto, Sweave, Shiny and remote workflows have preliminary integrations and still require separate end-to-end validation. Neither complete historical Aquamacs parity nor a production release is claimed.
+
+**Still outstanding:** signed-app testing of Cocoa reopen/close, document safety and focus, R source-to-console execution, session targeting, native R/Quartz plotting, toolbar image/layout, persistent preferences, and optional rendering/Shiny workflows. A releasable 0.1 build also needs candidate-specific signing, notarization, Gatekeeper checks and license/source-distribution review. Earlier signed builds do not certify the current `main` tree.
+
+**Next audit, separate from this documentation sync:** compare current Glassmacs menu commands against historical Aquamacs menu inventory and then triage historical Aquamacs issues, recording evidence, priority and disposition without treating proposed parity as implemented behavior.
+
 
 This is the proposed authoritative **behavioral inventory** for Glassmacs after review/merge. The [architecture](architecture.md) controls technical invariants; [menu architecture](menu-architecture.md) controls presentation/command mapping; [keybindings](keybindings.md) controls effective bindings; [roadmap](roadmap.md) controls delivery sequence. Source inspection does not imply implementation or verified behavior.
 

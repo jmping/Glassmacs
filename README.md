@@ -4,15 +4,19 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-20
+> **Last reviewed:** 2026-10-27
 > **Coverage:** Project identity, audience, vision and high-level getting started  
 > **Supersedes:** None
 
-## Current 0.1.0 status (2026-10-23)
+## Integrated 0.1 development status — 2026-10-27
 
-Glassmacs has a buildable standalone Cocoa macOS application and substantial implemented R/session infrastructure, but **0.1.0 has not shipped**. The native-experience work in PR #18 is committed on its draft branch at `7a14dd7`, not merged. Signed-build Mac testing has confirmed the Dock icon, red-button final-window close/reopen, and basic new-document behavior. The final Command-W fix is covered by automated tests but has not been tested in a rebuilt signed app; zero-window menu/key handling remains partly unverified. ESS/R integration inside the standalone Mac app and notarization of the release candidate remain outstanding. Earlier signed/notarized builds do not certify this branch.
+PRs [#18](https://github.com/jmping/Glassmacs/pull/18), [#19](https://github.com/jmping/Glassmacs/pull/19), [#20](https://github.com/jmping/Glassmacs/pull/20), [#21](https://github.com/jmping/Glassmacs/pull/21), and [#22](https://github.com/jmping/Glassmacs/pull/22) have merged into `main`. The most recent merge was #22 at `604e44e`. Their pull-request CI completed successfully (Emacs ERT, ESS/R integration, and macOS launcher build). These results establish code integration and automated validation, **not interactive Cocoa GUI acceptance**.
 
-The 0.1.0 plan prioritizes: (1) safe ordinary editing/saving and real ESS/R/Quartz graphics, (2) an Aquamacs-style experience with discoverable menus, persistent preferences, and **mode-sensitive toolbars above code buffers**, especially R/ESS, and (3) a signed, notarized, license-compliant release package. Rare lifecycle edge cases, optional vterm and advanced remote workflows can follow. See the [dated roadmap snapshot](docs/roadmap.md#010-release-readiness-snapshot--2026-10-23) for priorities and verification boundaries.
+Implemented capabilities include native application/menu/window infrastructure; configurable new-frame/new-tab/reuse-current document opens; New Buffer in Mode and Change Buffer Mode; ESS-backed R source/console menus and contextual toolbar actions; explicit R session start, targeting, inspection and listing; execution-queue and output controls; Save Document As and non-destructive unsaved-document review; and keyboard/document/toolbar preferences. R Markdown, Quarto, Sweave, Shiny and remote workflows have preliminary integrations and still require separate end-to-end validation. Neither complete historical Aquamacs parity nor a production release is claimed.
+
+**Still outstanding:** signed-app testing of Cocoa reopen/close, document safety and focus, R source-to-console execution, session targeting, native R/Quartz plotting, toolbar image/layout, persistent preferences, and optional rendering/Shiny workflows. A releasable 0.1 build also needs candidate-specific signing, notarization, Gatekeeper checks and license/source-distribution review. Earlier signed builds do not certify the current `main` tree.
+
+**Next audit, separate from this documentation sync:** compare current Glassmacs menu commands against historical Aquamacs menu inventory and then triage historical Aquamacs issues, recording evidence, priority and disposition without treating proposed parity as implemented behavior.
 
 ---
 
@@ -177,7 +181,7 @@ See [development](docs/development.md), [architecture](docs/architecture.md),
 [keybindings](docs/keybindings.md), and [R workflows](docs/r-workflows.md)
 for details.
 
-## Prototype implementation status
+## Prototype implementation details (historical baseline)
 
 The first milestone introduces:
 
@@ -208,7 +212,7 @@ owned by the installed R device; Glassmacs has no managed plot viewer.
 
 ## Development Status
 
-**Early prototype available for testing; not yet a production-ready macOS application.** A relocatable app bundle is built in macOS CI, while interactive macOS GUI, ESS/R and native graphics verification remain outstanding.
+**Integrated development preview for testing; not yet a production-ready macOS application.** A relocatable app bundle is built in macOS CI, while interactive macOS GUI, ESS/R and native graphics verification remain outstanding.
 
 The initial development priorities are:
 
