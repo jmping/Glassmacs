@@ -10,6 +10,10 @@
 
 This is the **canonical index** for maintained project documentation. If a document's authority or scope is unclear, this register governs. Architecture documents describe intended design, **not proof of implementation**; source code and verified tests establish actual behavior.
 
+## Comparative audit (informational)
+
+[Menu parity and deliberate differences](aquamacs-menu-parity-audit.md) records the first source-oriented comparison of Aquamacs and Glassmacs, with gaps and GUI acceptance tasks. It does not replace the canonical behavioral inventory or menu architecture, and the historical issue audit remains a separate follow-up.
+
 ## Authority register
 
 | Document | ID | Authority / status | Canonical coverage | Exclusions |
