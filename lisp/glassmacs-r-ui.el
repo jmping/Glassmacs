@@ -83,7 +83,7 @@
   "R console toolbar entries.")
 
 (defun glassmacs-r-ui--toolbar-image (name)
-  "Look up a built-in toolbar image named NAME."
+  "Look up toolbar image NAME in Emacs image search paths."
   (when (display-graphic-p)
     (find-image
      (list (list :type 'xpm :file (concat name ".xpm")
