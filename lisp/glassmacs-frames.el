@@ -1,6 +1,7 @@
 ;;; glassmacs-frames.el --- Document and frame behavior -*- lexical-binding: t; -*-
 
 (require 'cl-lib)
+(require 'subr-x)
 
 (defgroup glassmacs-frames nil
   "Document opening behavior for Glassmacs."
@@ -117,6 +118,49 @@ creating an additional one."
   (with-eval-after-load 'ns-win
     (glassmacs--install-ns-file-open-policy)))
 
+(defun glassmacs-save-document-as (filename)
+  "Save the current document as FILENAME using Emacs' native file safeguards.
+An existing destination requires the usual Emacs overwrite confirmation.
+An untitled buffer receives a file name only through the successful save."
+  (interactive
+   (list (read-file-name "Save document as: " nil nil nil
+                         (and buffer-file-name
+                              (file-name-nondirectory buffer-file-name)))))
+  (unless (and (stringp filename) (not (string-empty-p filename)))
+    (user-error "A destination file is required"))
+  (write-file filename))
+
+(defun glassmacs--document-buffer-needs-saving-p (buffer)
+  "Return non-nil when BUFFER contains modified user document contents."
+  (and (glassmacs--ordinary-document-buffer-p buffer)
+       (buffer-modified-p buffer)))
+
+(defun glassmacs--modified-document-buffers ()
+  "Return modified ordinary document buffers, excluding transient buffers."
+  (cl-remove-if-not #'glassmacs--document-buffer-needs-saving-p
+                    (buffer-list)))
+
+(defun glassmacs-review-unsaved-documents ()
+  "Show modified user documents using Emacs' native buffer list.
+This command never saves or discards any contents."
+  (interactive)
+  (let ((buffers (glassmacs--modified-document-buffers)))
+    (if (null buffers)
+        (message "No modified documents")
+      (with-current-buffer (get-buffer-create "*Glassmacs Unsaved Documents*")
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert (format "%d modified document(s):\n\n" (length buffers)))
+          (dolist (buffer buffers)
+            (insert (format "%s%s\n"
+                            (buffer-name buffer)
+                            (with-current-buffer buffer
+                              (if buffer-file-name
+                                  (format " — %s" buffer-file-name)
+                                " — untitled")))))
+          (special-mode))
+        (display-buffer (current-buffer))))))
+
 (defun glassmacs-new-document ()
   "Create an untitled document using the configured opening policy."
   (interactive)
@@ -200,6 +244,11 @@ creating an additional one."
 (defun glassmacs--install-document-menu ()
   "Route macOS File menu open commands through Glassmacs' document policy."
   (when (and (eq system-type 'darwin) (display-graphic-p))
+    (define-key global-map [menu-bar file glassmacs-save-document-as]
+      '(menu-item "Save Document As…" glassmacs-save-document-as
+                  :enable (menu-bar-non-minibuffer-window-p)))
+    (define-key global-map [menu-bar file glassmacs-review-unsaved]
+      '(menu-item "Review Unsaved Documents…" glassmacs-review-unsaved-documents))
     (define-key global-map [menu-bar file glassmacs-new-in-mode]
       '(menu-item "New Buffer in Mode…" glassmacs-new-buffer-in-mode
                   :enable (menu-bar-non-minibuffer-window-p)))
