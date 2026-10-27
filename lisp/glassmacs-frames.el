@@ -33,6 +33,11 @@ POLICY must be `new-frame', `new-tab', or `reuse-current'."
     (customize-save-variable 'glassmacs-document-opening-policy policy))
   (message "Glassmacs document opening policy: %s" policy))
 
+(defun glassmacs-open-document-preferences ()
+  "Open the dedicated document and window opening preferences."
+  (interactive)
+  (customize-group 'glassmacs-frames))
+
 (defun glassmacs--ordinary-document-buffer-p (buffer)
   "Return non-nil when BUFFER is an ordinary document buffer."
   (and (buffer-live-p buffer)
