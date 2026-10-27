@@ -111,6 +111,39 @@
       (should (eq (lookup-key (current-local-map) [menu-bar glassmacs-r])
                   glassmacs-r-ui-console-menu)))))
 
+(ert-deftest glassmacs-r-start-and-target-binds-originating-source ()
+  (let ((origin (generate-new-buffer " *glassmacs-start-target*"))
+        (glassmacs-r-target-session nil))
+    (unwind-protect
+        (with-current-buffer origin
+          (cl-letf (((symbol-function 'glassmacs-r-start-session)
+                     (lambda () "R-test"))
+                    ((symbol-function 'glassmacs-r-select-session)
+                     (lambda (id) (setq glassmacs-r-target-session id)))
+                    ((symbol-function 'derived-mode-p)
+                     (lambda (&rest _) t)))
+            (should (equal (glassmacs-r-start-and-target-session) "R-test"))
+            (should (equal glassmacs-r-target-session "R-test"))))
+      (kill-buffer origin))))
+
+(ert-deftest glassmacs-r-start-and-target-does-not-replace-target-on-failure ()
+  (with-temp-buffer
+    (setq-local glassmacs-r-target-session "R-existing")
+    (cl-letf (((symbol-function 'glassmacs-r-start-session)
+               (lambda () (user-error "R missing"))))
+      (should-error (glassmacs-r-start-and-target-session) :type 'user-error)
+      (should (equal glassmacs-r-target-session "R-existing")))))
+
+(ert-deftest glassmacs-r-source-menu-offers-session-workflows ()
+  (should (eq (lookup-key glassmacs-r-ui-source-menu [start])
+              'glassmacs-r-start-and-target-session))
+  (should (eq (lookup-key glassmacs-r-ui-source-menu [show-target])
+              'glassmacs-r-show-target-session))
+  (should (eq (lookup-key glassmacs-r-ui-source-menu [clear-target])
+              'glassmacs-r-clear-session-target))
+  (should (eq (lookup-key glassmacs-r-ui-console-menu [list-sessions])
+              'glassmacs-r-list-sessions)))
+
 (ert-deftest glassmacs-configuration-loads ()
   (dolist (feature '(glassmacs glassmacs-core glassmacs-keys glassmacs-r
                      glassmacs-sessions glassmacs-r-ui glassmacs-remote
