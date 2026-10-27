@@ -91,16 +91,11 @@
      ((:type xpm :file "open.xpm"))))
   "R console toolbar actions.")
 
-(defun glassmacs-r-ui--toolbar-image (icon fallback)
-  "Return a valid toolbar image for ICON or FALLBACK, or nil.
-Use built-in toolbar image lookup, preserving image availability checks.
-Return nil in batch sessions rather than creating unusable image descriptors."
+(defun glassmacs-r-ui--toolbar-image (_icon fallback)
+  "Find an available image from FALLBACK image specifications.
+Return nil when no graphic image is available."
   (when (display-graphic-p)
-    (or (and (fboundp 'tool-bar--image-expression)
-             (condition-case nil
-                 (eval (tool-bar--image-expression icon))
-               (error nil)))
-        (find-image fallback))))
+    (find-image fallback)))
 
 (defun glassmacs-r-ui--enable-toolbar ()
   "Install buffer-local R toolbar actions without replacing unrelated actions.
