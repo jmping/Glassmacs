@@ -48,9 +48,9 @@
     (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
                (lambda () t)))
       (glassmacs-r-ui--enable-toolbar))
-    (should (eq (lookup-key tool-bar-map [glassmacs-line])
+    (should (eq (lookup-key tool-bar-map [glassmacs-run-line])
                 'glassmacs-r-send-line))
-    (should (eq (lookup-key tool-bar-map [glassmacs-buffer])
+    (should (eq (lookup-key tool-bar-map [glassmacs-run-buffer])
                 'glassmacs-r-send-buffer))
     (should (local-variable-p 'tool-bar-map))))
 
@@ -71,6 +71,45 @@
       (glassmacs-r-ui--install-controls))
     (should (eq (lookup-key (current-local-map) [menu-bar glassmacs-r])
                 glassmacs-r-ui-console-menu))))
+
+(ert-deftest glassmacs-r-toolbar-uses-shared-commands ()
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
+               (lambda () t)))
+      (let ((map (glassmacs-r-ui--toolbar-map)))
+        (should (eq (lookup-key map [glassmacs-run-line])
+                    'glassmacs-r-send-line))
+        (should (eq (lookup-key map [glassmacs-run-selection])
+                    'glassmacs-r-send-region))
+        (should (eq (lookup-key map [glassmacs-run-function])
+                    'glassmacs-r-send-function))
+        (should (eq (lookup-key map [glassmacs-run-buffer])
+                    'glassmacs-r-send-buffer))
+        (should (eq (lookup-key map [glassmacs-show-console])
+                    'glassmacs-r-inspect-session))))))
+
+(ert-deftest glassmacs-r-console-toolbar-has-console-only-actions ()
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
+               (lambda () nil)))
+      (let ((map (glassmacs-r-ui--toolbar-map)))
+        (should (eq (lookup-key map [glassmacs-interrupt])
+                    'glassmacs-r-interrupt))
+        (should (eq (lookup-key map [glassmacs-history])
+                    'glassmacs-r-ui-previous-input-or-line))
+        (should-not (lookup-key map [glassmacs-run-buffer]))))))
+
+(ert-deftest glassmacs-r-toolbar-disabled-preference-restores-default ()
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (let ((glassmacs-r-show-toolbar nil))
+      (setq-local tool-bar-map (make-sparse-keymap))
+      (glassmacs-r-ui--install-controls)
+      (should-not (local-variable-p 'tool-bar-map))
+      (should (eq (lookup-key (current-local-map) [menu-bar glassmacs-r])
+                  glassmacs-r-ui-console-menu)))))
 
 (ert-deftest glassmacs-configuration-loads ()
   (dolist (feature '(glassmacs glassmacs-core glassmacs-keys glassmacs-r
