@@ -132,6 +132,8 @@ for a distinct untitled buffer."
           (window-menu (lookup-key global-map [menu-bar window])))
       (define-key glassmacs-menu [document-opening]
         '(menu-item "Document Opening..." glassmacs-set-document-opening-policy))
+      (define-key glassmacs-menu [review-unsaved]
+        '(menu-item "Review Unsaved Documents…" glassmacs-review-unsaved-documents))
       (define-key glassmacs-menu [keyboard-profile] keyboard-menu)
       (define-key keyboard-menu [hybrid]
         '(menu-item "Hybrid macOS / Emacs"
