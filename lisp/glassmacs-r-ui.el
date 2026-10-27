@@ -83,11 +83,10 @@
   "R console toolbar entries.")
 
 (defun glassmacs-r-ui--toolbar-image (name)
-  "Return an existing toolbar image for NAME, or nil if unavailable."
+  "Look up a built-in toolbar image named NAME."
   (when (display-graphic-p)
     (find-image
-     (list (list :type 'xpm
-                 :file (concat name ".xpm")
+     (list (list :type 'xpm :file (concat name ".xpm")
                  :ascent 'center)))))
 
 (defun glassmacs-r-ui--toolbar-map ()
