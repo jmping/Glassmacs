@@ -92,8 +92,7 @@
   "R console toolbar actions.")
 
 (defun glassmacs-r-ui--toolbar-image (_icon fallback)
-  "Find an available image from FALLBACK image specifications.
-Return nil when no graphic image is available."
+  "Find an available image from FALLBACK image specifications."
   (when (display-graphic-p)
     (find-image fallback)))
 
