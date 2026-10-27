@@ -61,3 +61,44 @@ This is the **first comparison pass**, not a claim of full Aquamacs parity. Hist
 ## Next pass: historical Aquamacs issue audit
 
 Review the historical issue tracker **after** confirming menu gaps against source and current GUI. For each issue record: historical URL and issue number, last known reproduction and version, affected menu/workflow, whether current upstream Emacs already fixed it, Glassmacs status (reproduced / not reproduced / untested / intentional difference), severity, proposed action, and an acceptance test. Do not label historical issues as Glassmacs bugs without a current reproduction. Prioritize data loss, window lifecycle, clipboard/keyboard, R/ESS, then cosmetic parity.
+
+## Second pass — concrete command and menu-keymap crosswalk (2026-10-27)
+
+The following entries are checked against the current merged Glassmacs Lisp, rather than inferred from the roadmap. Paths are source evidence; **they do not prove Cocoa displays the item**. The identifiers in square brackets are Emacs keymap event paths, not keyboard shortcuts.
+
+| UI location | Menu-keymap entry or function | Implementation | Specific difference / verification |
+| --- | --- | --- | --- |
+| File → New Document | `[menu-bar file new-document]` → `glassmacs-new-document` | `lisp/glassmacs-frames.el` | New untitled buffer with policy-dependent frame/tab/reuse; compare Aquamacs New Buffer in New Frame/Tab |
+| File → New Buffer in Mode… | `[menu-bar file glassmacs-new-in-mode]` → `glassmacs-new-buffer-in-mode` | `lisp/glassmacs-frames.el` | Choice list is filtered to available major modes; historical Aquamacs mode list may differ |
+| File → Change Buffer Mode… | `[menu-bar file glassmacs-change-mode]` → `glassmacs-change-buffer-mode` | `lisp/glassmacs-frames.el` | Explicit mode change confirmation, rather than assuming Aquamacs's exact mode-list UI |
+| File → Open File… | `[menu-bar file open-file]` → `glassmacs-open-file` | `lisp/glassmacs-frames.el` | Ordinary files follow `new-frame` default; already-visible buffers reuse their window |
+| File → Visit New File… | `[menu-bar file new-file]` → `glassmacs-open-file` | `lisp/glassmacs-frames.el` | Shares open policy; test new-file creation and cancel |
+| File → Save Document As… | `[menu-bar file glassmacs-save-document-as]` → `glassmacs-save-document-as` | `lisp/glassmacs-frames.el` | Delegates to `write-file`, retaining native Emacs overwrite checks |
+| File → Review Unsaved Documents… | `[menu-bar file glassmacs-review-unsaved]` | `lisp/glassmacs-frames.el` | New read-only list; not historical Aquamacs Save/Load Session |
+| File and Window → New Window | `glassmacs-new-window` | `lisp/glassmacs-macos.el` | Creates an Emacs graphical frame; verify native Window menu placement |
+| Glassmacs → Document Opening… | `glassmacs-set-document-opening-policy` | `lisp/glassmacs-macos.el` | Persistent `new-frame` / `new-tab` / `reuse-current` choice, currently a command prompt, **not** a visible radio submenu |
+| Glassmacs → Document Preferences… | `glassmacs-open-document-preferences` | `lisp/glassmacs-macos.el` | Customize group; no bespoke native preferences pane |
+| Glassmacs → Keyboard Profile | `glassmacs-select-hybrid-keyboard-profile`, `glassmacs-select-traditional-keyboard-profile` | `lisp/glassmacs-macos.el` | Radio items reflect effective profile; no separate right-side modifier controls |
+| Glassmacs → Review Unsaved Documents… | `glassmacs-review-unsaved-documents` | `lisp/glassmacs-macos.el` | Duplicate entry point to same command, not duplicate implementation |
+| Cocoa Preferences event | `[ns-show-prefs]` → `glassmacs-open-preferences` | `lisp/glassmacs-macos.el` | Opens Glassmacs Customize; verify Cocoa event delivery |
+| Cocoa reopen event | `[ns-new-frame]` → `glassmacs-reopen` | `lisp/glassmacs-macos.el` | Verify Dock reopen and final-frame reuse in actual signed app |
+| R source → Run Line/Selection/Function/Buffer | `glassmacs-r-send-line`, `-region`, `-function`, `-buffer` | `lisp/glassmacs-r-ui.el` | Buffer-local R menu; dispatch through ESS and explicit session resolution |
+| R source → Start R and Target This Buffer | `glassmacs-r-start-and-target-session` | `lisp/glassmacs-r-ui.el` | Glassmacs-specific convenience; must retain origin buffer when ESS opens console |
+| R source → Start Another / Show Target / Clear Target / List Sessions | `glassmacs-r-start-session`, `glassmacs-r-show-target-session`, `glassmacs-r-clear-session-target`, `glassmacs-r-list-sessions` | `lisp/glassmacs-r-ui.el` | Session management beyond generic historical menu mapping |
+| R console → Previous Command / Interrupt / Sessions | `comint-previous-input`, `glassmacs-r-interrupt`, session commands | `lisp/glassmacs-r-ui.el` | Console menu distinct from R source; check mode switching and menu visibility |
+| R context menu → Queue / Output / Working Directories | `glassmacs-r-ui-context-menu` and related commands | `lisp/glassmacs-r-ui.el` | Context-menu-only affordances must not be mistakenly counted as top-level R menu parity |
+| R toolbar | `glassmacs-r-ui--toolbar-map` and `glassmacs-r-show-toolbar` | `lisp/glassmacs-r-ui.el` | Image-backed `tool-bar-map` actions; Cocoa image support and placement remain unverified |
+
+### More precise gaps exposed by the crosswalk
+
+1. **Menu policy state:** The opening-policy command persists a choice, but unlike the keyboard-profile menu, it is not implemented as a three-item radio submenu. Aquamacs-style discoverability and checked state remain partial.
+2. **General toolbar versus R toolbar:** The R toolbar is implemented separately; it does not establish historical Aquamacs general toolbar parity (Save, Print, Undo, clipboard, Search, Help).
+3. **Top-level versus context menus:** Session queue, output and directory commands are in an R context menu. Their presence does not prove equivalent top-level menu access or discoverability.
+4. **Native preferences versus Customize:** The Cocoa Preferences event is handled, but opens an Emacs Customize group, not a dedicated macOS Settings window.
+5. **Document close versus frame close:** The current keyboard path uses frame-oriented semantics. Historical Aquamacs close-buffer/close-document behavior requires explicit GUI comparison, especially when the same buffer has multiple views.
+6. **Keyboard modifier parity:** Hybrid/Traditional profiles do not establish independent left/right Option and Command modifier controls or international input parity.
+7. **Missing historical conveniences:** Reveal in Finder, named workspace save/load, advanced tab detach/merge, smart word spacing and formatted/PDF clipboard actions have no Glassmacs-specific equivalents established by this inspection. Check upstream Emacs before creating replacements.
+
+### Evidence limits and next verification
+
+The historical menu taxonomy is already traced in `docs/menu-architecture.md`; this pass confirms **Glassmacs command names and keymap locations**, not the final appearance or behavior of either app. Before converting a gap into a feature issue, inspect GNU Emacs's effective menu in a current macOS build and the relevant historical Aquamacs source. Capture screenshots and command-resolution evidence for each discrepancy. Historical Aquamacs issue triage is the following pass, not part of this one.
