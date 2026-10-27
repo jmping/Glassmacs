@@ -48,9 +48,9 @@
     (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
                (lambda () t)))
       (glassmacs-r-ui--enable-toolbar))
-    (should (eq (lookup-key tool-bar-map [glassmacs-line])
+    (should (eq (lookup-key tool-bar-map [glassmacs-run-line])
                 'glassmacs-r-send-line))
-    (should (eq (lookup-key tool-bar-map [glassmacs-buffer])
+    (should (eq (lookup-key tool-bar-map [glassmacs-run-buffer])
                 'glassmacs-r-send-buffer))
     (should (local-variable-p 'tool-bar-map))))
 
