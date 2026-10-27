@@ -33,7 +33,16 @@
       '(menu-item "Choose R Session…" glassmacs-r-select-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [start]
-      '(menu-item "Start R" glassmacs-r-start-session))
+      '(menu-item "Start R and Target This Buffer" glassmacs-r-start-and-target-session))
+    (define-key menu [start-unbound]
+      '(menu-item "Start Another R Session" glassmacs-r-start-session))
+    (define-key menu [show-target]
+      '(menu-item "Show Current R Target" glassmacs-r-show-target-session))
+    (define-key menu [clear-target]
+      '(menu-item "Clear R Target" glassmacs-r-clear-session-target
+                  :enable glassmacs-r-target-session))
+    (define-key menu [list-sessions]
+      '(menu-item "List R Sessions" glassmacs-r-list-sessions))
     (define-key menu [separator] menu-bar-separator)
     (define-key menu [buffer]
       '(menu-item "Run Buffer" glassmacs-r-send-buffer))
@@ -52,6 +61,10 @@
     (define-key menu [sessions]
       '(menu-item "Choose R Session…" glassmacs-r-select-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [list-sessions]
+      '(menu-item "List R Sessions" glassmacs-r-list-sessions))
+    (define-key menu [start]
+      '(menu-item "Start Another R Session" glassmacs-r-start-session))
     (define-key menu [history]
       '(menu-item "Previous Command" comint-previous-input))
     (define-key menu [interrupt]

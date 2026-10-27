@@ -492,6 +492,44 @@ This command does not query R or contact a remote host."
         (glassmacs-session-id (glassmacs-sessions-register proc))
       (user-error "R started but no live ESS process was found"))))
 
+(defun glassmacs-r-start-and-target-session ()
+  "Start R and target the new session from the current source buffer.
+Preserve the originating buffer even when ESS switches to its console.
+If startup fails, leave the existing target unchanged."
+  (interactive)
+  (let ((origin (current-buffer))
+        (id (glassmacs-r-start-session)))
+    (when (buffer-live-p origin)
+      (with-current-buffer origin
+        (when (derived-mode-p 'ess-r-mode 'R-mode)
+          (glassmacs-r-select-session id))))
+    (message "Started R session %s%s" id
+             (if (and (buffer-live-p origin)
+                      (with-current-buffer origin
+                        (equal glassmacs-r-target-session id)))
+                 " and targeted it from this source buffer"
+               ""))
+    id))
+
+(defun glassmacs-r-show-target-session ()
+  "Show the R session explicitly targeted by this buffer, if any.
+Without a target, describe whether the available sessions are ambiguous."
+  (interactive)
+  (glassmacs-sessions-refresh)
+  (let* ((id glassmacs-r-target-session)
+         (session (and id (glassmacs-sessions-find id)))
+         (live (glassmacs-sessions-live)))
+    (cond
+     ((and session (memq session live))
+      (message "This buffer targets %s" (glassmacs-sessions--describe session)))
+     (id (message "This buffer targets %s, which is no longer live" id))
+     ((null live) (message "No live R sessions; start one from the R menu"))
+     ((null (cdr live))
+      (message "No explicit target; commands use %s"
+               (glassmacs-sessions--describe (car live))))
+     (t (message "No explicit target; choose one of %d live R sessions"
+                 (length live))))))
+
 (defun glassmacs-r-list-sessions ()
   "Display registered R sessions."
   (interactive)
