@@ -2,11 +2,102 @@
 
 (require 'comint)
 (require 'mouse)
+(require 'cl-lib)
+(require 'tool-bar)
 (require 'glassmacs-sessions)
 
 (defgroup glassmacs-r-ui nil
   "R console and contextual user interface."
   :group 'glassmacs-r)
+
+(defgroup glassmacs-r-controls nil
+  "Visible controls for R source and console buffers."
+  :group 'glassmacs-r-ui)
+
+(defcustom glassmacs-r-show-toolbar t
+  "Whether R buffers show contextual toolbar actions."
+  :type 'boolean
+  :group 'glassmacs-r-controls)
+
+(defvar glassmacs-r-ui-source-menu
+  (let ((menu (make-sparse-keymap "R")))
+    (define-key menu [help]
+      '(menu-item "R Help…" glassmacs-r-ui-help))
+    (define-key menu [console]
+      '(menu-item "Show R Console" glassmacs-r-inspect-session
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [interrupt]
+      '(menu-item "Interrupt R" glassmacs-r-interrupt
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [session]
+      '(menu-item "Choose R Session…" glassmacs-r-select-session
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [start]
+      '(menu-item "Start R" glassmacs-r-start-session))
+    (define-key menu [separator] menu-bar-separator)
+    (define-key menu [buffer]
+      '(menu-item "Run Buffer" glassmacs-r-send-buffer))
+    (define-key menu [function]
+      '(menu-item "Run Function" glassmacs-r-send-function))
+    (define-key menu [selection]
+      '(menu-item "Run Selection" glassmacs-r-send-region
+                  :enable (use-region-p)))
+    (define-key menu [line]
+      '(menu-item "Run Line" glassmacs-r-send-line))
+    menu)
+  "Source-buffer R menu using existing ESS/Glassmacs commands.")
+
+(defvar glassmacs-r-ui-console-menu
+  (let ((menu (make-sparse-keymap "R Console")))
+    (define-key menu [sessions]
+      '(menu-item "Choose R Session…" glassmacs-r-select-session
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [history]
+      '(menu-item "Previous Command" comint-previous-input))
+    (define-key menu [interrupt]
+      '(menu-item "Interrupt R" glassmacs-r-interrupt
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    menu)
+  "Console-specific R actions.")
+
+(defun glassmacs-r-ui-help ()
+  "Prompt for R documentation using ESS, if available."
+  (interactive)
+  (if (fboundp 'ess-display-help-on-object)
+      (call-interactively #'ess-display-help-on-object)
+    (user-error "R help requires ESS")))
+
+(defun glassmacs-r-ui--install-controls ()
+  "Expose mode-local R commands through menus and toolbar maps."
+  (local-set-key [menu-bar glassmacs-r]
+                 (if (glassmacs-r-ui--source-buffer-p)
+                     glassmacs-r-ui-source-menu
+                   glassmacs-r-ui-console-menu))
+  (when glassmacs-r-show-toolbar
+    (glassmacs-r-ui--enable-toolbar)))
+
+(defun glassmacs-r-ui--enable-toolbar ()
+  "Install buffer-local toolbar commands for R source or console buffers."
+  (require 'tool-bar)
+  (let ((map (make-sparse-keymap)))
+    (dolist (entry (if (glassmacs-r-ui--source-buffer-p)
+                       '((glassmacs-line "Run Line" glassmacs-r-send-line)
+                         (glassmacs-selection "Run Selection" glassmacs-r-send-region)
+                         (glassmacs-function "Run Function" glassmacs-r-send-function)
+                         (glassmacs-buffer "Run Buffer" glassmacs-r-send-buffer)
+                         (glassmacs-console "R Console" glassmacs-r-inspect-session)
+                         (glassmacs-help "R Help" glassmacs-r-ui-help))
+                     '((glassmacs-interrupt "Interrupt" glassmacs-r-interrupt)
+                       (glassmacs-history "History" comint-previous-input)
+                       (glassmacs-session "Session" glassmacs-r-select-session))))
+      (let ((key (nth 0 entry))
+            (label (nth 1 entry))
+            (command (nth 2 entry)))
+        (define-key map (vector key)
+          `(menu-item ,label ,command :help ,label))))
+    (setq-local tool-bar-map map)
+    (when (display-graphic-p)
+      (tool-bar-mode 1))))
 
 (defun glassmacs-r-ui--configure-console ()
   "Use the comint history owned by this ESS R process buffer."
@@ -15,7 +106,8 @@
   (local-set-key [up] #'glassmacs-r-ui-previous-input-or-line)
   (local-set-key [down] #'glassmacs-r-ui-next-input-or-line)
   (local-set-key (kbd "RET") #'comint-send-input)
-  (glassmacs-r-ui--enable-context-menu))
+  (glassmacs-r-ui--enable-context-menu)
+  (glassmacs-r-ui--install-controls))
 
 (defun glassmacs-r-ui--input-start ()
   "Return the beginning of the current comint input, or nil."
@@ -184,6 +276,8 @@
 (add-hook 'inferior-ess-r-mode-hook #'glassmacs-r-ui--configure-console)
 (add-hook 'ess-r-mode-hook #'glassmacs-r-ui--enable-context-menu)
 (add-hook 'R-mode-hook #'glassmacs-r-ui--enable-context-menu)
+(add-hook 'ess-r-mode-hook #'glassmacs-r-ui--install-controls)
+(add-hook 'R-mode-hook #'glassmacs-r-ui--install-controls)
 
 (with-eval-after-load 'ess-r-mode
   (glassmacs-r-ui--install-ess-routing))
