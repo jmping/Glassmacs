@@ -144,6 +144,38 @@
   (should (eq (lookup-key glassmacs-r-ui-console-menu [list-sessions])
               'glassmacs-r-list-sessions)))
 
+(ert-deftest glassmacs-unsaved-documents-exclude-internal-buffers ()
+  (let ((doc (generate-new-buffer "Untitled-Glassmacs-Test"))
+        (internal (generate-new-buffer "*Glassmacs-Test-Internal*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer doc
+            (insert "unsaved R code"))
+          (with-current-buffer internal
+            (insert "internal state"))
+          (should (memq doc (glassmacs--modified-document-buffers)))
+          (should-not (memq internal (glassmacs--modified-document-buffers))))
+      (kill-buffer doc)
+      (kill-buffer internal))))
+
+(ert-deftest glassmacs-unsaved-documents-ignore-unmodified-buffers ()
+  (with-temp-buffer
+    (rename-buffer "Glassmacs-Unmodified-Test" t)
+    (should-not (glassmacs--document-buffer-needs-saving-p
+                 (current-buffer)))))
+
+(ert-deftest glassmacs-save-document-as-delegates-to-native-write-file ()
+  (with-temp-buffer
+    (let (destination)
+      (cl-letf (((symbol-function 'write-file)
+                 (lambda (name &rest _) (setq destination name))))
+        (glassmacs-save-document-as "/tmp/glassmacs-test.R")
+        (should (equal destination "/tmp/glassmacs-test.R"))))))
+
+(ert-deftest glassmacs-save-document-as-rejects-empty-destination ()
+  (with-temp-buffer
+    (should-error (glassmacs-save-document-as "") :type 'user-error)))
+
 (ert-deftest glassmacs-configuration-loads ()
   (dolist (feature '(glassmacs glassmacs-core glassmacs-keys glassmacs-r
                      glassmacs-sessions glassmacs-r-ui glassmacs-remote
