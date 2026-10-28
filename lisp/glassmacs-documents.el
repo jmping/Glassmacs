@@ -1,32 +1,39 @@
 ;;; glassmacs-documents.el --- Research document workflows -*- lexical-binding: t; -*-
 
 (require 'glassmacs-core)
+(require 'glassmacs-packages)
 
 (defun glassmacs-rmarkdown-mode ()
   "Use poly-R for an R Markdown file when available."
   (interactive)
-  (cond
-   ((fboundp 'poly-markdown+r-mode) (poly-markdown+r-mode))
-   ((fboundp 'markdown-mode) (markdown-mode))
-   (t (text-mode))))
+  (if (fboundp 'poly-markdown+r-mode)
+      (poly-markdown+r-mode)
+    (if (fboundp 'markdown-mode) (markdown-mode) (text-mode))
+    (glassmacs-packages-offer-installation "R Markdown editing (poly-R)")))
 
 (defun glassmacs-quarto-mode ()
   "Use quarto-mode for a Quarto document when available."
   (interactive)
-  (cond
-   ((fboundp 'quarto-mode) (quarto-mode))
-   ((fboundp 'markdown-mode) (markdown-mode))
-   (t (text-mode))))
+  (if (fboundp 'quarto-mode)
+      (quarto-mode)
+    (if (fboundp 'markdown-mode) (markdown-mode) (text-mode))
+    (glassmacs-packages-offer-installation "Quarto editing (quarto-mode)")))
 
 (defun glassmacs-sweave-mode ()
   "Use ESS's Rnw mode for Sweave documents when available."
   (interactive)
-  (if (fboundp 'Rnw-mode) (Rnw-mode) (tex-mode)))
+  (if (fboundp 'Rnw-mode)
+      (Rnw-mode)
+    (tex-mode)
+    (glassmacs-packages-offer-installation "Sweave editing (ESS)")))
 
 (defun glassmacs-rd-mode ()
   "Use ESS's Rd mode for R documentation when available."
   (interactive)
-  (if (fboundp 'Rd-mode) (Rd-mode) (text-mode)))
+  (if (fboundp 'Rd-mode)
+      (Rd-mode)
+    (text-mode)
+    (glassmacs-packages-offer-installation "R documentation editing (ESS)")))
 
 (add-to-list 'auto-mode-alist '("\\.Rmd\\'" . glassmacs-rmarkdown-mode))
 (add-to-list 'auto-mode-alist '("\\.qmd\\'" . glassmacs-quarto-mode))

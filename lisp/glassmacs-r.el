@@ -1,5 +1,7 @@
 ;;; glassmacs-r.el --- R and ESS integration -*- lexical-binding: t; -*-
 
+(require 'glassmacs-packages)
+
 (defgroup glassmacs-r nil
   "R and ESS integration for Glassmacs."
   :group 'glassmacs)
@@ -18,12 +20,14 @@ When nil, ESS uses its normal PATH-based discovery."
     (setq inferior-ess-r-program glassmacs-r-executable)))
 
 (defun glassmacs-r-mode ()
-  "Use ESS's R mode when available, otherwise fall back to `fundamental-mode'."
+  "Use ESS's R mode when available, otherwise fall back to `fundamental-mode'.
+Without ESS, offer once per session to install the optional packages."
   (interactive)
   (cond
    ((fboundp 'ess-r-mode) (ess-r-mode))
    ((fboundp 'R-mode) (R-mode))
-   (t (fundamental-mode))))
+   (t (fundamental-mode)
+      (glassmacs-packages-offer-installation "R editing (ESS)"))))
 
 (when (locate-library "ess-r-mode")
   (autoload 'ess-r-mode "ess-r-mode" "Major mode for editing R source." t)

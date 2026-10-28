@@ -891,6 +891,34 @@ if [[ "${SPCTL_FAIL:-0}" == 1 ]]; then exit 1; fi
         self.assertIn('"$root/scripts/merge-info-plist"', builder)
         self.assertNotIn("upstream.update(", builder)
 
+    def test_bundled_bootstrap_defaults_to_app_emacs_and_home(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resources = root / "Glassmacs.app/Contents/Resources/Glassmacs"
+            (resources / "scripts").mkdir(parents=True)
+            bootstrap = resources / "scripts/bootstrap"
+            bootstrap.write_bytes((ROOT / "scripts/bootstrap").read_bytes())
+            bootstrap.chmod(0o755)
+            fake_emacs = root / "Glassmacs.app/Contents/MacOS/Emacs"
+            fake_emacs.parent.mkdir(parents=True)
+            fake_emacs.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$GLASSMACS_HOME" "$@"\n')
+            fake_emacs.chmod(0o755)
+            environment = {k: v for k, v in os.environ.items()
+                           if k not in ("GLASSMACS_HOME", "GLASSMACS_EMACS")}
+            environment["HOME"] = str(root / "home")
+            result = subprocess.run([str(bootstrap)], env=environment,
+                                    capture_output=True, text=True, check=True)
+            lines = result.stdout.splitlines()
+            self.assertEqual(
+                lines[0], str(root / "home/Library/Application Support/Glassmacs"))
+            self.assertIn("(glassmacs-install-optional-packages t)", lines)
+            # An explicit home still wins.
+            environment["GLASSMACS_HOME"] = str(root / "custom")
+            result = subprocess.run([str(bootstrap)], env=environment,
+                                    capture_output=True, text=True, check=True)
+            self.assertEqual(result.stdout.splitlines()[0], str(root / "custom"))
+
 
 if __name__ == "__main__":
     unittest.main()

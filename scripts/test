@@ -19,4 +19,5 @@ fi
   -l "$root/tests/test-glassmacs-r-ui.el" \
   -l "$root/tests/test-glassmacs-remote.el" \
   -l "$root/tests/test-glassmacs-environment.el" \
+  -l "$root/tests/test-glassmacs-packages.el" \
   -f ert-run-tests-batch-and-exit

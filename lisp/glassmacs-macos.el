@@ -201,6 +201,10 @@ does not provide a native macOS print dialog."
       (define-key opening-menu [reuse-current]
         '(menu-item "Reuse Current Window" glassmacs-select-opening-reuse-current
                     :button (:radio (eq glassmacs-document-opening-policy 'reuse-current))))
+      (define-key glassmacs-menu [install-packages]
+        '(menu-item "Install R & Document Packages…"
+                    glassmacs-install-optional-packages
+                    :help "Install ESS, AUCTeX, Quarto and Markdown support"))
       (define-key glassmacs-menu [document-preferences]
         '(menu-item "Document Preferences…" glassmacs-open-document-preferences))
       (define-key glassmacs-menu [preserve-buffers]

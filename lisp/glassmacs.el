@@ -2,6 +2,7 @@
 
 (require 'glassmacs-core)
 (require 'glassmacs-environment)
+(require 'glassmacs-packages)
 (require 'glassmacs-recovery)
 (require 'glassmacs-keys)
 (require 'glassmacs-r)
