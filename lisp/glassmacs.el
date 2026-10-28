@@ -1,6 +1,9 @@
 ;;; glassmacs.el --- Glassmacs configuration entry point -*- lexical-binding: t; -*-
 
 (require 'glassmacs-core)
+(require 'glassmacs-environment)
+(require 'glassmacs-packages)
+(require 'glassmacs-editing)
 (require 'glassmacs-recovery)
 (require 'glassmacs-keys)
 (require 'glassmacs-r)
@@ -17,6 +20,9 @@
 (setq custom-file (expand-file-name "custom.el" user-emacs-directory))
 (when (file-readable-p custom-file)
   (load custom-file nil 'nomessage))
+;; After custom.el, so the user's environment preferences apply.
+(glassmacs-environment-initialize)
+(glassmacs-editing-apply)
 (glassmacs--install-hybrid-bindings)
 
 (provide 'glassmacs)

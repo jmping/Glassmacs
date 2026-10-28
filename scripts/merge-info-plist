@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Merge the Glassmacs Info.plist overlay into an upstream Emacs.app plist.
+
+Usage: merge-info-plist UPSTREAM_INFO_PLIST OVERLAY_INFO_PLIST
+
+Scalar keys from the overlay replace upstream values.  CFBundleDocumentTypes
+is combined instead: the overlay's document types come first, followed by
+every upstream type.  Replacing the whole array (a plain dict update) would
+drop the dozens of text, source and markup types that GNU Emacs registers,
+so Finder would no longer offer Glassmacs for .txt, .md, .tex and so on.
+Extensions already claimed by an overlay type are removed from upstream
+types so that each extension is declared once.
+"""
+
+import plistlib
+import sys
+
+DOCUMENT_TYPES = "CFBundleDocumentTypes"
+EXTENSIONS = "CFBundleTypeExtensions"
+
+
+def merge_document_types(upstream_types, overlay_types):
+    """Return overlay types followed by upstream types, without duplicates."""
+    claimed = {
+        extension.lower()
+        for document_type in overlay_types
+        for extension in document_type.get(EXTENSIONS, [])
+    }
+    merged = list(overlay_types)
+    for document_type in upstream_types:
+        extensions = document_type.get(EXTENSIONS)
+        if extensions is None:
+            merged.append(document_type)
+            continue
+        remaining = [e for e in extensions if e.lower() not in claimed]
+        if remaining:
+            merged.append(dict(document_type, **{EXTENSIONS: remaining}))
+    return merged
+
+
+def merge_info_plists(upstream, overlay):
+    """Return UPSTREAM updated with OVERLAY, combining document types."""
+    merged = dict(upstream)
+    overlay = dict(overlay)
+    overlay_types = overlay.pop(DOCUMENT_TYPES, None)
+    merged.update(overlay)
+    if overlay_types is not None:
+        merged[DOCUMENT_TYPES] = merge_document_types(
+            upstream.get(DOCUMENT_TYPES, []), overlay_types)
+    return merged
+
+
+def main(argv):
+    if len(argv) != 3:
+        sys.stderr.write(__doc__)
+        return 2
+    with open(argv[1], "rb") as upstream_file:
+        upstream = plistlib.load(upstream_file)
+    with open(argv[2], "rb") as overlay_file:
+        overlay = plistlib.load(overlay_file)
+    with open(argv[1], "wb") as output_file:
+        plistlib.dump(merge_info_plists(upstream, overlay), output_file,
+                      fmt=plistlib.FMT_XML, sort_keys=False)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

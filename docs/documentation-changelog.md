@@ -8,6 +8,15 @@
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
 
+## 2026-10-28 — Aquamacs feature gap pass
+
+- **DOC-AQUA-COMPAT:** recorded the literal text entry policy (no automatic correction, smart punctuation, substitution or smart spacing without explicit opt-in, never in source code, none by default in mixed prose/code documents) and a dated gap pass; updated statuses for DOC-004, FILE-001–003, EDIT-003, OPT-003, KEY-002 and MAC-001.
+- **DOC-KEYS:** Command-W document close, new Command shortcuts and the right Option key setting.
+- **DOC-MAC-LAUNCHER, DOC-R-WORKFLOWS, DOC-DEV, README:** shell environment import, in-app package installation, bundled bootstrap defaults and combined Finder document types.
+- No document authority or ownership changes.
+
+---
+
 ## 2026-10-28 — code-review fixes
 
 - Updated DOC-R-WORKFLOWS, DOC-DEV, DOC-MAC-LAUNCHER and the 0.1 mode/UI notes to describe the review fixes: the `quarto-mode` bootstrap package name and per-package installation, asynchronous rendering with a save prompt, ESS's own console RET binding, buffer-private R keymaps, bundled toolbar icon names, the non-fatal native-bridge load, bounded queue history and console scrollback, the read-only-system `.eln` policy outside the bundle, and the test suite's temporary Glassmacs home.

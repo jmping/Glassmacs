@@ -1169,8 +1169,13 @@
     (should-not (eq (lookup-key global-map [?\s-n]) 'glassmacs-new-document))))
 
 (ert-deftest glassmacs-hybrid-bindings-use-cocoa-integer-events ()
+  ;; Character chords must be integer events; Command with a function key
+  ;; (s-up, s-backspace) is a symbol event carrying the super modifier.
   (dolist (binding glassmacs-hybrid-keybindings)
-    (should (integerp (aref (car binding) 0)))))
+    (let ((event (aref (car binding) 0)))
+      (should (memq 'super (event-modifiers event)))
+      (should (or (integerp event)
+                  (not (string-prefix-p "super-" (symbol-name event))))))))
 
 (ert-deftest glassmacs-file-menu-dispatches-new-window-and-new-document ()
   (let ((global-map (copy-keymap global-map))

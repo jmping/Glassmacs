@@ -19,7 +19,7 @@
     ([?\s-n] . glassmacs-new-document)
     ([?\s-s] . save-buffer)
     ([?\s-S] . write-file)
-    ([?\s-w] . delete-frame)
+    ([?\s-w] . glassmacs-close-document)
     ([?\s-q] . glassmacs-recovery-quit)
     ([?\s-c] . kill-ring-save)
     ([?\s-v] . yank)
@@ -27,11 +27,17 @@
     ([?\s-a] . mark-whole-buffer)
     ([?\s-z] . undo)
     ([?\s-Z] . undo-redo)
-    ([?\s-f] . isearch-forward))
+    ([?\s-f] . isearch-forward)
+    ([?\s-G] . isearch-repeat-backward)
+    ([s-up] . beginning-of-buffer)
+    ([s-down] . end-of-buffer)
+    ([s-backspace] . glassmacs-kill-to-line-start))
   "Command-key bindings for the `glassmacs-hybrid' profile.
 Control and Meta bindings, including C-x, C-c, and M-x, are untouched.
-Cocoa delivers Command chords as integer events (`?\\s-n'), so they must
-not be written as `super-n' symbols, which never match a keypress.")
+Cocoa delivers Command chords with characters as integer events
+(`?\\s-n'), so they must not be written as `super-n' symbols, which
+never match a keypress.  Command with a function key arrives as a
+symbol such as `s-up' or `s-backspace'.")
 
 (defvar glassmacs--saved-hybrid-keybindings nil
   "Bindings replaced while the Hybrid keyboard profile is active.")

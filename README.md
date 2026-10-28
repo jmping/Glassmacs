@@ -141,15 +141,18 @@ install the optional Emacs packages for research/document workflows, run:
 ./scripts/bootstrap
 ```
 
-This explicit first-run step needs network access when packages are missing.
-For the installed macOS app, run its bundled bootstrap:
+In the macOS app, choose **Glassmacs → Install R & Document Packages…**;
+Glassmacs also offers this, once per session, the first time an R or research
+document opens without its mode. Nothing is downloaded without your consent.
+The app's bundled bootstrap can be run from Terminal as well and installs into
+the app's own home by default:
 
 ```sh
-GLASSMACS_EMACS="/Applications/Glassmacs.app/Contents/MacOS/Emacs" \
-  "/Applications/Glassmacs.app/Contents/Resources/Glassmacs/scripts/bootstrap"
+"/Applications/Glassmacs.app/Contents/Resources/Glassmacs/scripts/bootstrap"
 ```
 
-Normal startup does not install packages or refresh archives. App state and
+Installation needs network access. Normal startup does not install packages or
+refresh archives. App state and
 packages live in `~/Library/Application Support/Glassmacs`; the development
 launcher uses `~/.config/glassmacs`. Set `GLASSMACS_HOME` to override either
 location. The app launches with `-Q` and does not modify `~/.emacs`,
@@ -157,7 +160,10 @@ location. The app launches with `-Q` and does not modify `~/.emacs`,
 tools are not bundled. See [R workflows](docs/r-workflows.md) for R setup.
 
 Install R, Quarto, TeX and remote tools separately when needed, and ensure their
-executables are available on `PATH`. Missing optional integrations do not block
+executables are available on `PATH`. When the app is started from Finder or the
+Dock, Glassmacs imports `PATH` from your login shell and also appends the
+standard Homebrew, CRAN R, MacTeX and Quarto locations, so tools that work in
+Terminal are found (see the [macOS application guide](docs/macos-launcher.md)). Missing optional integrations do not block
 startup; the relevant command reports what is missing.
 
 For installation, diagnostics, manual macOS GUI checks, and limitations, see

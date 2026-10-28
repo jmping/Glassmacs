@@ -80,17 +80,8 @@ cp "$root/scripts/bootstrap" "$glassmacs_resources/scripts/bootstrap"
 "$root/scripts/build-macos-lifecycle" "$upstream_app" \
   "$glassmacs_resources/macos/libglassmacs-lifecycle.dylib"
 
-python3 - "$output/Contents/Info.plist" "$root/macos/Info.plist" <<'PY'
-import plistlib
-import sys
-
-with open(sys.argv[1], "rb") as upstream_file:
-    upstream = plistlib.load(upstream_file)
-with open(sys.argv[2], "rb") as overlay_file:
-    upstream.update(plistlib.load(overlay_file))
-with open(sys.argv[1], "wb") as output_file:
-    plistlib.dump(upstream, output_file, fmt=plistlib.FMT_XML, sort_keys=False)
-PY
+# Combine (not replace) document types so Finder keeps upstream associations.
+"$root/scripts/merge-info-plist" "$output/Contents/Info.plist" "$root/macos/Info.plist"
 cp "$root/assets/icon/Glassmacs.icns" "$output/Contents/Resources/Glassmacs.icns"
 emacs_icon="$output/Contents/Resources/etc/images/icons/hicolor/128x128/apps/emacs.png"
 mkdir -p "$(dirname -- "$emacs_icon")"

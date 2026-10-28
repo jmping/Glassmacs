@@ -34,6 +34,8 @@
         <string>Rmd</string>
         <string>qmd</string>
         <string>Rnw</string>
+        <string>Snw</string>
+        <string>Rd</string>
       </array>
     </dict>
   </array>

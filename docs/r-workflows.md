@@ -21,8 +21,14 @@ Implemented capabilities include native application/menu/window infrastructure; 
 
 ## ESS and R
 
-Install ESS with `./scripts/bootstrap`. `.R` and `.r` files use ESS's
-`R-mode` when available and fall back to fundamental mode otherwise. Start a
+Install ESS with **Glassmacs → Install R & Document Packages…** in the app,
+or `./scripts/bootstrap` from a source checkout; both run
+`glassmacs-install-optional-packages`. `.R` and `.r` files use ESS's
+`R-mode` when available and fall back to fundamental mode otherwise; in that
+case Glassmacs offers, once per session, to install the packages, and the open
+file switches to ESS after installation. When the app is started from Finder
+or the Dock, R and Rscript are found through the shell environment import
+described in the [macOS application guide](macos-launcher.md). Start a
 session with `M-x glassmacs-r-start` (or the usual `M-x R`). ESS's existing
 `C-c C-c` and `C-c C-r` bindings are preserved. Glassmacs also exposes
 `glassmacs-r-send-line`, `glassmacs-r-send-region`,
