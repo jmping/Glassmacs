@@ -35,6 +35,10 @@ snapshots are not silently deleted to make room."
   :type 'integer :group 'glassmacs-recovery)
 
 (defvar glassmacs-recovery--timer nil)
+(defvar glassmacs-recovery--last-snapshots (make-hash-table :test 'equal)
+  "Cache of (buffer ID . (content hash . snapshot filename)).")
+(defvar glassmacs-recovery--reclaimable nil)
+
 (defvar glassmacs-recovery--restoring nil)
 (defvar-local glassmacs-recovery--id nil)
 
@@ -110,27 +114,115 @@ Never snapshot process buffers, remote files, or special buffers."
         (cl-incf total (file-attribute-size (file-attributes file)))))
     total))
 
+(defun glassmacs-recovery--read-index (filename)
+  "Read FILENAME safely as a recovery index, or return nil if absent."
+  (let ((path (expand-file-name filename glassmacs-recovery-directory)))
+    (when (file-symlink-p path)
+      (error "Refusing symlinked recovery index: %s" filename))
+    (when (file-readable-p path)
+      (with-temp-buffer
+        (insert-file-contents path)
+        (let* ((read-eval nil)
+               (data (read (current-buffer))))
+          (skip-chars-forward " \t\r\n")
+          (unless (and (eobp) (listp data)
+                       (eq (plist-get data :version) 1)
+                       (listp (plist-get data :buffers)))
+            (error "Invalid recovery index: %s" filename))
+          data)))))
+
+(defun glassmacs-recovery--protected-files ()
+  "Return snapshot filenames referenced by either durable index.
+Fail rather than collect if an index cannot be parsed."
+  (let (names)
+    (dolist (index '("buffers.eldata" "crash.eldata"))
+      (dolist (record (plist-get (glassmacs-recovery--read-index index)
+                                :buffers))
+        (let ((name (plist-get record :snapshot)))
+          (when (and (stringp name)
+                     (equal name (file-name-nondirectory name)))
+            (push name names)))))
+    names))
+
+(defun glassmacs-recovery--reclaimable-files ()
+  "Return unreferenced snapshot files, never indexed recovery copies."
+  (let ((protected (glassmacs-recovery--protected-files)))
+    (cl-remove-if-not
+     (lambda (file)
+       (and (string-suffix-p ".text" file)
+            (not (file-symlink-p file))
+            (file-regular-p file)
+            (not (member (file-name-nondirectory file) protected))))
+     (directory-files glassmacs-recovery-directory t
+                      directory-files-no-dot-files-regexp))))
+
+(defun glassmacs-recovery-reclaim ()
+  "Delete unreferenced snapshots only; preserve both recovery indexes.
+Returns reclaimed bytes.  Never remove a file referenced by an index."
+  (interactive)
+  (glassmacs-recovery--ensure-directory)
+  (let ((files (glassmacs-recovery--reclaimable-files))
+        (bytes 0))
+    (when (or (not (called-interactively-p 'interactive))
+              (yes-or-no-p (format "Delete %d unreferenced snapshots? "
+                                  (length files))))
+      (dolist (file files)
+        (cl-incf bytes (file-attribute-size (file-attributes file)))
+        (delete-file file)))
+    (when (called-interactively-p 'interactive)
+      (message "Reclaimed %d bytes" bytes))
+    bytes))
+
+(defun glassmacs-recovery-storage-status ()
+  "Report recovery storage usage and reclaimable snapshot space."
+  (interactive)
+  (glassmacs-recovery--ensure-directory)
+  (let* ((used (glassmacs-recovery--storage-bytes))
+         (files (glassmacs-recovery--reclaimable-files))
+         (reclaimable (cl-loop for file in files
+                               sum (file-attribute-size (file-attributes file)))))
+    (message "Recovery storage: %d / %d bytes; reclaimable: %d bytes (%d files)"
+             used glassmacs-recovery-max-total-bytes reclaimable
+             (length files))))
+
+(defun glassmacs-recovery--snapshot-reference (id hash)
+  "Return an existing immutable snapshot filename for ID and HASH.
+Only reuse snapshots that remain protected by a durable index."
+  (let ((cached (gethash id glassmacs-recovery--last-snapshots)))
+    (when (and cached (equal (car cached) hash)
+               (member (cdr cached) (glassmacs-recovery--protected-files))
+               (file-readable-p
+                (expand-file-name (cdr cached) glassmacs-recovery-directory)))
+      (cdr cached))))
+
 (defun glassmacs-recovery--snapshot (buffer)
-  "Write a snapshot for modified eligible BUFFER and return its record."
+  "Snapshot dirty BUFFER, reusing an unchanged protected snapshot."
   (with-current-buffer buffer
     (let* ((id (glassmacs-recovery--id))
            (dirty (buffer-modified-p))
-           (path (and dirty (expand-file-name (concat id "-" (format-time-string "%Y%m%d%H%M%S%N") "-" (number-to-string (random most-positive-fixnum)) ".text")
-                                             glassmacs-recovery-directory))))
+           (text (and dirty (buffer-substring-no-properties (point-min) (point-max))))
+           (bytes (and dirty (string-bytes (encode-coding-string text 'utf-8))))
+           (hash (and dirty (secure-hash 'sha256 text)))
+           (reuse (and dirty (glassmacs-recovery--snapshot-reference id hash)))
+           (filename (and dirty
+                          (or reuse
+                              (concat id "-" (format-time-string "%Y%m%d%H%M%S%N")
+                                      "-" (number-to-string
+                                           (random most-positive-fixnum))
+                                      ".text")))))
       (when dirty
-        (let* ((text (buffer-substring-no-properties (point-min) (point-max)))
-               (bytes (string-bytes (encode-coding-string text 'utf-8))))
-          (when (> bytes glassmacs-recovery-max-buffer-bytes)
-            (error "Recovery snapshot for %s is %d bytes (limit %d); save or explicitly review before quit"
-                   (buffer-name) bytes glassmacs-recovery-max-buffer-bytes))
+        (when (> bytes glassmacs-recovery-max-buffer-bytes)
+          (error "Recovery snapshot for %s exceeds %d bytes; save or review before quit"
+                 (buffer-name) glassmacs-recovery-max-buffer-bytes))
+        (unless reuse
           (when (> (+ (glassmacs-recovery--storage-bytes) bytes)
                    glassmacs-recovery-max-total-bytes)
-            (error "Recovery storage limit reached (%d bytes); save or explicitly review before quit"
-                   glassmacs-recovery-max-total-bytes))
-          (glassmacs-recovery--write-private path text)))
+            (error "Recovery storage budget exhausted; save or review before quit"))
+          (glassmacs-recovery--write-private
+           (expand-file-name filename glassmacs-recovery-directory) text))
+        (puthash id (cons hash filename) glassmacs-recovery--last-snapshots))
       (list :id id :name (buffer-name) :file buffer-file-name
-            :modified dirty :snapshot (and dirty (file-name-nondirectory path))
-            :time (float-time)))))
+            :modified dirty :snapshot filename :time (float-time)))))
 
 (defun glassmacs-recovery--manifest-path ()
   "Return the latest preserved-buffer manifest path."
