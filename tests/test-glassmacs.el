@@ -1604,3 +1604,37 @@
                    (expand-file-name "unknown.text"
                                      glassmacs-recovery-directory))))
       (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-transaction-blocks-reclamation ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-journal-" t)))
+    (unwind-protect
+        (progn
+          (glassmacs-recovery--write-private
+           (expand-file-name "orphan.text" glassmacs-recovery-directory)
+           "unsaved")
+          (glassmacs-recovery--write-private
+           (glassmacs-recovery--transaction-path)
+           "interrupted")
+          (should-error (glassmacs-recovery-reclaim))
+          (should-error
+           (glassmacs-recovery--write-index-transaction "crash.eldata" nil))
+          (should (file-exists-p
+                   (expand-file-name "orphan.text"
+                                     glassmacs-recovery-directory))))
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-index-transaction-commits-and-clears-marker ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-journal-" t)))
+    (unwind-protect
+        (progn
+          (glassmacs-recovery--write-index-transaction
+           "crash.eldata" '((:snapshot "saved.text")))
+          (should-not (glassmacs-recovery--transaction-pending-p))
+          (should (equal
+                   (plist-get
+                    (car (plist-get
+                          (glassmacs-recovery--read-index "crash.eldata")
+                          :buffers))
+                    :snapshot)
+                   "saved.text")))
+      (delete-directory glassmacs-recovery-directory t))))
