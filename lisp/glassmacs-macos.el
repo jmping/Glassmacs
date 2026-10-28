@@ -237,6 +237,10 @@ does not provide a native macOS print dialog."
                     :button (:radio
                              (eq glassmacs-keyboard-profile
                                  'traditional-emacs))))
+      (define-key keyboard-menu [right-option]
+        '(menu-item "Right Option Types Special Characters"
+                    glassmacs-toggle-right-option-types-characters
+                    :button (:toggle . glassmacs-right-option-types-characters)))
       (define-key global-map [menu-bar glassmacs] glassmacs-menu)
       (when (keymapp file-menu)
         (define-key file-menu [glassmacs-reveal-in-finder]

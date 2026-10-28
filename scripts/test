@@ -21,4 +21,5 @@ fi
   -l "$root/tests/test-glassmacs-environment.el" \
   -l "$root/tests/test-glassmacs-packages.el" \
   -l "$root/tests/test-glassmacs-close.el" \
+  -l "$root/tests/test-glassmacs-editing.el" \
   -f ert-run-tests-batch-and-exit

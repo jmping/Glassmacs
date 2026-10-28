@@ -3,6 +3,7 @@
 (require 'glassmacs-core)
 (require 'glassmacs-environment)
 (require 'glassmacs-packages)
+(require 'glassmacs-editing)
 (require 'glassmacs-recovery)
 (require 'glassmacs-keys)
 (require 'glassmacs-r)
@@ -21,6 +22,7 @@
   (load custom-file nil 'nomessage))
 ;; After custom.el, so the user's environment preferences apply.
 (glassmacs-environment-initialize)
+(glassmacs-editing-apply)
 (glassmacs--install-hybrid-bindings)
 
 (provide 'glassmacs)
