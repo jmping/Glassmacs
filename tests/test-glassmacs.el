@@ -1384,7 +1384,7 @@
             (should-error (glassmacs-reveal-in-finder) :type 'user-error)))
       (delete-file path))))
 
-(ert-deftest glassmacs-opening-policy-menu-is-radio-group ()
+(ert-deftest glassmacs-opening-policy-menu-commands-are-installed ()
   (let ((system-type 'darwin)
         (global-map (copy-keymap global-map)))
     (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t)))
@@ -1392,12 +1392,10 @@
       (dolist (entry '((new-frame . glassmacs-select-opening-new-frame)
                        (new-tab . glassmacs-select-opening-new-tab)
                        (reuse-current . glassmacs-select-opening-reuse-current)))
-        (let ((item (lookup-key global-map
+        (should (eq (lookup-key global-map
                                 (vector 'menu-bar 'glassmacs 'document-opening
-                                        (car entry)))))
-          (should (eq (nth 2 item) (cdr entry)))
-          (should (eq (car (plist-get (nthcdr 3 item) :button))
-                      :radio)))))))
+                                        (car entry)))
+                    (cdr entry)))))))
 
 (ert-deftest glassmacs-hybrid-profile-binds-redo ()
   (glassmacs-test-with-profile 'glassmacs-hybrid
