@@ -11,6 +11,7 @@
 (require 'glassmacs-r-ui)
 (require 'glassmacs-remote)
 (require 'glassmacs-documents)
+(require 'glassmacs-latex)
 (require 'glassmacs-frames)
 (require 'glassmacs-macos)
 (require 'glassmacs-diagnostics)

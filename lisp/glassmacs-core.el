@@ -49,19 +49,25 @@ A failure is reported as a warning rather than aborting startup."
   "The process most recently started by `glassmacs-run-process'.")
 
 (defun glassmacs--process-sentinel (process _event)
-  "Report the outcome of PROCESS, started by `glassmacs-run-process'."
+  "Report the outcome of PROCESS, started by `glassmacs-run-process'.
+On success, also call the process's on-success function, if any."
   (when (memq (process-status process) '(exit signal))
     (let ((program (process-get process 'glassmacs-program))
-          (status (process-exit-status process)))
+          (status (process-exit-status process))
+          (on-success (process-get process 'glassmacs-on-success)))
       (if (and (eq (process-status process) 'exit) (zerop status))
-          (message "%s finished; see %s" program glassmacs-process-buffer-name)
+          (progn
+            (message "%s finished; see %s" program glassmacs-process-buffer-name)
+            (when on-success
+              (funcall on-success)))
         (message "%s failed (exit status %s); see %s"
                  program status glassmacs-process-buffer-name)
         (display-buffer (process-buffer process))))))
 
-(defun glassmacs-run-process (program arguments &optional directory)
+(defun glassmacs-run-process (program arguments &optional directory on-success)
   "Start PROGRAM with ARGUMENTS asynchronously, without a shell.
-Use DIRECTORY as the working directory when non-nil.  Output is shown in
+Use DIRECTORY as the working directory when non-nil.  Call ON-SUCCESS,
+a function of no arguments, if PROGRAM exits with status 0.  Output is shown in
 `glassmacs-process-buffer-name' as it arrives, and a message reports
 success or the exit status when PROGRAM finishes.  Return the process.
 
@@ -88,6 +94,7 @@ one is still running, or if PROGRAM is not on PATH."
                            :connection-type 'pipe
                            :sentinel #'glassmacs--process-sentinel))))
       (process-put process 'glassmacs-program program)
+      (process-put process 'glassmacs-on-success on-success)
       (setq glassmacs--current-process process)
       (display-buffer output)
       (message "Running %s; see %s" program glassmacs-process-buffer-name)
