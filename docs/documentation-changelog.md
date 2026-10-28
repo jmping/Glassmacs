@@ -4,9 +4,16 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-27
+> **Last reviewed:** 2026-10-28
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
+
+## 2026-10-28 — code-review fixes
+
+- Updated DOC-R-WORKFLOWS, DOC-DEV, DOC-MAC-LAUNCHER and the 0.1 mode/UI notes to describe the review fixes: the `quarto-mode` bootstrap package name and per-package installation, asynchronous rendering with a save prompt, ESS's own console RET binding, buffer-private R keymaps, bundled toolbar icon names, the non-fatal native-bridge load, bounded queue history and console scrollback, the read-only-system `.eln` policy outside the bundle, and the test suite's temporary Glassmacs home.
+- No document authority or ownership changes.
+
+---
 
 ## 2026-10-27 — integrated implementation and validation-state synchronization
 

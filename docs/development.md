@@ -12,7 +12,7 @@ Outstanding: real macOS testing for reopening, document safety, keyboard/menu di
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-27
+> **Last reviewed:** 2026-10-28
 > **Coverage:** Contributor setup, testing and verification workflow  
 > **Supersedes:** None
 
@@ -32,10 +32,17 @@ Run ERT in isolated batch mode:
 ./scripts/test
 ```
 
+Unless `GLASSMACS_HOME` is already set, `scripts/test` runs the suite against a
+temporary Glassmacs home that it deletes afterwards, so tests never write
+`recentf`, `custom.el` or package state into your real Glassmacs home.
+
 Glassmacs disables native JIT compilation and on-demand native subr trampoline
-generation before loading its modules. It restricts the `.eln` search path to
-the Emacs app bundle's `Contents/Frameworks/native-lisp` directory; source
-checkouts without that bundled directory load no native `.eln` files. Ordinary
+generation before loading its modules. Inside the app bundle it restricts the
+`.eln` search path to the bundle's `Contents/Frameworks/native-lisp`
+directory. Source checkouts run with another Emacs keep only the existing
+`.eln` directories the user cannot write (typically the distribution's system
+`native-lisp` directory), so built-in libraries still load natively while
+user-writable caches such as `eln-cache` are never used. Ordinary
 `.el` and `.elc` packages continue to load from the regular Emacs load path.
 The startup isolation test runs a child Emacs with a separate ordinary home
 and verifies that Glassmacs neither reads its configuration nor writes to its
@@ -203,7 +210,11 @@ make X11/XQuartz mandatory.
 
 To install the optional Emacs packages explicitly, run `./scripts/bootstrap`.
 It installs packages that are missing under the isolated package directory and
-requires network access when installation is needed. It does not run
+requires network access when installation is needed. Each package is installed
+independently: if one cannot be installed, the others still are, and the
+failures are listed together at the end with a nonzero exit status. Package
+names must match their archive names exactly (for example, MELPA's
+`quarto-mode`). It does not run
 automatically on startup. After the chosen packages are installed, normal
 startup does not refresh archives or initiate network access. Package archives
 are not version-locked, so this setup is not yet reproducible across dates or

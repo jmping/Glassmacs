@@ -14,7 +14,7 @@ Implemented capabilities include native application/menu/window infrastructure; 
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-27  
+> **Last reviewed:** 2026-10-28  
 > **Coverage:** Current and explicitly proposed R and research document workflows  
 > **Supersedes:** None
 
@@ -60,7 +60,8 @@ automatically. To diagnose Glassmacs startup and optional dependencies, run
 R Markdown (`.Rmd`), Quarto (`.qmd`), Sweave (`.Rnw`, `.Snw`), and R
 documentation (`.Rd`) have associations that choose their appropriate
 installed mode, with graceful basic-mode fallbacks. The bootstrap installs
-markdown-mode, Quarto mode, polymode/poly-R, and AUCTeX as optional aids.
+markdown-mode, Quarto mode (the MELPA `quarto-mode` package), polymode/poly-R,
+and AUCTeX as optional aids.
 Poly-R is selected for R Markdown when its mode is available; ESS supplies
 Rnw/Rd modes when installed.
 
@@ -68,10 +69,15 @@ Rnw/Rd modes when installed.
 - `M-x glassmacs-render-quarto` invokes `quarto render`.
 - `M-x glassmacs-knit-sweave` calls `knitr::knit()` with Rscript.
 
-These commands require a saved buffer. Paths are passed as process arguments,
-not interpolated into a shell command; R paths are quoted as R string
-literals. Missing executables and nonzero exit status are reported, with
-process output in `*Glassmacs Process*`. R packages such as `rmarkdown` or
+These commands render the file on disk, so they require a visited file. If
+the buffer has unsaved changes they offer to save it first; declining cancels
+the render rather than silently rendering stale contents. Paths are passed as
+process arguments, not interpolated into a shell command; R paths are quoted
+as R string literals. Rendering runs asynchronously, so Emacs stays usable
+during long renders: output streams into `*Glassmacs Process*`, and a message
+reports success or the nonzero exit status when the renderer finishes. Only
+one render runs at a time; starting another while one is running is refused.
+A missing executable is reported immediately. R packages such as `rmarkdown` or
 `knitr` must be installed in the selected R library.
 
 ## Shiny
@@ -144,8 +150,8 @@ reports the process idle and a primary prompt appears at the start of a chunk
 or after a newline.
 An arbitrary chunk suffix resembling a prompt does not reset suppression.
 `comint-buffer-maximum-size` is also set from
-`glassmacs-r-output-buffer-maximum-lines` (default 1,024) to bound retained
-console history. ESS continues consuming process output and remains responsible
+`glassmacs-r-output-buffer-maximum-lines` (default 10,000) to bound retained
+console history; older lines are deleted. ESS continues consuming process output and remains responsible
 for process and prompt state. These limits do not stop R from producing data or
 guarantee that a local, terminal, or remote transport cannot apply backpressure.
 
@@ -198,7 +204,9 @@ sentinel added with `add-function :after` and by polling.
 
 **Editable console history.** Each ESS R process buffer uses its own comint
 history ring; history is not shared across R sessions and is in-memory only.
-`RET` submits the current input. `M-p` / `M-n` retain comint history navigation.
+`RET` keeps ESS's own binding (`inferior-ess-send-input`), which runs
+`ess-send-input-hook` and resets ESS's prompt and completion-cache state before
+submitting the input. `M-p` / `M-n` retain comint history navigation.
 `Up` recalls an older entry on the first line of the current prompt input;
 `Down` recalls a newer entry on its last line. Within a multiline input, Up/Down
 move vertically instead, so the body can be traversed. Left/Right, Home/End,
@@ -250,6 +258,12 @@ queued command, marks it `uncertain`, pauses the queue and keeps pending work.
 that the code succeeded; R errors are not parsed. An incomplete expression
 leaves R at a continuation prompt and is marked `uncertain`. Entries typed
 directly in the console are not tracked, and a busy console delays dispatch.
-History is in memory only. Not implemented: editing or reordering entries, a
+History is in memory only and bounded: `glassmacs-sessions-history-limit`
+(default 10,000 events) caps `glassmacs-sessions-history`, and
+`glassmacs-sessions-finished-entry-limit` (default 1,000 per session) caps
+finished queue records (`completed`, `failed`, `uncertain`, `orphaned`,
+`removed`). The oldest records are discarded first; pending and running
+entries are never discarded. Set either option to nil to keep everything.
+Not implemented: editing or reordering entries, a
 queue buffer UI, persistence across Emacs restarts, SSH/remote sessions. See
 [architecture](architecture.md) and [roadmap](roadmap.md).

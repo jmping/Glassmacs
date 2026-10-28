@@ -14,7 +14,7 @@ Implemented capabilities include native application/menu/window infrastructure; 
 > **Status:** Informational<br>
 > **Owner:** Glassmacs maintainers<br>
 > **Effective date:** 2026-10-20<br>
-> **Last reviewed:** 2026-10-27<br>
+> **Last reviewed:** 2026-10-28<br>
 > **Coverage:** Building and operating the standalone Cocoa application<br>
 > **Supersedes:** Optional Swift launcher guide
 
@@ -89,7 +89,11 @@ same Glassmacs Customize group.
 
 On a source checkout without a built bridge, closing the final frame still
 keeps Emacs running, but Dock reopen is unavailable; Glassmacs emits a warning
-that the native module is missing. `scripts/validate-macos-app` rejects a
+that the native module is missing. Any other failure to load the bridge (an
+Emacs built without module support, or the module's initialization failing,
+for example because `Glassmacs.icns` is not in the main bundle) is also only a
+warning: startup continues, so later modules, `custom.el` and the keyboard
+profile still load. `scripts/validate-macos-app` rejects a
 bundle missing the module.
 Native callback registration, Dock activation, final-window close, and state
 restoration still require interactive verification in the signed Glassmacs
@@ -266,8 +270,12 @@ Glassmacs establishes its native-code policy twice: in the launcher's Emacs
   trampoline `.eln` under the first writable native load-path directory.
 - `native-comp-eln-load-path` is replaced with only the running Emacs bundle's
   `Contents/Frameworks/native-lisp` directory, and only when the bundle's
-  `Info.plist` and native-lisp directory are present. Source checkouts without
-  this bundled directory use no native `.eln` files.
+  `Info.plist` and native-lisp directory are present. Outside the bundle
+  (source checkouts run with another Emacs), only existing directories that
+  the user cannot write are kept, such as a distribution's system
+  `native-lisp` directory; user-writable caches such as `eln-cache` are
+  dropped. The launcher's `--eval` policy and `init.el` implement this
+  identically and must be kept in sync.
 
 Consequently Glassmacs never loads user-writable `.eln` caches or `.eln` files
 from its package directory. Ordinary `.el` and `.elc` packages still load via
