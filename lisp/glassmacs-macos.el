@@ -145,6 +145,41 @@ for a distinct untitled buffer."
   "Reuse the current window for document opens." (interactive)
   (glassmacs-set-document-opening-policy 'reuse-current))
 
+(require 'recentf)
+
+(defun glassmacs-open-recent-file (filename)
+  "Open a recent FILENAME using the configured document policy."
+  (interactive (list (completing-read "Open recent file: " recentf-list nil t)))
+  (unless (member filename recentf-list)
+    (user-error "Not a recent file: %s" filename))
+  (unless (file-exists-p filename)
+    (user-error "Recent file no longer exists: %s" filename))
+  (glassmacs--open-file-with-policy filename nil t))
+
+(defun glassmacs-clear-recent-files ()
+  "Clear recent file history after explicit confirmation."
+  (interactive)
+  (when (yes-or-no-p "Clear recent file history? ")
+    (setq recentf-list nil)
+    (recentf-save-list)
+    (message "Recent file history cleared")))
+
+(defun glassmacs-recent-files-preferences ()
+  "Customize recent-file history, exclusions, and limits."
+  (interactive)
+  (customize-group 'recentf))
+
+(defun glassmacs-print-document ()
+  "Print the current document using the available Emacs print command.
+This does not assert that Emacs provides a native macOS print dialog."
+  (interactive)
+  (when (derived-mode-p 'special-mode 'comint-mode)
+    (user-error "Select a document buffer before printing"))
+  (cond
+   ((fboundp 'ns-print-buffer) (call-interactively #'ns-print-buffer))
+   ((fboundp 'print-buffer) (call-interactively #'print-buffer))
+   (t (user-error "No printing backend is available"))))
+
 (defun glassmacs--install-macos-menus ()
   "Install Glassmacs menu items while preserving upstream menus."
   (when (and (eq system-type 'darwin) (display-graphic-p))
@@ -186,6 +221,14 @@ for a distinct untitled buffer."
           '(menu-item "Reveal in Finder" glassmacs-reveal-in-finder
                       :enable (and buffer-file-name
                                    (not (file-remote-p buffer-file-name)))))
+        (define-key file-menu [glassmacs-print-document]
+          '(menu-item "Print Document…" glassmacs-print-document))
+        (define-key file-menu [glassmacs-open-recent]
+          '(menu-item "Open Recent…" glassmacs-open-recent-file))
+        (define-key file-menu [glassmacs-clear-recent]
+          '(menu-item "Clear Recent Files…" glassmacs-clear-recent-files))
+        (define-key file-menu [glassmacs-recent-preferences]
+          '(menu-item "Recent Files Preferences…" glassmacs-recent-files-preferences))
         (define-key file-menu [glassmacs-new-window]
           '(menu-item "New Window" glassmacs-new-window
                       :enable (display-graphic-p))))
@@ -249,6 +292,7 @@ for a distinct untitled buffer."
     (with-eval-after-load 'menu-bar
       (glassmacs--install-macos-menus))))
 
+(recentf-mode 1)
 (glassmacs--install-macos-frame-lifecycle)
 
 (provide 'glassmacs-macos)

@@ -1400,3 +1400,47 @@
 (ert-deftest glassmacs-hybrid-profile-binds-redo ()
   (glassmacs-test-with-profile 'glassmacs-hybrid
     (should (eq (lookup-key global-map [?\s-Z]) 'undo-redo))))
+
+(ert-deftest glassmacs-recent-files-rejects-unknown-path ()
+  (let ((recentf-list '("/tmp/known.R")))
+    (should-error (glassmacs-open-recent-file "/tmp/other.R")
+                  :type 'user-error)))
+
+(ert-deftest glassmacs-recent-files-rejects-missing-path ()
+  (let ((recentf-list '("/glassmacs/nonexistent/file.R")))
+    (should-error (glassmacs-open-recent-file (car recentf-list))
+                  :type 'user-error)))
+
+(ert-deftest glassmacs-recent-files-respects-document-policy ()
+  (let* ((path (make-temp-file "glassmacs-recent-" nil ".R"))
+         (recentf-list (list path))
+         observed)
+    (unwind-protect
+        (cl-letf (((symbol-function 'glassmacs--open-file-with-policy)
+                   (lambda (&rest args) (setq observed args))))
+          (glassmacs-open-recent-file path)
+          (should (equal observed (list path nil t))))
+      (delete-file path))))
+
+(ert-deftest glassmacs-clear-recent-files-requires-confirmation ()
+  (let ((recentf-list '("/tmp/a.R")) saved)
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) nil))
+              ((symbol-function 'recentf-save-list)
+               (lambda () (setq saved t))))
+      (glassmacs-clear-recent-files)
+      (should (equal recentf-list '("/tmp/a.R")))
+      (should-not saved))
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t))
+              ((symbol-function 'recentf-save-list)
+               (lambda () (setq saved t))))
+      (glassmacs-clear-recent-files)
+      (should-not recentf-list)
+      (should saved))))
+
+(ert-deftest glassmacs-print-document-dispatches-available-backend ()
+  (with-temp-buffer
+    (let (printed)
+      (cl-letf (((symbol-function 'ns-print-buffer)
+                 (lambda () (interactive) (setq printed 'native))))
+        (glassmacs-print-document)
+        (should (eq printed 'native))))))
