@@ -171,7 +171,10 @@ for a distinct untitled buffer."
 
 (defun glassmacs-print-document ()
   "Print the current document using the available Emacs print command.
-This does not assert that Emacs provides a native macOS print dialog."
+On the Cocoa port this is `ns-print-buffer' (defined in ns-win.el), which
+asks for confirmation and then calls `print-buffer'; elsewhere it calls
+`print-buffer' directly.  Both use the `lpr' spooler backend: GNU Emacs
+does not provide a native macOS print dialog."
   (interactive)
   (when (derived-mode-p 'special-mode 'comint-mode)
     (user-error "Select a document buffer before printing"))
@@ -256,20 +259,41 @@ This does not assert that Emacs provides a native macOS print dialog."
     (define-key global-map [ns-new-frame] #'glassmacs-reopen)))
 
 (defun glassmacs--load-native-reopen-bridge ()
-  "Load the bundled Cocoa application-reopen callback when available."
+  "Load the bundled Cocoa application-reopen callback when available.
+This runs while `glassmacs' is being required, so a failure here must not
+signal: an error would abort the rest of startup (later modules, the
+user's `custom-file' and the keyboard profile).  Every failure, including
+an Emacs built without module support or a module whose initialization
+returns non-zero, is reported with `display-warning' instead, and
+Glassmacs continues without Dock-reopen and windowless-menu support.
+Return non-nil only when the module was loaded."
   (when (and (eq system-type 'darwin) (display-graphic-p))
     (let ((module
            (expand-file-name
             "macos/libglassmacs-lifecycle.dylib" glassmacs-root)))
-      (if (file-readable-p module)
-          (progn
-            (unless (fboundp 'module-load)
-              (error "Glassmacs Cocoa reopen bridge requires Emacs modules"))
-            (module-load module))
+      (cond
+       ((not (file-readable-p module))
         (display-warning
          'glassmacs
          (format "Cocoa Dock reopen bridge is not built: %s" module)
-         :warning)))))
+         :warning)
+        nil)
+       ((not (fboundp 'module-load))
+        (display-warning
+         'glassmacs
+         "Cocoa Dock reopen bridge requires an Emacs built with module support"
+         :warning)
+        nil)
+       (t
+        (condition-case error-data
+            (progn (module-load module) t)
+          (error
+           (display-warning
+            'glassmacs
+            (format "Cocoa Dock reopen bridge failed to load (%s): %s"
+                    module (error-message-string error-data))
+            :warning)
+           nil)))))))
 
 (defun glassmacs--install-macos-frame-lifecycle ()
   "Install the macOS final-frame and application-reopen behavior."
