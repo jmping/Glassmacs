@@ -12,6 +12,10 @@
                  emacs-version system-type
                  (if (display-graphic-p) (or window-system "graphical") "terminal")
                  glassmacs-home)
+         (format "Shell environment: %s\n"
+                 (if (boundp 'glassmacs-environment-status)
+                     glassmacs-environment-status
+                   "unknown"))
          (format "ESS: %s\nR: %s\nRscript: %s\n\n"
                  (if (locate-library "ess-site") "available" "not found")
                  (if (executable-find "R") "available" "not found")
