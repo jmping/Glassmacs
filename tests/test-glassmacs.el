@@ -927,7 +927,7 @@
               'glassmacs-open-file))
   (should (eq (cdr (assoc [?\s-S] glassmacs-hybrid-keybindings)) 'write-file))
   (should (eq (cdr (assoc [?\s-q] glassmacs-hybrid-keybindings))
-              'save-buffers-kill-emacs)))
+              'glassmacs-recovery-quit)))
 
 (ert-deftest glassmacs-does-not-rebind-emacs-prefix-keys ()
   (should (eq (lookup-key global-map (kbd "C-x")) 'Control-X-prefix))
