@@ -37,8 +37,8 @@ snapshots are not silently deleted to make room."
 (defvar glassmacs-recovery--timer nil)
 (defvar glassmacs-recovery--last-snapshots (make-hash-table :test 'equal)
   "Cache of (buffer ID . (content hash . snapshot filename)).")
-(defvar glassmacs-recovery--quit-preserved nil
-  "Non-nil after this quit attempt successfully published its recovery index.")
+(defvar glassmacs-recovery--save-reviewed-quit nil
+  "Dynamically bound when the normal Emacs save/review quit path is active.")
 (defvar glassmacs-recovery--restoring-index nil
   "Dynamically bound recovery index used by the restore command.")
 
@@ -398,7 +398,6 @@ If preservation fails, remain in Emacs and display the error."
     (condition-case err
         (progn
           (glassmacs-recovery-preserve)
-          (setq glassmacs-recovery--quit-preserved t)
           ;; The built-in quit command prompts for modified buffers.
           ;; After a durable snapshot, suppress only that document prompt;
           ;; preserve other kill-emacs queries.
@@ -407,8 +406,7 @@ If preservation fails, remain in Emacs and display the error."
             (cl-letf (((symbol-function 'save-some-buffers)
                        (lambda (&rest _) nil)))
               (save-buffers-kill-emacs))))
-      (error (setq glassmacs-recovery--quit-preserved nil)
-             (message "Glassmacs quit canceled: %s" (error-message-string err))
+      (error (message "Glassmacs quit canceled: %s" (error-message-string err))
              nil))))
 
 (defun glassmacs-recovery--quit-safety-check ()
@@ -424,16 +422,22 @@ termination; when disabled, refuse a direct dirty-buffer termination."
            glassmacs-recovery--quit-preserved) t)
      (glassmacs-preserve-open-buffers-on-quit
       (condition-case err
-          (progn (glassmacs-recovery-preserve)
-                 (setq glassmacs-recovery--quit-preserved t)
-                 t)
+          (progn (glassmacs-recovery-preserve) t)
         (error (message "Glassmacs blocked quit: %s"
                         (error-message-string err))
                nil)))
+     (glassmacs-recovery--save-reviewed-quit t)
      (t
       (message "Glassmacs blocked direct quit with unsaved documents; use Save/Review or Quit Glassmacs")
       nil))))
 
+(defun glassmacs-recovery--reviewed-quit-advice (original &rest args)
+  "Mark the ordinary Emacs save/review quit path for ORIGINAL and ARGS."
+  (let ((glassmacs-recovery--save-reviewed-quit t))
+    (apply original args)))
+
+(advice-add 'save-buffers-kill-emacs :around
+            #'glassmacs-recovery--reviewed-quit-advice)
 (add-hook 'kill-emacs-query-functions #'glassmacs-recovery--quit-safety-check)
 
 (defun glassmacs-recovery--periodic-snapshot ()
