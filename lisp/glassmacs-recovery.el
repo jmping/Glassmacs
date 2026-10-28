@@ -138,6 +138,7 @@ Never snapshot process buffers, remote files, or special buffers."
 (defun glassmacs-recovery--write-index-transaction (index records)
   "Publish RECORDS to INDEX with an in-flight transaction marker.
 A failed publication retains the marker, preventing reclamation."
+  (glassmacs-recovery--require-clean-transaction)
   (let* ((target (expand-file-name index glassmacs-recovery-directory))
          (marker (glassmacs-recovery--transaction-path))
          (old (glassmacs-recovery--read-index index))
@@ -385,6 +386,10 @@ Snapshot files are retained for manual recovery until explicit cleanup."
 (defun glassmacs-recovery--startup ()
   "Offer preserved documents or crash snapshots on startup."
   (unless noninteractive
+    (when (glassmacs-recovery--transaction-pending-p)
+      (display-warning 'glassmacs-recovery
+                       "Interrupted recovery transaction: automatic cleanup disabled"
+                       :warning))
     (let ((manifest (glassmacs-recovery--manifest-path))
           (crash (expand-file-name "crash.eldata" glassmacs-recovery-directory)))
       (cond
