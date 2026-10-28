@@ -44,7 +44,7 @@ Return non-nil when a frame was revealed."
        (glassmacs--show-hidden-final-frame)))
 
 (defvar glassmacs--commands-that-stay-windowless
-  '(save-buffers-kill-emacs kill-emacs ns-do-hide-emacs ns-do-hide-others
+  '(save-buffers-kill-emacs glassmacs-recovery-quit kill-emacs ns-do-hide-emacs ns-do-hide-others
     ignore delete-frame handle-delete-frame glassmacs-reopen
     glassmacs-new-window)
   "Commands that must not reveal the retained frame afterwards.")
@@ -227,6 +227,8 @@ This does not assert that Emacs provides a native macOS print dialog."
           '(menu-item "Reveal in Finder" glassmacs-reveal-in-finder
                       :enable (and buffer-file-name
                                    (not (file-remote-p buffer-file-name)))))
+        (define-key file-menu [glassmacs-quit]
+          '(menu-item "Quit Glassmacs" glassmacs-recovery-quit))
         (define-key file-menu [glassmacs-print-document]
           '(menu-item "Print Document…" glassmacs-print-document))
         (define-key file-menu [glassmacs-open-recent]
