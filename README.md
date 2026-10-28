@@ -4,9 +4,13 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-27
+> **Last reviewed:** 2026-10-28
 > **Coverage:** Project identity, audience, vision and high-level getting started  
 > **Supersedes:** None
+
+## Recovery development checkpoint — 2026-10-28
+
+[PR #28](https://github.com/jmping/Glassmacs/pull/28) implements a **draft, opt-in document-preservation and recovery prototype**, including private immutable snapshots of eligible document buffers, crash and quit manifests, startup restoration, and startup-gated 90-day review of unreferenced recovery copies. Its [latest pre-documentation CI](https://github.com/jmping/Glassmacs/actions/runs/40711222337) passed Emacs batch, ESS/R integration and macOS launcher jobs. This does **not** establish data-loss safety on native Cocoa Quit/Dock Quit, forced termination, corrupted metadata, or disk-write failures. PR #28 is not merged and is not a production recovery guarantee. See [recovery implementation and acceptance gates](docs/recent-print-recovery.md).
 
 ## Integrated 0.1 development status — 2026-10-27
 

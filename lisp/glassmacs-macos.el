@@ -44,7 +44,7 @@ Return non-nil when a frame was revealed."
        (glassmacs--show-hidden-final-frame)))
 
 (defvar glassmacs--commands-that-stay-windowless
-  '(save-buffers-kill-emacs kill-emacs ns-do-hide-emacs ns-do-hide-others
+  '(save-buffers-kill-emacs glassmacs-recovery-quit kill-emacs ns-do-hide-emacs ns-do-hide-others
     ignore delete-frame handle-delete-frame glassmacs-reopen
     glassmacs-new-window)
   "Commands that must not reveal the retained frame afterwards.")
@@ -200,6 +200,12 @@ This does not assert that Emacs provides a native macOS print dialog."
                     :button (:radio (eq glassmacs-document-opening-policy 'reuse-current))))
       (define-key glassmacs-menu [document-preferences]
         '(menu-item "Document Preferences…" glassmacs-open-document-preferences))
+      (define-key glassmacs-menu [preserve-buffers]
+        '(menu-item "Preserve Open Buffers on Quit"
+                    glassmacs-recovery-toggle-preserve
+                    :button (:toggle glassmacs-preserve-open-buffers-on-quit)))
+      (define-key glassmacs-menu [restore-buffers]
+        '(menu-item "Restore Preserved Buffers…" glassmacs-recovery-restore))
       (define-key glassmacs-menu [review-unsaved]
         '(menu-item "Review Unsaved Documents…" glassmacs-review-unsaved-documents))
       (define-key glassmacs-menu [keyboard-profile] keyboard-menu)
@@ -221,6 +227,8 @@ This does not assert that Emacs provides a native macOS print dialog."
           '(menu-item "Reveal in Finder" glassmacs-reveal-in-finder
                       :enable (and buffer-file-name
                                    (not (file-remote-p buffer-file-name)))))
+        (define-key file-menu [glassmacs-quit]
+          '(menu-item "Quit Glassmacs" glassmacs-recovery-quit))
         (define-key file-menu [glassmacs-print-document]
           '(menu-item "Print Document…" glassmacs-print-document))
         (define-key file-menu [glassmacs-open-recent]
