@@ -63,6 +63,22 @@ It prints some startup noise, runs BODY, then the command passed with -c."
            (should (equal (car (last exec-path)) exec-directory))))
       (delete-file shell))))
 
+(ert-deftest glassmacs-environment-tolerates-shell-exiting-before-eof ()
+  "A shell that finishes before its input is closed is still a success."
+  (let ((shell (glassmacs-env-test--fake-shell "export PATH=/fast/bin"))
+        (send-eof (symbol-function 'process-send-eof)))
+    (unwind-protect
+        (glassmacs-env-test--with-isolated-environment
+         (cl-letf (((symbol-function 'process-send-eof)
+                    (lambda (&optional process)
+                      ;; Let the shell exit first, as a fast one can.
+                      (while (process-live-p process)
+                        (accept-process-output process 0.05))
+                      (funcall send-eof process))))
+           (should (equal (glassmacs-environment--read-shell shell '("PATH") 5)
+                          '(("PATH" . "/fast/bin"))))))
+      (delete-file shell))))
+
 (ert-deftest glassmacs-environment-times-out-without-blocking-startup ()
   (let ((shell (glassmacs-env-test--fake-shell "sleep 10")))
     (unwind-protect

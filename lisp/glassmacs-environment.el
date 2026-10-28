@@ -116,7 +116,10 @@ the shell cannot start, exits unsuccessfully or exceeds TIMEOUT seconds."
                      :connection-type 'pipe
                      :noquery t
                      :sentinel #'ignore))
-              (process-send-eof process)
+              ;; A fast shell may already have exited; closing its input
+              ;; then signals "not running", which is not a failure.
+              (ignore-error error
+                (process-send-eof process))
               (let ((deadline (+ (float-time) timeout)))
                 (while (and (process-live-p process)
                             (< (float-time) deadline))
