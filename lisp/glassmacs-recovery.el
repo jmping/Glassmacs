@@ -37,7 +37,10 @@ snapshots are not silently deleted to make room."
 (defvar glassmacs-recovery--timer nil)
 (defvar glassmacs-recovery--last-snapshots (make-hash-table :test 'equal)
   "Cache of (buffer ID . (content hash . snapshot filename)).")
-(defvar glassmacs-recovery--reclaimable nil)
+(defvar glassmacs-recovery--quit-preserved nil
+  "Non-nil after this quit attempt successfully published its recovery index.")
+(defvar glassmacs-recovery--restoring-index nil
+  "Dynamically bound recovery index used by the restore command.")
 
 (defvar glassmacs-recovery--restoring nil)
 (defvar-local glassmacs-recovery--id nil)
@@ -293,34 +296,20 @@ Return the number of recorded buffers.  Never write original documents."
             data))))))
 
 (defun glassmacs-recovery-restore-crash ()
-  "Restore snapshots from the latest periodic crash-recovery index."
+  "Restore the crash index without modifying the preserved-buffer index."
   (interactive)
-  (let ((manifest (glassmacs-recovery--manifest-path))
-        (crash (expand-file-name "crash.eldata" glassmacs-recovery-directory)))
-    (unless (file-readable-p crash)
-      (user-error "No crash-recovery index available"))
-    (when (file-symlink-p crash)
-      (user-error "Refusing symlinked crash index"))
-    (let ((temporary (and (file-exists-p manifest)
-                          (with-temp-buffer
-                            (insert-file-contents manifest)
-                            (buffer-string)))))
-      (unwind-protect
-          (progn
-            (glassmacs-recovery--write-private
-             manifest
-             (with-temp-buffer (insert-file-contents crash) (buffer-string)))
-            (glassmacs-recovery-restore))
-        (if temporary
-            (glassmacs-recovery--write-private manifest temporary)
-          (when (file-exists-p manifest) (delete-file manifest)))))))
+  (let ((glassmacs-recovery--restoring-index
+         (or (glassmacs-recovery--read-index "crash.eldata")
+             (user-error "No crash-recovery index available"))))
+    (glassmacs-recovery-restore)))
 
 (defun glassmacs-recovery-restore ()
   "Restore preserved document buffers without executing process commands.
 Unsaved edits are restored in separate untitled buffers; original files are
 never overwritten.  Calling this repeatedly does not duplicate buffers."
   (interactive)
-  (let* ((manifest (glassmacs-recovery--read-manifest))
+  (let* ((manifest (or glassmacs-recovery--restoring-index
+                       (glassmacs-recovery--read-manifest)))
          (records (plist-get manifest :buffers))
          (count 0))
     (unless (or (null manifest) (eq (plist-get manifest :version) 1))
@@ -409,6 +398,7 @@ If preservation fails, remain in Emacs and display the error."
     (condition-case err
         (progn
           (glassmacs-recovery-preserve)
+          (setq glassmacs-recovery--quit-preserved t)
           ;; The built-in quit command prompts for modified buffers.
           ;; After a durable snapshot, suppress only that document prompt;
           ;; preserve other kill-emacs queries.
@@ -417,8 +407,34 @@ If preservation fails, remain in Emacs and display the error."
             (cl-letf (((symbol-function 'save-some-buffers)
                        (lambda (&rest _) nil)))
               (save-buffers-kill-emacs))))
-      (error (message "Glassmacs quit canceled: %s" (error-message-string err))
+      (error (setq glassmacs-recovery--quit-preserved nil)
+             (message "Glassmacs quit canceled: %s" (error-message-string err))
              nil))))
+
+(defun glassmacs-recovery--quit-safety-check ()
+  "Prevent native or alternate quit paths from silently losing dirty documents.
+This hook runs for `kill-emacs' even if Cocoa bypasses Command-Q.
+When preservation is enabled, commit a fresh recovery index before allowing
+termination; when disabled, refuse a direct dirty-buffer termination."
+  (let ((dirty (cl-remove-if-not #'buffer-modified-p
+                                  (glassmacs-recovery--documents))))
+    (cond
+     ((null dirty) t)
+     ((and glassmacs-preserve-open-buffers-on-quit
+           glassmacs-recovery--quit-preserved) t)
+     (glassmacs-preserve-open-buffers-on-quit
+      (condition-case err
+          (progn (glassmacs-recovery-preserve)
+                 (setq glassmacs-recovery--quit-preserved t)
+                 t)
+        (error (message "Glassmacs blocked quit: %s"
+                        (error-message-string err))
+               nil)))
+     (t
+      (message "Glassmacs blocked direct quit with unsaved documents; use Save/Review or Quit Glassmacs")
+      nil))))
+
+(add-hook 'kill-emacs-query-functions #'glassmacs-recovery--quit-safety-check)
 
 (defun glassmacs-recovery--periodic-snapshot ()
   "Best-effort snapshots for crash recovery; do not replace quit manifest."
