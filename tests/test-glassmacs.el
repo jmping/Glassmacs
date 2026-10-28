@@ -643,8 +643,12 @@
           (let ((buffer
                  (glassmacs--ns-find-file
                   (lambda (&rest _) (ert-fail "Cocoa file event was not intercepted")))))
-            (should (buffer-live-p buffer))
-            (should (equal (buffer-file-name buffer) (file-truename file))))
+            (unwind-protect
+                (progn
+                  (should (buffer-live-p buffer))
+                  (should (equal (buffer-file-name buffer) (file-truename file))))
+              ;; Do not leave a buffer visiting the deleted file behind.
+              (kill-buffer buffer)))
           (should (= 1 (length shown)))
           (should (eq (cdar shown) 'new-tab))
           (should-not ns-input-file))
@@ -1478,6 +1482,16 @@
       (should (equal native-comp-eln-load-path
                      '("/usr/lib/emacs/native-lisp/"))))))
 
+(ert-deftest glassmacs-empty-home-variable-means-the-default-home ()
+  "Like the macOS launcher, an empty GLASSMACS_HOME is unset, so state is
+not written into the directory Emacs started in."
+  (let ((process-environment (cons "GLASSMACS_HOME=" process-environment))
+        (default-directory "/tmp/project/"))
+    (should (equal (glassmacs--default-home)
+                   (file-name-as-directory (expand-file-name "~/.config/glassmacs")))))
+  (let ((process-environment (cons "GLASSMACS_HOME=/tmp/glassmacs-home" process-environment)))
+    (should (equal (glassmacs--default-home) "/tmp/glassmacs-home/"))))
+
 (ert-deftest glassmacs-home-is-created-when-missing ()
   (let* ((parent (make-temp-file "glassmacs-home-parent-" t))
          (glassmacs-home (file-name-as-directory
@@ -1489,11 +1503,16 @@
       (delete-directory parent t))))
 
 (defun glassmacs-test--wait-for-process (process)
-  "Wait until PROCESS and its sentinel have finished."
-  (while (process-live-p process)
-    (accept-process-output process 0.05))
-  ;; Let the sentinel run after the exit status is known.
-  (accept-process-output nil 0.05))
+  "Wait until PROCESS has exited and its sentinel has run.
+Call this before the process can have exited, so the sentinel is seen.
+A fixed short wait after exit is not enough: timers (auto-revert, for
+example) can run first and delay the sentinel."
+  (let ((sentinel-ran nil))
+    (add-function :after (process-sentinel process)
+                  (lambda (&rest _) (setq sentinel-ran t)))
+    (with-timeout (10 (error "Process %s did not finish" process))
+      (while (not sentinel-ran)
+        (accept-process-output process 0.05)))))
 
 (ert-deftest glassmacs-run-process-is-asynchronous-and-reports-status ()
   (let ((glassmacs--current-process nil)

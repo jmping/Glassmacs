@@ -81,6 +81,18 @@ This enables `pixel-scroll-precision-mode' in graphical sessions."
   :set #'glassmacs-editing--set-and-apply
   :group 'glassmacs-editing)
 
+(defcustom glassmacs-follow-file-changes t
+  "Whether open files update when another program changes them on disk.
+This enables `global-auto-revert-mode', so a file rewritten by Git, R, a
+renderer or another editor shows its new contents.  Emacs never reverts a
+buffer with unsaved changes; saving such a buffer after the file changed
+on disk asks before overwriting.  macOS file notifications are used, with
+polling as the fallback; remote (TRAMP) files are not polled.  Batch
+sessions never follow file changes."
+  :type 'boolean
+  :set #'glassmacs-editing--set-and-apply
+  :group 'glassmacs-editing)
+
 (defvar ns-right-alternate-modifier)
 (defvar glassmacs-home)
 
@@ -134,6 +146,12 @@ A `backup-directory-alist' set by the user is never replaced."
   (glassmacs-editing--enable 'save-place-mode glassmacs-remember-positions)
   (glassmacs-editing--enable 'savehist-mode glassmacs-remember-positions)
   (glassmacs-editing--apply-backups)
+  ;; Only interactive sessions follow file changes.  In batch Emacs
+  ;; nothing reads input, so queued file-notification events pile up and
+  ;; can keep `accept-process-output' loops from running process sentinels.
+  (glassmacs-editing--enable 'global-auto-revert-mode
+                             (and glassmacs-follow-file-changes
+                                  (not noninteractive)))
   (when (display-graphic-p)
     (glassmacs-editing--enable 'pixel-scroll-precision-mode
                                glassmacs-smooth-scrolling)))
