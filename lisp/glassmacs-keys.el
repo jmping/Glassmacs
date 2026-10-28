@@ -20,7 +20,7 @@
     ([?\s-s] . save-buffer)
     ([?\s-S] . write-file)
     ([?\s-w] . delete-frame)
-    ([?\s-q] . save-buffers-kill-emacs)
+    ([?\s-q] . glassmacs-recovery-quit)
     ([?\s-c] . kill-ring-save)
     ([?\s-v] . yank)
     ([?\s-x] . kill-region)

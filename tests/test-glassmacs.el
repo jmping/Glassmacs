@@ -927,7 +927,7 @@
               'glassmacs-open-file))
   (should (eq (cdr (assoc [?\s-S] glassmacs-hybrid-keybindings)) 'write-file))
   (should (eq (cdr (assoc [?\s-q] glassmacs-hybrid-keybindings))
-              'save-buffers-kill-emacs)))
+              'glassmacs-recovery-quit)))
 
 (ert-deftest glassmacs-does-not-rebind-emacs-prefix-keys ()
   (should (eq (lookup-key global-map (kbd "C-x")) 'Control-X-prefix))
@@ -1529,3 +1529,264 @@
           (should saved)
           (should rendered))))
     (set-buffer-modified-p nil)))
+
+(ert-deftest glassmacs-recovery-excludes-process-and-special-buffers ()
+  (with-current-buffer (generate-new-buffer "recovery-eligibility-test")
+    (unwind-protect
+        (progn
+          (text-mode)
+    (should (glassmacs-recovery--eligible-p))
+    (special-mode)
+    (should-not (glassmacs-recovery--eligible-p))
+    (fundamental-mode)
+    (setq buffer-file-name "/ssh:host:/private.R")
+          (should-not (glassmacs-recovery--eligible-p)))
+      (kill-buffer (current-buffer)))))
+
+(ert-deftest glassmacs-recovery-preserves-two-distinct-untitled-buffers ()
+  (let* ((glassmacs-recovery-directory (make-temp-file "glassmacs-safe-" t))
+         (first (generate-new-buffer "recovery-note"))
+         (second (generate-new-buffer "recovery-note"))
+         ids)
+    (unwind-protect
+        (progn
+          (with-current-buffer first (insert "first unsaved note"))
+          (with-current-buffer second (insert "second unsaved note"))
+          (glassmacs-recovery--ensure-directory)
+          (let ((one (glassmacs-recovery--snapshot first))
+                (two (glassmacs-recovery--snapshot second)))
+            (setq ids (list (plist-get one :id) (plist-get two :id)))
+            (should-not (equal (car ids) (cadr ids)))
+            (should (equal (with-temp-buffer
+                             (insert-file-contents
+                              (expand-file-name
+                               (plist-get one :snapshot)
+                               glassmacs-recovery-directory))
+                             (buffer-string))
+                           "first unsaved note"))
+            (should (equal (with-temp-buffer
+                             (insert-file-contents
+                              (expand-file-name
+                               (plist-get two :snapshot)
+                               glassmacs-recovery-directory))
+                             (buffer-string))
+                           "second unsaved note"))))
+      (kill-buffer first)
+      (kill-buffer second)
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-failed-preserve-never-quits ()
+  (let ((glassmacs-preserve-open-buffers-on-quit t)
+        (quit-called nil))
+    (cl-letf (((symbol-function 'glassmacs-recovery-preserve)
+               (lambda () (error "Disk unavailable")))
+              ((symbol-function 'save-buffers-kill-emacs)
+               (lambda (&rest _) (setq quit-called t))))
+      (glassmacs-recovery-quit)
+      (should-not quit-called))))
+
+(ert-deftest glassmacs-recovery-success-quit-avoids-save-prompts ()
+  (let ((glassmacs-preserve-open-buffers-on-quit t)
+        (preserved nil) (quit-called nil) (prompt-called nil))
+    (cl-letf (((symbol-function 'glassmacs-recovery-preserve)
+               (lambda () (setq preserved t)))
+              ((symbol-function 'save-buffers-kill-emacs)
+               (lambda (&rest _)
+                 (setq quit-called t)
+                 (save-some-buffers)))
+              ((symbol-function 'save-some-buffers)
+               (lambda (&rest _) (setq prompt-called t))))
+      (glassmacs-recovery-quit)
+      (should preserved)
+      (should quit-called)
+      (should-not prompt-called))))
+
+(ert-deftest glassmacs-recovery-large-dirty-buffer-fails-closed ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-budget-" t))
+        (glassmacs-recovery-max-buffer-bytes 8)
+        (glassmacs-recovery-max-total-bytes 10000)
+        (buffer (generate-new-buffer "large-recovery-test")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "0123456789"))
+          (should-error (glassmacs-recovery--snapshot buffer))
+          (should (= (glassmacs-recovery--storage-bytes) 0)))
+      (with-current-buffer buffer (set-buffer-modified-p nil))
+      (kill-buffer buffer)
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-total-budget-blocks-snapshot ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-budget-" t))
+        (glassmacs-recovery-max-buffer-bytes 1000)
+        (glassmacs-recovery-max-total-bytes 5)
+        (buffer (generate-new-buffer "total-budget-test")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "more than five bytes"))
+          (should-error (glassmacs-recovery--snapshot buffer))
+          (should (= (glassmacs-recovery--storage-bytes) 0)))
+      (with-current-buffer buffer (set-buffer-modified-p nil))
+      (kill-buffer buffer)
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-reuses-unchanged-protected-snapshot ()
+  (let* ((glassmacs-recovery-directory (make-temp-file "glassmacs-reuse-" t))
+         (glassmacs-recovery-max-buffer-bytes 1000)
+         (glassmacs-recovery-max-total-bytes 10000)
+         (glassmacs-recovery--last-snapshots (make-hash-table :test 'equal))
+         (buffer (generate-new-buffer "reuse-recovery-test")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "unchanged content"))
+          (let* ((first (glassmacs-recovery--snapshot buffer))
+                 (name (plist-get first :snapshot)))
+            (glassmacs-recovery--write-private
+             (glassmacs-recovery--manifest-path)
+             (prin1-to-string (list :version 1 :buffers (list first))))
+            (let ((second (glassmacs-recovery--snapshot buffer)))
+              (should (equal name (plist-get second :snapshot)))
+              (should (= (length (directory-files
+                                  glassmacs-recovery-directory nil
+                                  "\\.text\\'")) 1)))))
+      (with-current-buffer buffer (set-buffer-modified-p nil))
+      (kill-buffer buffer)
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-reclaim-preserves-indexed-snapshots ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-gc-" t)))
+    (unwind-protect
+        (progn
+          (glassmacs-recovery--write-private
+           (expand-file-name "protected.text" glassmacs-recovery-directory)
+           "protected")
+          (glassmacs-recovery--write-private
+           (expand-file-name "orphan.text" glassmacs-recovery-directory)
+           "orphan")
+          (glassmacs-recovery--write-private
+           (glassmacs-recovery--manifest-path)
+           (prin1-to-string
+            '(:version 1 :buffers ((:snapshot "protected.text")))))
+          (should (= (glassmacs-recovery-reclaim) 6))
+          (should (file-exists-p
+                   (expand-file-name "protected.text"
+                                     glassmacs-recovery-directory)))
+          (should-not (file-exists-p
+                       (expand-file-name "orphan.text"
+                                         glassmacs-recovery-directory))))
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-corrupt-index-blocks-reclamation ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-gc-" t)))
+    (unwind-protect
+        (progn
+          (glassmacs-recovery--write-private
+           (glassmacs-recovery--manifest-path) "not-a-manifest")
+          (glassmacs-recovery--write-private
+           (expand-file-name "unknown.text" glassmacs-recovery-directory)
+           "keep")
+          (should-error (glassmacs-recovery-reclaim))
+          (should (file-exists-p
+                   (expand-file-name "unknown.text"
+                                     glassmacs-recovery-directory))))
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-transaction-blocks-reclamation ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-journal-" t)))
+    (unwind-protect
+        (progn
+          (glassmacs-recovery--write-private
+           (expand-file-name "orphan.text" glassmacs-recovery-directory)
+           "unsaved")
+          (glassmacs-recovery--write-private
+           (glassmacs-recovery--transaction-path)
+           "interrupted")
+          (should-error (glassmacs-recovery-reclaim))
+          (should-error
+           (glassmacs-recovery--write-index-transaction "crash.eldata" nil))
+          (should (file-exists-p
+                   (expand-file-name "orphan.text"
+                                     glassmacs-recovery-directory))))
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-index-transaction-commits-and-clears-marker ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-journal-" t)))
+    (unwind-protect
+        (progn
+          (glassmacs-recovery--write-index-transaction
+           "crash.eldata" '((:snapshot "saved.text")))
+          (should-not (glassmacs-recovery--transaction-pending-p))
+          (should (equal
+                   (plist-get
+                    (car (plist-get
+                          (glassmacs-recovery--read-index "crash.eldata")
+                          :buffers))
+                    :snapshot)
+                   "saved.text")))
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-crash-restore-does-not-replace-quit-index ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-crash-" t)))
+    (unwind-protect
+        (progn
+          (glassmacs-recovery--write-index-transaction
+           "buffers.eldata" '((:id "saved" :name "saved" :modified nil)))
+          (glassmacs-recovery--write-index-transaction
+           "crash.eldata" '((:id "crashed" :name "crashed" :modified nil)))
+          (let ((before (with-temp-buffer
+                          (insert-file-contents (glassmacs-recovery--manifest-path))
+                          (buffer-string))))
+            (should (= (glassmacs-recovery-restore-crash) 0))
+            (should (equal before
+                           (with-temp-buffer
+                             (insert-file-contents
+                              (glassmacs-recovery--manifest-path))
+                             (buffer-string))))))
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-direct-kill-guard-blocks-unsaved-documents ()
+  (let ((glassmacs-preserve-open-buffers-on-quit nil)
+        (glassmacs-recovery--save-reviewed-quit nil)
+        (buffer (generate-new-buffer "direct-quit-guard-test")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "unsaved"))
+          (should-not (glassmacs-recovery--quit-safety-check))
+          (let ((glassmacs-recovery--save-reviewed-quit t))
+            (should (glassmacs-recovery--quit-safety-check))))
+      (with-current-buffer buffer (set-buffer-modified-p nil))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-recovery-quarantine-requires-separate-startups ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-expire-" t))
+        (glassmacs-recovery-quarantine-days 90)
+        (glassmacs-recovery-auto-expire-quarantine t)
+        (glassmacs-recovery--quarantine-session-reviewed nil))
+    (unwind-protect
+        (progn
+          (glassmacs-recovery--write-private
+           (expand-file-name "orphan.text" glassmacs-recovery-directory) "old")
+          (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
+                    ((symbol-function 'read-char-choice) (lambda (&rest _) ?n)))
+            (let ((noninteractive nil)
+                  (now (+ (float-time) (* 100 86400))))
+              (glassmacs-recovery--quarantine-review now)
+              (should (file-exists-p
+                       (expand-file-name "orphan.text" glassmacs-recovery-directory)))
+              (should (= (plist-get (car (glassmacs-recovery--quarantine-state))
+                                    :reviews) 1))
+              ;; Re-running within one session must not advance the state.
+              (glassmacs-recovery--quarantine-review now)
+              (should (= (plist-get (car (glassmacs-recovery--quarantine-state))
+                                    :reviews) 1))
+              (setq glassmacs-recovery--quarantine-session-reviewed nil)
+              (glassmacs-recovery--quarantine-review now)
+              (should (file-exists-p
+                       (expand-file-name "orphan.text" glassmacs-recovery-directory)))
+              (should (plist-get (car (glassmacs-recovery--quarantine-state))
+                                 :queued))
+              (setq glassmacs-recovery--quarantine-session-reviewed nil)
+              (glassmacs-recovery--quarantine-review now)
+              (should-not (file-exists-p
+                           (expand-file-name "orphan.text"
+                                             glassmacs-recovery-directory)))))))
+      (delete-directory glassmacs-recovery-directory t)))
