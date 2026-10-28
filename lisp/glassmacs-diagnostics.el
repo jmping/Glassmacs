@@ -16,6 +16,10 @@
                  (if (boundp 'glassmacs-environment-status)
                      glassmacs-environment-status
                    "unknown"))
+         (format "Spell checker: %s\n"
+                 (or (and (fboundp 'glassmacs-spelling-program)
+                          (glassmacs-spelling-program))
+                     "not found (brew install enchant or hunspell)"))
          (format "ESS: %s\nR: %s\nRscript: %s\n\n"
                  (if (locate-library "ess-site") "available" "not found")
                  (if (executable-find "R") "available" "not found")

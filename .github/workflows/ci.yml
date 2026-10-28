@@ -35,10 +35,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install Emacs, R, ESS and AUCTeX
+      - name: Install Emacs, R, ESS, AUCTeX and Hunspell
         run: |
           sudo apt-get update
-          sudo apt-get install --yes emacs-nox r-base-core elpa-ess auctex
+          sudo apt-get install --yes emacs-nox r-base-core elpa-ess auctex hunspell hunspell-en-us
       - name: Run ERT with real ESS, R and AUCTeX
         run: |
           ess_dir=$(dirname "$(dpkg -L elpa-ess | grep '/ess-site.el$' | head -n 1)")
