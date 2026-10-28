@@ -31,6 +31,22 @@ final class LaunchConfigurationTests: XCTestCase {
         )
     }
 
+    func testProcessArgumentsStartWithTheProgramSoQuickStartIsAnOption() {
+        let configuration = LaunchConfiguration(
+            bundleURL: URL(fileURLWithPath: "/Applications/Glassmacs.app")
+        )
+        let arguments = configuration.processArguments(forwarding: ["notes.R"])
+
+        // argv[0] is the program name; Emacs parses options after it, so
+        // -Q must be argv[1] or the user's init files would be loaded.
+        XCTAssertEqual(arguments.first, "/Applications/Glassmacs.app/Contents/MacOS/Emacs")
+        XCTAssertEqual(arguments[1], "-Q")
+        XCTAssertEqual(
+            Array(arguments.dropFirst()),
+            configuration.emacsArguments(forwarding: ["notes.R"])
+        )
+    }
+
     func testApplicationSupportIsDefaultAndEnvironmentCanOverrideIt() throws {
         let configuration = LaunchConfiguration(
             bundleURL: URL(fileURLWithPath: "/Applications/Glassmacs.app")

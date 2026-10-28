@@ -43,6 +43,14 @@ public struct LaunchConfiguration: Equatable, Sendable {
         ] + arguments
     }
 
+    /// The complete argument vector for `execv`, beginning with the program
+    /// name.  Emacs reads options only after `argv[0]`, so without it the
+    /// first option (`-Q`) would be taken as the program name and ignored,
+    /// and Emacs would load the user's own init files and packages.
+    public func processArguments(forwarding arguments: [String]) -> [String] {
+        [emacsExecutable.path] + emacsArguments(forwarding: arguments)
+    }
+
     /// Mirrors `glassmacs--configure-native-compilation` in init.el: inside
     /// the bundle use only its native-lisp directory; otherwise keep only
     /// existing directories the user cannot write.  Keep both in sync.

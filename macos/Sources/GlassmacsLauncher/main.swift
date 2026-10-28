@@ -40,7 +40,7 @@ enum GlassmacsBootstrap {
                 throw BootstrapError.cannotConfigureDeploymentTarget
             }
 
-            let arguments = configuration.emacsArguments(
+            let arguments = configuration.processArguments(
                 forwarding: Array(CommandLine.arguments.dropFirst())
             )
             let cArguments: [UnsafeMutablePointer<CChar>?] =
