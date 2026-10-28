@@ -861,6 +861,36 @@ if [[ "${SPCTL_FAIL:-0}" == 1 ]]; then exit 1; fi
         self.assertFalse((output_dir / "Glassmacs-notarization.zip").exists())
         self.assertNotIn("notarytool submit", log.read_text())
 
+    def test_info_plist_merge_keeps_upstream_document_types(self):
+        from importlib.machinery import SourceFileLoader
+        merger = SourceFileLoader(
+            "merge_info_plist", str(ROOT / "scripts/merge-info-plist")).load_module()
+        upstream = {
+            "CFBundleExecutable": "Emacs",
+            "CFBundleDocumentTypes": [
+                {"CFBundleTypeName": "Text", "CFBundleTypeExtensions": ["txt", "md"]},
+                {"CFBundleTypeName": "R-ish", "CFBundleTypeExtensions": ["r", "tex"]},
+                {"CFBundleTypeName": "Only R", "CFBundleTypeExtensions": ["R"]},
+                {"CFBundleTypeName": "By UTI", "LSItemContentTypes": ["public.text"]},
+            ],
+        }
+        overlay = plistlib.loads((ROOT / "macos/Info.plist").read_bytes())
+        merged = merger.merge_info_plists(upstream, overlay)
+        self.assertEqual(merged["CFBundleExecutable"], "GlassmacsBootstrap")
+        types = merged["CFBundleDocumentTypes"]
+        self.assertEqual(types[0]["CFBundleTypeName"], "Glassmacs Source Document")
+        self.assertIn("Rd", types[0]["CFBundleTypeExtensions"])
+        names = [t["CFBundleTypeName"] for t in types]
+        # Upstream types survive; extensions Glassmacs claims are not repeated.
+        self.assertIn("Text", names)
+        self.assertIn("By UTI", names)
+        self.assertNotIn("Only R", names)
+        r_ish = types[names.index("R-ish")]
+        self.assertEqual(r_ish["CFBundleTypeExtensions"], ["tex"])
+        builder = (ROOT / "scripts/build-macos-app").read_text()
+        self.assertIn('"$root/scripts/merge-info-plist"', builder)
+        self.assertNotIn("upstream.update(", builder)
+
 
 if __name__ == "__main__":
     unittest.main()
