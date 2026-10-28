@@ -95,8 +95,9 @@ PROFILE must be `glassmacs-hybrid', `traditional-emacs', or nil."
   (interactive)
   (glassmacs-set-keyboard-profile 'traditional-emacs))
 
+;; The bindings live in `global-map', so installing them once per new frame
+;; is sufficient; Emacs has no per-frame-selection hook to add here.
 (add-hook 'after-make-frame-functions #'glassmacs--install-hybrid-bindings)
-(add-hook 'select-frame-functions #'glassmacs--install-hybrid-bindings)
 
 (provide 'glassmacs-keys)
 ;;; glassmacs-keys.el ends here
