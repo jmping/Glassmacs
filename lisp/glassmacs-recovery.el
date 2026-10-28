@@ -483,7 +483,17 @@ A positive retain decision resets the review count for the item."
                        glassmacs-recovery-auto-expire-quarantine
                        (not (glassmacs-recovery--transaction-pending-p))
                        (not (member (plist-get entry :name)
-                                    (glassmacs-recovery--protected-files))))
+                                    (glassmacs-recovery--protected-files)))
+                       (not (cl-some
+                             (lambda (buffer)
+                               (with-current-buffer buffer
+                                 (and (buffer-modified-p)
+                                      (equal
+                                       (cdr (gethash
+                                             (glassmacs-recovery--id)
+                                             glassmacs-recovery--last-snapshots))
+                                       (plist-get entry :name)))))
+                             (glassmacs-recovery--documents))))
                   ;; This is the third separate interactive startup.  Only
                   ;; delete exact regular, non-symlinked candidate files.
                   (let ((file (expand-file-name
