@@ -1638,3 +1638,35 @@
                     :snapshot)
                    "saved.text")))
       (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-crash-restore-does-not-replace-quit-index ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-crash-" t)))
+    (unwind-protect
+        (progn
+          (glassmacs-recovery--write-index-transaction
+           "buffers.eldata" '((:id "saved" :name "saved" :modified nil)))
+          (glassmacs-recovery--write-index-transaction
+           "crash.eldata" '((:id "crashed" :name "crashed" :modified nil)))
+          (let ((before (with-temp-buffer
+                          (insert-file-contents (glassmacs-recovery--manifest-path))
+                          (buffer-string))))
+            (should (= (glassmacs-recovery-restore-crash) 0))
+            (should (equal before
+                           (with-temp-buffer
+                             (insert-file-contents
+                              (glassmacs-recovery--manifest-path))
+                             (buffer-string))))))
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-direct-kill-guard-blocks-unsaved-documents ()
+  (let ((glassmacs-preserve-open-buffers-on-quit nil)
+        (glassmacs-recovery--save-reviewed-quit nil)
+        (buffer (generate-new-buffer "direct-quit-guard-test")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "unsaved"))
+          (should-not (glassmacs-recovery--quit-safety-check))
+          (let ((glassmacs-recovery--save-reviewed-quit t))
+            (should (glassmacs-recovery--quit-safety-check))))
+      (with-current-buffer buffer (set-buffer-modified-p nil))
+      (kill-buffer buffer))))
