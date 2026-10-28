@@ -8,7 +8,9 @@
 ;; enables no automatic correction, smart quotes or punctuation, text
 ;; substitution or Aquamacs-style "smart word spacing" in any context
 ;; (programming, markup, mixed prose/code documents such as R Markdown,
-;; consoles or the minibuffer).  Any such transformation must be an
+;; consoles or the minibuffer).  That includes options of packages
+;; Glassmacs configures: AUCTeX's smart quotes (glassmacs-latex.el) and
+;; markdown-mode's electric backquote (below).  Any such transformation must be an
 ;; explicit opt-in and must never apply to source code; the
 ;; `glassmacs-editing-literal-text-entry' test guards this.
 ;;
@@ -145,6 +147,16 @@ A `backup-directory-alist' set by the user is never replaced."
            (if glassmacs-right-option-types-characters
                "types special characters"
              "Meta, like the left Option key")))
+
+;; markdown-mode's GitHub-flavored mode (used for README.md and similar)
+;; makes ` electric: typing ``` prompts for a language and inserts a whole
+;; fenced block.  That rewrites typed markup, so it is off unless the user
+;; turned it on.
+(with-eval-after-load 'markdown-mode
+  (defvar markdown-gfm-use-electric-backquote)
+  (unless (or (get 'markdown-gfm-use-electric-backquote 'saved-value)
+              (get 'markdown-gfm-use-electric-backquote 'customized-value))
+    (setq markdown-gfm-use-electric-backquote nil)))
 
 (defun glassmacs-kill-to-line-start ()
   "Kill the text from the start of the line to point (Command-Delete)."
