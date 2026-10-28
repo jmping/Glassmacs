@@ -372,6 +372,139 @@ Snapshot files are retained for manual recovery until explicit cleanup."
   (message "Preserve Open Buffers on Quit: %s"
            (if glassmacs-preserve-open-buffers-on-quit "on" "off")))
 
+(defcustom glassmacs-recovery-quarantine-days 90
+  "Minimum age in days before an unresolved recovery is reviewed for expiry."
+  :type 'integer :group 'glassmacs-recovery)
+
+(defcustom glassmacs-recovery-auto-expire-quarantine t
+  "Whether twice-reviewed, unclaimed quarantine files may be removed at a later startup."
+  :type 'boolean :group 'glassmacs-recovery)
+
+(defvar glassmacs-recovery--quarantine-session-reviewed nil
+  "Quarantine items reviewed during this interactive application session.")
+
+(defun glassmacs-recovery--quarantine-path ()
+  "Return the persistent quarantine review-state filename."
+  (expand-file-name "quarantine.eldata" glassmacs-recovery-directory))
+
+(defun glassmacs-recovery--quarantine-state ()
+  "Return saved quarantine entries, rejecting malformed state."
+  (let ((path (glassmacs-recovery--quarantine-path)))
+    (when (file-symlink-p path)
+      (error "Refusing symlinked quarantine state"))
+    (if (not (file-exists-p path))
+        nil
+      (with-temp-buffer
+        (insert-file-contents path)
+        (let* ((read-eval nil)
+               (data (read (current-buffer))))
+          (skip-chars-forward " \t\r\n")
+          (unless (and (eobp) (listp data)
+                       (cl-every
+                        (lambda (entry)
+                          (and (listp entry)
+                               (stringp (plist-get entry :name))
+                               (numberp (plist-get entry :since))
+                               (integerp (plist-get entry :reviews))
+                               (<= 0 (plist-get entry :reviews) 2)
+                               (or (null (plist-get entry :queued))
+                                   (eq (plist-get entry :queued) t))))
+                        data))
+            (error "Invalid quarantine state; automatic expiry disabled"))
+          data)))))
+
+(defun glassmacs-recovery--quarantine-candidates ()
+  "Find unreferenced snapshots and interrupted metadata for review.
+Never classify active index references or symlinks as disposable."
+  (glassmacs-recovery--ensure-directory)
+  (let ((protected (glassmacs-recovery--protected-files))
+        (pending (glassmacs-recovery--transaction-pending-p)))
+    (cl-loop for file in (directory-files glassmacs-recovery-directory t
+                                          directory-files-no-dot-files-regexp)
+             for name = (file-name-nondirectory file)
+             when (and (file-regular-p file) (not (file-symlink-p file))
+                       (or (and (string-suffix-p ".text" name)
+                                (not (member name protected)))
+                           (and pending (equal name "transaction.eldata"))))
+             collect name)))
+
+(defun glassmacs-recovery--quarantine-review (&optional now)
+  "Run a single interactive-startup review cycle at timestamp NOW.
+No file is deleted until the startup after two unanswered reviews.
+A positive retain decision resets the review count for the item."
+  (when (and (not noninteractive) (display-graphic-p)
+             (not glassmacs-recovery--quarantine-session-reviewed))
+    (setq glassmacs-recovery--quarantine-session-reviewed t)
+    (condition-case err
+        (let* ((now (or now (float-time)))
+               (candidates (glassmacs-recovery--quarantine-candidates))
+               (state (glassmacs-recovery--quarantine-state))
+               (next nil)
+               (expired nil))
+          (dolist (name candidates)
+            (let* ((file (expand-file-name name glassmacs-recovery-directory))
+                   (old (cl-find name state :key (lambda (e) (plist-get e :name))
+                                 :test #'equal))
+                   (since (if old (plist-get old :since)
+                            (or (file-attribute-modification-time
+                                 (file-attributes file))
+                                (current-time))))
+                   (since (if (numberp since) since (float-time since)))
+                   (reviews (if old (plist-get old :reviews) 0))
+                   (queued (and old (plist-get old :queued)))
+                   (entry (list :name name :since since
+                                :reviews reviews :queued queued)))
+              (if (>= (- now since)
+                      (* glassmacs-recovery-quarantine-days 86400))
+                  (push entry expired)
+                (push entry next))))
+          (when expired
+            (let ((choice (read-char-choice
+                           (format
+                            "%d expired recovery item(s): [r]etain, [d]etails, [n]ot now? "
+                            (length expired))
+                           '(?r ?d ?n))))
+              (when (= choice ?d)
+                (with-help-window "*Glassmacs Expired Recovery*"
+                  (princ "Expired recovery candidates (no deletion yet):\n\n")
+                  (dolist (entry expired)
+                    (princ (format "%s — %d prior review(s)\n"
+                                   (plist-get entry :name)
+                                   (plist-get entry :reviews)))))
+                (setq choice (read-char-choice
+                              "Retain [r] or defer [n]? " '(?r ?n))))
+              (dolist (entry expired)
+                (cond
+                 ((= choice ?r)
+                  (setq entry (plist-put entry :since now))
+                  (setq entry (plist-put entry :reviews 0))
+                  (setq entry (plist-put entry :queued nil)))
+                 ((and (plist-get entry :queued)
+                       glassmacs-recovery-auto-expire-quarantine
+                       (not (glassmacs-recovery--transaction-pending-p))
+                       (not (member (plist-get entry :name)
+                                    (glassmacs-recovery--protected-files))))
+                  ;; This is the third separate interactive startup.  Only
+                  ;; delete exact regular, non-symlinked candidate files.
+                  (let ((file (expand-file-name
+                               (plist-get entry :name)
+                               glassmacs-recovery-directory)))
+                    (when (and (file-regular-p file) (not (file-symlink-p file)))
+                      (delete-file file)
+                      (setq entry nil))))
+                 ((>= (plist-get entry :reviews) 1)
+                  (setq entry (plist-put entry :reviews 2))
+                  (setq entry (plist-put entry :queued t)))
+                 (t (setq entry (plist-put entry :reviews 1)))))
+                (when entry (push entry next)))))
+          (glassmacs-recovery--write-private
+           (glassmacs-recovery--quarantine-path)
+           (prin1-to-string (nreverse next))))
+      (error (display-warning 'glassmacs-recovery
+                              (format "Quarantine review skipped: %s"
+                                      (error-message-string err))
+                              :warning)))))
+
 (defun glassmacs-recovery--startup ()
   "Offer preserved documents or crash snapshots on startup."
   (unless noninteractive
@@ -379,6 +512,7 @@ Snapshot files are retained for manual recovery until explicit cleanup."
       (display-warning 'glassmacs-recovery
                        "Interrupted recovery transaction: automatic cleanup disabled"
                        :warning))
+    (glassmacs-recovery--quarantine-review)
     (let ((manifest (glassmacs-recovery--manifest-path))
           (crash (expand-file-name "crash.eldata" glassmacs-recovery-directory)))
       (cond
@@ -418,8 +552,6 @@ termination; when disabled, refuse a direct dirty-buffer termination."
                                   (glassmacs-recovery--documents))))
     (cond
      ((null dirty) t)
-     ((and glassmacs-preserve-open-buffers-on-quit
-           glassmacs-recovery--quit-preserved) t)
      (glassmacs-preserve-open-buffers-on-quit
       (condition-case err
           (progn (glassmacs-recovery-preserve) t)
