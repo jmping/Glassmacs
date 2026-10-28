@@ -135,5 +135,19 @@ punctuation, substitution or smart spacing by default."
     (should (eq (alist-get (car entry) glassmacs-hybrid-keybindings nil nil #'equal)
                 (cdr entry)))))
 
+(ert-deftest glassmacs-editing-markdown-typing-is-literal ()
+  "R Markdown prose and GitHub-flavored Markdown insert exactly what is typed."
+  (unless (locate-library "markdown-mode")
+    (ert-skip "markdown-mode is not installed"))
+  (require 'markdown-mode)
+  (should-not markdown-gfm-use-electric-backquote)
+  (let ((input "```{r}\nx <- \"a\" -- 'b' ...\n```\n*em* `code` teh"))
+    (dolist (mode '(markdown-mode gfm-mode))
+      (glassmacs-editing-test--in-selected-buffer
+       (funcall mode)
+       (execute-kbd-macro input)
+       (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                      input))))))
+
 (provide 'test-glassmacs-editing)
 ;;; test-glassmacs-editing.el ends here

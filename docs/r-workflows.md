@@ -4,7 +4,7 @@
 
 PRs [#18](https://github.com/jmping/Glassmacs/pull/18), [#19](https://github.com/jmping/Glassmacs/pull/19), [#20](https://github.com/jmping/Glassmacs/pull/20), [#21](https://github.com/jmping/Glassmacs/pull/21), and [#22](https://github.com/jmping/Glassmacs/pull/22) have merged into `main`. The most recent merge was #22 at `604e44e`. Their pull-request CI completed successfully (Emacs ERT, ESS/R integration, and macOS launcher build). These results establish code integration and automated validation, **not interactive Cocoa GUI acceptance**.
 
-Implemented capabilities include native application/menu/window infrastructure; configurable new-frame/new-tab/reuse-current document opens; New Buffer in Mode and Change Buffer Mode; ESS-backed R source/console menus and contextual toolbar actions; explicit R session start, targeting, inspection and listing; execution-queue and output controls; Save Document As and non-destructive unsaved-document review; and keyboard/document/toolbar preferences. R Markdown, Quarto, Sweave, Shiny and remote workflows have preliminary integrations and still require separate end-to-end validation. Neither complete historical Aquamacs parity nor a production release is claimed.
+Implemented capabilities include native application/menu/window infrastructure; configurable new-frame/new-tab/reuse-current document opens; New Buffer in Mode and Change Buffer Mode; ESS-backed R source/console menus and contextual toolbar actions; explicit R session start, targeting, inspection and listing; execution-queue and output controls; Save Document As and non-destructive unsaved-document review; and keyboard/document/toolbar preferences. R Markdown, Quarto and Sweave chunk execution, rendering and Shiny are implemented and tested in CI with real R (and, for chunk buffers, real polymode); remote workflows are preliminary, and none of this has been validated on a signed macOS build. Neither complete historical Aquamacs parity nor a production release is claimed.
 
 **Still outstanding:** signed-app testing of Cocoa reopen/close, document safety and focus, R source-to-console execution, session targeting, native R/Quartz plotting, toolbar image/layout, persistent preferences, and optional rendering/Shiny workflows. A releasable 0.1 build also needs candidate-specific signing, notarization, Gatekeeper checks and license/source-distribution review. Earlier signed builds do not certify the current `main` tree.
 
@@ -68,12 +68,66 @@ documentation (`.Rd`) have associations that choose their appropriate
 installed mode, with graceful basic-mode fallbacks. The bootstrap installs
 markdown-mode, Quarto mode (the MELPA `quarto-mode` package), polymode/poly-R,
 and AUCTeX as optional aids.
-Poly-R is selected for R Markdown when its mode is available; ESS supplies
-Rnw/Rd modes when installed.
 
+| File | Preferred mode | Fallbacks |
+| --- | --- | --- |
+| `.Rmd` | poly-R `poly-markdown+r-mode` (markdown prose, `ess-r-mode` chunks) | markdown-mode, text mode |
+| `.qmd` | `quarto-mode` | `poly-markdown+r-mode`, markdown-mode, text mode |
+| `.Rnw`, `.Snw` | poly-R `poly-noweb+r-mode` (LaTeX prose, `ess-r-mode` chunks) | an older ESS `Rnw-mode`, AUCTeX `LaTeX-mode`, `latex-mode` |
+| `.Rd` | ESS `Rd-mode` | text mode |
+
+ESS removed its own `Rnw-mode` in 18.10, so current Sweave editing comes from
+poly-R. When a preferred package is missing, Glassmacs uses the fallback and
+offers to install it.
+
+### Mixed prose and R chunks
+
+In any R Markdown, Quarto or Sweave buffer — with or without polymode —
+`glassmacs-document-mode` adds a **Document** menu, Command shortcuts and, in
+graphical sessions with the R toolbar enabled, toolbar buttons. Glassmacs
+finds R chunks itself (```` ```{r} ```` fences, Quarto `{r}` fences, and
+`<<label, options>>=` … `@` noweb chunks), so the commands work the same in
+the prose and in a polymode chunk buffer.
+
+| Command | Shortcut | What it does |
+| --- | --- | --- |
+| Run Chunk (`glassmacs-chunks-run-current`) | Command-Shift-Return | Queue the R chunk at point |
+| Run Chunks Above (`glassmacs-chunks-run-above`) | Command-Option-P | Queue every chunk above point, in order |
+| Run All Chunks (`glassmacs-chunks-run-all`) | Command-Option-R | Queue every chunk, in order |
+| Run Inline R Code (`glassmacs-chunks-run-inline`) | — | Evaluate `` `r expr` ``, `` `{r} expr` `` or `\Sexpr{expr}` at point |
+| Next / Previous R Chunk | Command-Option-Down / Up | Move to the next or previous chunk's code |
+| Insert R Chunk (`glassmacs-chunks-insert`) | Command-Option-I | Insert a chunk in the document's syntax, wrapping the region if active |
+| Render (`glassmacs-chunks-render`) | Command-Option-K | Render or run the document (below) |
+
+Chunks go through the ordinary execution queue to the document's R target,
+so the queue, interrupt and output commands apply. Run Above and Run All skip
+chunks with `eval = FALSE` (or Quarto `#| eval: false`) and empty chunks, and
+report how many were skipped; non-R chunks (Python, SQL, Bash) are never sent
+to R. The R target chosen for a document (**R → Select Session**) is shared
+by the base buffer and all of polymode's chunk buffers, so choosing it inside
+a chunk applies to the whole document and survives moving between prose and
+code.
+
+Under the literal-text policy nothing in these documents transforms typed
+text: markdown-mode's GitHub-style electric backquote is turned off (unless
+you customized it), AUCTeX's smart quotes stay off, and Command shortcuts are
+used so ESS's and Emacs's `C-c` and Meta bindings are unchanged. Spelling
+checks prose only; words in R chunk code are skipped.
+
+### Rendering
+
+- **Render** dispatches on the document: interactive documents run as Shiny
+  apps (below); `.qmd` renders with `quarto render`; Sweave knits to PDF with
+  `knitr::knit2pdf()`; R Markdown renders with `rmarkdown::render()`.
 - `M-x glassmacs-render-rmarkdown` calls `rmarkdown::render()` with Rscript.
 - `M-x glassmacs-render-quarto` invokes `quarto render`.
 - `M-x glassmacs-knit-sweave` calls `knitr::knit()` with Rscript.
+
+When a render succeeds, Glassmacs opens its output: HTML in the web browser,
+PDF in the PDF viewer (Skim or Preview, see the LaTeX section) and other
+formats with their default application. The output file is the one
+`rmarkdown::render()` returns or Quarto reports as "Output created". Set
+`glassmacs-render-open-output` to nil to only render.
 
 These commands render the file on disk, so they require a visited file. If
 the buffer has unsaved changes they offer to save it first; declining cancels
@@ -89,11 +143,24 @@ A missing executable is reported immediately. R packages such as `rmarkdown` or
 ## Shiny
 
 From `app.R`, `ui.R`, or `server.R`, or a directory containing one of those
-layouts, run `M-x glassmacs-shiny-start`. It starts Rscript with
-`shiny::runApp()` bound to `127.0.0.1`; it does not select a port or expose the
-app on a public interface. `M-x glassmacs-shiny-stop` terminates that process.
-Output and startup errors appear in `*Glassmacs Shiny*`. Set
-`glassmacs-shiny-launch-browser` to non-nil to let Shiny open the local preview.
+layouts, run **R → Run Shiny App** (`M-x glassmacs-shiny-start`). It starts
+Rscript with `shiny::runApp()` bound to `127.0.0.1`; it does not select a
+port or expose the app on a public interface.
+
+Interactive documents — R Markdown with `runtime: shiny` (or
+`shiny_prerendered`) and Quarto with `server: shiny` in the YAML header — run
+with **Document → Run Interactive Document** or Render
+(`M-x glassmacs-run-interactive-document`): R Markdown with
+`rmarkdown::run()` on `127.0.0.1`, Quarto with
+`quarto preview --no-browser --no-watch-inputs`.
+
+Output and startup errors appear in `*Glassmacs Shiny*`. When the app reports
+its address ("Listening on" or "Browse at"), Glassmacs opens it in the web
+browser — only then, so the browser never opens on a page that is not yet
+listening. Set `glassmacs-shiny-launch-browser` to nil to only report the
+address. **Open Shiny Preview** reopens it, **Reload Shiny App** restarts the
+last app after edits, and **Stop Shiny App** (`M-x glassmacs-shiny-stop`)
+terminates it. One app runs at a time.
 
 R, the Shiny R package, Quarto, and document packages are external
 dependencies; their presence is not guaranteed by installing Glassmacs.

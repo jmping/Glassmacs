@@ -419,8 +419,41 @@ session, the only live session, or the session matching ESS's
          (choice (completing-read "Send to R session: " choices nil t)))
     (or (cdr (assoc choice choices)) (user-error "No R session selected"))))
 
+;; A document with R chunks (R Markdown, Quarto, Sweave) is edited by
+;; polymode as one base buffer plus an indirect buffer per chunk mode, each
+;; with its own buffer-local variables.  A target chosen while point is in a
+;; chunk must apply to the whole document, so it is written to the base
+;; buffer and all of its indirect buffers.  polymode also copies the base
+;; buffer's value into chunk buffers it creates or switches to later.
+
+(defun glassmacs-r--document-buffers ()
+  "Return the current buffer's base buffer and all buffers sharing it."
+  (let ((base (or (buffer-base-buffer) (current-buffer))))
+    (cons base
+          (cl-remove-if-not (lambda (buffer) (eq (buffer-base-buffer buffer) base))
+                            (buffer-list)))))
+
+(defun glassmacs-r--set-document-target (id)
+  "Make ID the R target of the current document, in all of its buffers.
+ID nil clears the target."
+  (dolist (buffer (glassmacs-r--document-buffers))
+    (with-current-buffer buffer
+      (setq glassmacs-r-target-session id)
+      (glassmacs-r-target-indicator-mode (if id 1 -1)))))
+
+(defvar polymode-move-these-vars-from-base-buffer)
+
+(defun glassmacs-r--register-polymode-variables ()
+  "Have polymode copy the R target into chunk buffers it creates."
+  (add-to-list 'polymode-move-these-vars-from-base-buffer
+               'glassmacs-r-target-session))
+
+(with-eval-after-load 'polymode-core
+  (glassmacs-r--register-polymode-variables))
+
 (defun glassmacs-r-select-session (id)
-  "Select R session ID as the target for the current buffer."
+  "Select R session ID as the target for the current buffer.
+In a document with R chunks, the target applies to the whole document."
   (interactive
    (list (let ((live (glassmacs-sessions-refresh)))
            (unless live (user-error "No live R session"))
@@ -430,15 +463,14 @@ session, the only live session, or the session matching ESS's
                  (glassmacs-sessions--process-live-p
                   (glassmacs-session-process session)))
       (user-error "R session %s is not live" id)))
-  (setq glassmacs-r-target-session id)
-  (glassmacs-r-target-indicator-mode 1)
+  (glassmacs-r--set-document-target id)
   (message "Buffer targets R session %s" id))
 
 (defun glassmacs-r-clear-session-target ()
-  "Clear the current buffer's explicit R target."
+  "Clear the current buffer's explicit R target.
+In a document with R chunks, the target is cleared for the whole document."
   (interactive)
-  (setq glassmacs-r-target-session nil)
-  (glassmacs-r-target-indicator-mode -1)
+  (glassmacs-r--set-document-target nil)
   (message "Cleared this buffer's R session target"))
 
 (defun glassmacs-r-inspect-session ()

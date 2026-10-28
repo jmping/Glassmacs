@@ -8,6 +8,16 @@
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
 
+## 2026-10-28 — mixed prose/code documents
+
+- **DOC-R-WORKFLOWS:** mode selection table for Rmd/Quarto/Sweave/Rd, the chunk commands and shortcuts, shared R target across polymode buffers, render dispatch and output opening, Shiny apps and interactive documents.
+- **DOC-KEYS:** document shortcuts.
+- **DOC-AQUA-COMPAT:** mixed-document entry and RESEARCH-001 status.
+- **DOC-DEV:** CI installs pinned polymode/poly-R commits, markdown-mode, Shiny, rmarkdown and pandoc.
+- No document authority or ownership changes.
+
+---
+
 ## 2026-10-28 — Tier 3 research workflows
 
 - **DOC-AQUA-COMPAT:** recorded LaTeX/SyncTeX, check-only spelling with code and R-name exclusions, and opt-in workspace restore; updated DOC-008 and EDIT-004.
