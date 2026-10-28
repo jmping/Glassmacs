@@ -724,6 +724,85 @@
         (should-not (search-forward "SSH_AUTH_SOCK" nil t)))
       (kill-buffer buffer))))
 
+(defvar glassmacs-test--menu-mode-map (make-sparse-keymap))
+(define-minor-mode glassmacs-test--menu-mode
+  "Minor mode with deliberately broken menu items."
+  :keymap glassmacs-test--menu-mode-map)
+(easy-menu-define glassmacs-test--broken-menu glassmacs-test--menu-mode-map
+  "Broken test menu."
+  '("Broken"
+    ["Bad enable" ignore :enable (car 1)]
+    ["Missing command" glassmacs-test--no-such-command]
+    ["Disabled missing command" glassmacs-test--no-such-command-2 :enable nil]
+    ("Hidden" :visible nil ["Broken but hidden" ignore :enable (car 1)])
+    ["Fine" ignore]))
+(define-key glassmacs-test--menu-mode-map [menu-bar broken filtered]
+  '(menu-item "Filtered" ignore :filter (lambda (_) (error "Filter broke"))))
+
+(ert-deftest glassmacs-menu-check-reports-broken-items ()
+  "Menu forms that signal errors, failing filters and missing commands are
+reported (Aquamacs #180, #256: menus that crashed in some modes)."
+  (with-temp-buffer
+    (glassmacs-test--menu-mode 1)
+    (let ((problems (glassmacs-diagnostics-menu-problems)))
+      (should (cl-some (lambda (p) (string-match-p "Bad enable: :enable signals" p)) problems))
+      (should (cl-some (lambda (p) (string-match-p "glassmacs-test--no-such-command does not exist" p))
+                       problems))
+      (should (cl-some (lambda (p) (string-match-p "Filtered: :filter signals Filter broke" p))
+                       problems))
+      (should-not (cl-some (lambda (p) (string-match-p "Fine\\|Disabled\\|hidden" p))
+                           problems)))))
+
+(defun glassmacs-test--menu-problems-in-file (name contents)
+  "Return the menu problems for a visited file NAME holding CONTENTS."
+  (let* ((directory (make-temp-file "glassmacs-menus-" t))
+         (file (expand-file-name name directory))
+         (glassmacs-offer-package-installation nil))
+    (write-region contents nil file)
+    (let ((buffer (find-file-noselect file)))
+      (unwind-protect
+          (with-current-buffer buffer
+            (list major-mode (glassmacs-diagnostics-menu-problems)))
+        (kill-buffer buffer)
+        (delete-directory directory t)))))
+
+(ert-deftest glassmacs-menus-evaluate-cleanly-in-key-modes ()
+  "Every menu item evaluates in the modes Glassmacs users work in."
+  (dolist (document '(("notes.txt" "Prose.\n")
+                      ("analysis.R" "x <- 1\n")
+                      ("report.Rmd" "Prose.\n\n```{r}\nx <- 1\n```\n")
+                      ("slides.qmd" "Prose.\n\n```{r}\nx <- 1\n```\n")
+                      ("paper.Rnw" "\\documentclass{article}\n<<a>>=\nx <- 1\n@\n")
+                      ("paper.tex" "\\documentclass{article}\n")
+                      ("init.el" "(setq x 1)\n")))
+    (pcase-let ((`(,mode ,problems) (apply #'glassmacs-test--menu-problems-in-file document)))
+      (should (equal (list (car document) mode nil)
+                     (list (car document) mode problems)))))
+  (dolist (buffer (list (get-buffer-create "*scratch*")
+                        (dired-noselect temporary-file-directory)
+                        (with-current-buffer (get-buffer-create " *glassmacs-comint*")
+                          (comint-mode)
+                          (current-buffer))))
+    (should (equal (list (buffer-name buffer) nil)
+                   (list (buffer-name buffer)
+                         (glassmacs-diagnostics-menu-problems buffer))))))
+
+(ert-deftest glassmacs-self-check-passes-and-has-no-side-effects ()
+  (cl-letf (((symbol-function 'call-process)
+             (lambda (&rest _) (ert-fail "Self-check must not run programs")))
+            ((symbol-function 'make-process)
+             (lambda (&rest _) (ert-fail "Self-check must not run programs")))
+            ((symbol-function 'gui-set-selection)
+             (lambda (&rest _) (ert-fail "Self-check must not touch the clipboard")))
+            ((symbol-function 'display-buffer) #'ignore))
+    (let ((results (let ((native-comp-eln-load-path nil))
+                     (with-temp-buffer (text-mode) (glassmacs-self-check)))))
+      (should (>= (length results) 6))
+      (should-not (cl-remove-if-not (lambda (result) (eq (nth 1 result) 'fail)) results))
+      (with-current-buffer "*Glassmacs Self-Check*"
+        (should (string-match-p "PASS +Literal text entry" (buffer-string))))
+      (kill-buffer "*Glassmacs Self-Check*"))))
+
 (ert-deftest glassmacs-interactive-find-file-uses-configured-policy ()
   (let* ((file (make-temp-file "glassmacs-open-policy-"))
          (opened-buffer nil)
