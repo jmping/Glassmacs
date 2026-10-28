@@ -131,6 +131,40 @@ Never snapshot process buffers, remote files, or special buffers."
             (error "Invalid recovery index: %s" filename))
           data)))))
 
+(defun glassmacs-recovery--transaction-path ()
+  "Return the durable in-flight recovery transaction path."
+  (expand-file-name "transaction.eldata" glassmacs-recovery-directory))
+
+(defun glassmacs-recovery--write-index-transaction (index records)
+  "Publish RECORDS to INDEX with an in-flight transaction marker.
+A failed publication retains the marker, preventing reclamation."
+  (let* ((target (expand-file-name index glassmacs-recovery-directory))
+         (marker (glassmacs-recovery--transaction-path))
+         (old (glassmacs-recovery--read-index index))
+         (new (list :version 1 :buffers records)))
+    (glassmacs-recovery--write-private
+     marker (prin1-to-string
+             (list :version 1 :index index :old old :new new)))
+    (glassmacs-recovery--write-private target (prin1-to-string new))
+    (delete-file marker)))
+
+(defun glassmacs-recovery--transaction-pending-p ()
+  "Return non-nil if an incomplete index transaction needs review."
+  (let ((marker (glassmacs-recovery--transaction-path)))
+    (or (file-exists-p marker) (file-symlink-p marker))))
+
+(defun glassmacs-recovery--require-clean-transaction ()
+  "Refuse cleanup while any recovery transaction may be incomplete."
+  (when (glassmacs-recovery--transaction-pending-p)
+    (error "Recovery transaction pending; review before reclaiming snapshots")))
+
+(defun glassmacs-recovery-transaction-status ()
+  "Report whether an interrupted recovery transaction needs review."
+  (interactive)
+  (message "%s" (if (glassmacs-recovery--transaction-pending-p)
+                    "Recovery transaction pending: snapshots protected; do not clean"
+                  "No pending recovery transaction")))
+
 (defun glassmacs-recovery--protected-files ()
   "Return snapshot filenames referenced by either durable index.
 Fail rather than collect if an index cannot be parsed."
@@ -146,6 +180,7 @@ Fail rather than collect if an index cannot be parsed."
 
 (defun glassmacs-recovery--reclaimable-files ()
   "Return unreferenced snapshot files, never indexed recovery copies."
+  (glassmacs-recovery--require-clean-transaction)
   (let ((protected (glassmacs-recovery--protected-files)))
     (cl-remove-if-not
      (lambda (file)
@@ -237,9 +272,7 @@ Return the number of recorded buffers.  Never write original documents."
                           (glassmacs-recovery--documents)))
          (print-length nil)
          (print-level nil))
-    (glassmacs-recovery--write-private
-     (glassmacs-recovery--manifest-path)
-     (prin1-to-string (list :version 1 :buffers records)))
+    (glassmacs-recovery--write-index-transaction "buffers.eldata" records)
     (when (called-interactively-p 'interactive)
       (message "Preserved %d document buffers" (length records)))
     (length records)))
@@ -393,10 +426,8 @@ If preservation fails, remain in Emacs and display the error."
               (when (buffer-modified-p buffer)
                 (push (glassmacs-recovery--snapshot buffer) records)))
             (when records
-              (glassmacs-recovery--write-private
-               (expand-file-name "crash.eldata" glassmacs-recovery-directory)
-               (prin1-to-string
-                (list :version 1 :buffers (nreverse records)))))))
+              (glassmacs-recovery--write-index-transaction
+               "crash.eldata" (nreverse records)))))
       (error (display-warning 'glassmacs-recovery
                               (error-message-string err) :warning)))))
 
