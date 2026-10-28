@@ -1445,6 +1445,91 @@
         (glassmacs-print-document)
         (should (eq printed 'native))))))
 
+(ert-deftest glassmacs-macos-native-bridge-failure-warns-instead-of-aborting ()
+  (let ((system-type 'darwin)
+        (glassmacs-root "/Applications/Glassmacs.app/Contents/Resources/Glassmacs")
+        warnings)
+    (cl-letf (((symbol-function 'display-graphic-p)
+               (lambda (&optional _frame) t))
+              ((symbol-function 'file-readable-p) (lambda (_path) t))
+              ((symbol-function 'module-load)
+               (lambda (_path) (error "Module could not be initialized")))
+              ((symbol-function 'display-warning)
+               (lambda (_type message &rest _) (push message warnings))))
+      (should-not (glassmacs--load-native-reopen-bridge))
+      (should (string-match-p "failed to load" (car warnings))))))
+
+(ert-deftest glassmacs-native-compilation-keeps-read-only-system-directories ()
+  (let ((native-comp-eln-load-path '("/home/user/.emacs.d/eln-cache/"
+                                     "/usr/lib/emacs/native-lisp/"
+                                     "/missing/native-lisp/"))
+        (data-directory "/usr/share/emacs/etc/")
+        (system-type 'gnu/linux))
+    (cl-letf (((symbol-function 'file-directory-p)
+               (lambda (directory) (not (string-prefix-p "/missing" directory))))
+              ((symbol-function 'file-writable-p)
+               (lambda (directory) (string-prefix-p "/home/" directory))))
+      (glassmacs--configure-native-compilation)
+      (should (equal native-comp-eln-load-path
+                     '("/usr/lib/emacs/native-lisp/"))))))
+
+(ert-deftest glassmacs-home-is-created-when-missing ()
+  (let* ((parent (make-temp-file "glassmacs-home-parent-" t))
+         (glassmacs-home (file-name-as-directory
+                          (expand-file-name "nested/home" parent))))
+    (unwind-protect
+        (progn
+          (glassmacs--ensure-home)
+          (should (file-directory-p glassmacs-home)))
+      (delete-directory parent t))))
+
+(defun glassmacs-test--wait-for-process (process)
+  "Wait until PROCESS and its sentinel have finished."
+  (while (process-live-p process)
+    (accept-process-output process 0.05))
+  ;; Let the sentinel run after the exit status is known.
+  (accept-process-output nil 0.05))
+
+(ert-deftest glassmacs-run-process-is-asynchronous-and-reports-status ()
+  (let ((glassmacs--current-process nil)
+        messages)
+    (cl-letf (((symbol-function 'display-buffer) #'ignore)
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (let ((process (glassmacs-run-process "sh" '("-c" "sleep 0.2; echo rendered"))))
+        (should (processp process))
+        ;; The call returns while the program is still running.
+        (should (process-live-p process))
+        (should-error (glassmacs-run-process "sh" '("-c" "true"))
+                      :type 'user-error)
+        (glassmacs-test--wait-for-process process)
+        (should (string-match-p "sh finished" (car messages)))
+        (with-current-buffer glassmacs-process-buffer-name
+          (should (string-match-p "rendered" (buffer-string)))))
+      (let ((process (glassmacs-run-process "sh" '("-c" "exit 3"))))
+        (glassmacs-test--wait-for-process process)
+        (should (string-match-p "exit status 3" (car messages)))))))
+
+(ert-deftest glassmacs-render-offers-to-save-modified-document ()
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/glassmacs-unsaved.qmd")
+    (insert "edited")
+    (let (saved rendered)
+      (cl-letf (((symbol-function 'save-buffer)
+                 (lambda (&rest _) (setq saved t) (set-buffer-modified-p nil)))
+                ((symbol-function 'glassmacs-run-process)
+                 (lambda (&rest _) (setq rendered t))))
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (_prompt) nil)))
+          (should-error (glassmacs-render-quarto) :type 'user-error)
+          (should-not saved)
+          (should-not rendered))
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (_prompt) t)))
+          (glassmacs-render-quarto)
+          (should saved)
+          (should rendered))))
+    (set-buffer-modified-p nil)))
+
 (ert-deftest glassmacs-recovery-excludes-process-and-special-buffers ()
   (with-current-buffer (generate-new-buffer "recovery-eligibility-test")
     (unwind-protect

@@ -43,6 +43,9 @@ public struct LaunchConfiguration: Equatable, Sendable {
         ] + arguments
     }
 
+    /// Mirrors `glassmacs--configure-native-compilation` in init.el: inside
+    /// the bundle use only its native-lisp directory; otherwise keep only
+    /// existing directories the user cannot write.  Keep both in sync.
     static let nativeCompilationPolicy = """
     (progn
       (when (boundp 'native-comp-jit-compilation)
@@ -59,7 +62,12 @@ public struct LaunchConfiguration: Equatable, Sendable {
                          (file-directory-p native-lisp))
                     (list (file-name-as-directory
                            (file-truename native-lisp)))
-                  nil))))
+                  (let (trusted)
+                    (dolist (directory native-comp-eln-load-path)
+                      (when (and (file-directory-p directory)
+                                 (not (file-writable-p directory)))
+                        (push directory trusted)))
+                    (nreverse trusted))))))
     )
     """
 

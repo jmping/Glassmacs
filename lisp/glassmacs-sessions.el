@@ -59,8 +59,12 @@
 (defvar-local glassmacs-r--output-count 0)
 (defvar-local glassmacs-r--output-suppressed nil)
 (defvar-local glassmacs-r--output-marker-pending nil)
-(defcustom glassmacs-r-output-buffer-maximum-lines 1024
-  "Maximum number of retained lines in an ESS R console."
+(defcustom glassmacs-r-output-buffer-maximum-lines 10000
+  "Maximum number of retained lines in an ESS R console.
+Older lines are deleted by `comint-truncate-buffer'.  This bounds memory
+and redisplay cost for long sessions; `glassmacs-r-output-budget'
+separately bounds the output of a single command.  The default keeps
+enough scrollback to review earlier results without unbounded growth."
   :type 'integer
   :group 'glassmacs-sessions)
 
@@ -87,10 +91,35 @@
 (defvar inferior-ess-secondary-prompt)
 (defvar glassmacs-r-executable)
 
+(defcustom glassmacs-sessions-history-limit 10000
+  "Maximum number of lifecycle events kept in the R execution history.
+Submission and removal events carry the full submitted source, so an
+unlimited history grows for as long as Emacs runs.  When the limit is
+exceeded the oldest events are discarded.  nil keeps every event."
+  :type '(choice (const :tag "Unlimited" nil) natnum)
+  :group 'glassmacs-sessions)
+
+(defcustom glassmacs-sessions-finished-entry-limit 1000
+  "Maximum number of finished queue records kept per R session.
+Finished records are entries in a final state: `completed', `failed',
+`uncertain', `orphaned' or `removed'.  When a session has more, the oldest
+are discarded.  Pending and running entries are never discarded.
+nil keeps every record."
+  :type '(choice (const :tag "Unlimited" nil) natnum)
+  :group 'glassmacs-sessions)
+
 (defun glassmacs-sessions--record (kind &rest plist)
-  "Record a history event of KIND with PLIST and a timestamp."
+  "Record a history event of KIND with PLIST and a timestamp.
+Trim the history to `glassmacs-sessions-history-limit' events."
   (push (append (list :event kind :time (current-time)) plist)
-        glassmacs-sessions--history))
+        glassmacs-sessions--history)
+  (when (and (natnump glassmacs-sessions-history-limit)
+             (nthcdr glassmacs-sessions-history-limit
+                     glassmacs-sessions--history))
+    ;; The history is newest-first, so dropping the tail drops the oldest.
+    (setq glassmacs-sessions--history
+          (take glassmacs-sessions-history-limit
+                glassmacs-sessions--history))))
 
 (defun glassmacs-sessions-history ()
   "Return the execution history, oldest first."
@@ -567,6 +596,31 @@ Without a target, describe whether the available sessions are ambiguous."
                             :key #'glassmacs-entry-id :test #'equal)
            when e return e))
 
+(defconst glassmacs-queue--finished-states
+  '(completed failed uncertain orphaned removed)
+  "Entry states that are final and are never dispatched again.")
+
+(defun glassmacs-queue--prune-finished (session)
+  "Drop SESSION's oldest finished entries beyond the configured limit.
+See `glassmacs-sessions-finished-entry-limit'."
+  (let ((limit glassmacs-sessions-finished-entry-limit))
+    (when (natnump limit)
+      (let ((excess (- (cl-count-if
+                        (lambda (e) (memq (glassmacs-entry-state e)
+                                          glassmacs-queue--finished-states))
+                        (glassmacs-session-entries session))
+                       limit)))
+        (when (> excess 0)
+          (setf (glassmacs-session-entries session)
+                (cl-remove-if
+                 (lambda (e)
+                   (and (> excess 0)
+                        (memq (glassmacs-entry-state e)
+                              glassmacs-queue--finished-states)
+                        (cl-decf excess)
+                        t))
+                 (glassmacs-session-entries session))))))))
+
 (defun glassmacs-queue-submit (source &optional session origin)
   "Queue SOURCE (a complete R expression or region text) for SESSION.
 Return the new entry.  SOURCE is copied without text properties so later
@@ -585,6 +639,7 @@ when no live target exists or SOURCE is blank."
                   :origin origin :submitted-at (current-time))))
       (setf (glassmacs-session-entries session)
             (append (glassmacs-session-entries session) (list entry)))
+      (glassmacs-queue--prune-finished session)
       (glassmacs-sessions--record :submitted :entry (glassmacs-entry-id entry)
                                   :session (glassmacs-session-id session)
                                   :source (glassmacs-entry-source entry))

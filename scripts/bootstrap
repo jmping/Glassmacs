@@ -9,21 +9,35 @@ if ! emacs=$(command -v "$emacs_command" 2>/dev/null); then
   exit 127
 fi
 
+# Package names must match their archive entries exactly (for example the
+# MELPA package is `quarto-mode', not `quarto').  Each package is installed
+# independently so that one unavailable package cannot prevent the others
+# from being installed; any failures are reported together at the end.
 exec "$emacs" -Q --batch --load "$root/init.el" --eval \
   '(progn
      (require (quote cl-lib))
-     (let* ((packages (quote (ess markdown-mode quarto polymode poly-R auctex)))
-           (missing (cl-remove-if (function package-installed-p) packages)))
+     (let* ((packages (quote (ess markdown-mode quarto-mode polymode poly-R auctex)))
+            (missing (cl-remove-if (function package-installed-p) packages))
+            (installed nil)
+            (failed nil))
        (if (null missing)
            (message "All optional Glassmacs packages are already installed.")
          (condition-case error-data
-             (progn
-               (package-refresh-contents)
-               (dolist (package missing)
-                 (package-install package))
-               (message "Installed optional Glassmacs packages: %s"
-                        (mapconcat (function symbol-name) missing ", ")))
+             (package-refresh-contents)
            (error
-            (error "Could not install optional Glassmacs packages (%s); check network access and retry ./scripts/bootstrap: %s"
-                   (mapconcat (function symbol-name) missing ", ")
-                   (error-message-string error-data))))))'
+            (error "Could not refresh package archives; check network access and retry ./scripts/bootstrap: %s"
+                   (error-message-string error-data))))
+         (dolist (package missing)
+           (condition-case error-data
+               (progn
+                 (package-install package)
+                 (push package installed))
+             (error
+              (push (format "%s (%s)" package (error-message-string error-data))
+                    failed))))
+         (when installed
+           (message "Installed optional Glassmacs packages: %s"
+                    (mapconcat (function symbol-name) (nreverse installed) ", ")))
+         (when failed
+           (error "Could not install optional Glassmacs packages: %s; check network access and retry ./scripts/bootstrap"
+                  (mapconcat (function identity) (nreverse failed) "; "))))))'

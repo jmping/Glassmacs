@@ -12,8 +12,24 @@
   :type 'directory
   :group 'glassmacs)
 
+(defun glassmacs--ensure-home ()
+  "Create `glassmacs-home' if it does not exist yet.
+The macOS launcher creates it before starting Emacs, but source checkouts
+started with scripts/glassmacs do not.  Without it, files Emacs writes
+there on its own (the `recentf' list on exit, `custom-file') fail to save.
+A failure is reported as a warning rather than aborting startup."
+  (condition-case error-data
+      (make-directory glassmacs-home t)
+    (file-error
+     (display-warning
+      'glassmacs
+      (format "Could not create Glassmacs home %s: %s"
+              glassmacs-home (error-message-string error-data))
+      :warning))))
+
 (defun glassmacs--initialize-packages ()
   "Initialize package.el using Glassmacs' isolated package directory."
+  (glassmacs--ensure-home)
   (require 'package)
   (setq user-emacs-directory (file-name-as-directory glassmacs-home)
         package-user-dir (expand-file-name "elpa" glassmacs-home)
@@ -26,25 +42,56 @@
 
 (glassmacs--initialize-packages)
 
+(defconst glassmacs-process-buffer-name "*Glassmacs Process*"
+  "Buffer that receives output from `glassmacs-run-process'.")
+
+(defvar glassmacs--current-process nil
+  "The process most recently started by `glassmacs-run-process'.")
+
+(defun glassmacs--process-sentinel (process _event)
+  "Report the outcome of PROCESS, started by `glassmacs-run-process'."
+  (when (memq (process-status process) '(exit signal))
+    (let ((program (process-get process 'glassmacs-program))
+          (status (process-exit-status process)))
+      (if (and (eq (process-status process) 'exit) (zerop status))
+          (message "%s finished; see %s" program glassmacs-process-buffer-name)
+        (message "%s failed (exit status %s); see %s"
+                 program status glassmacs-process-buffer-name)
+        (display-buffer (process-buffer process))))))
+
 (defun glassmacs-run-process (program arguments &optional directory)
-  "Run PROGRAM with ARGUMENTS without a shell.
-Use DIRECTORY as the working directory when non-nil.  Display output and
-signal a user error when the executable is missing or exits unsuccessfully."
+  "Start PROGRAM with ARGUMENTS asynchronously, without a shell.
+Use DIRECTORY as the working directory when non-nil.  Output is shown in
+`glassmacs-process-buffer-name' as it arrives, and a message reports
+success or the exit status when PROGRAM finishes.  Return the process.
+
+The process runs asynchronously so that long renders (Quarto, R Markdown,
+knitr) do not freeze Emacs.  Only one such process runs at a time,
+because they share one output buffer: signal a user error if the previous
+one is still running, or if PROGRAM is not on PATH."
   (let ((executable (executable-find program))
-        (output (get-buffer-create "*Glassmacs Process*")))
+        (output (get-buffer-create glassmacs-process-buffer-name)))
     (unless executable
       (user-error "Required executable not found on PATH: %s" program))
+    (when (process-live-p glassmacs--current-process)
+      (user-error "%s is still running; wait for it or kill %s"
+                  (process-get glassmacs--current-process 'glassmacs-program)
+                  glassmacs-process-buffer-name))
     (with-current-buffer output
       (let ((inhibit-read-only t))
         (erase-buffer)))
-    (let ((status
+    (let ((process
            (let ((default-directory (or directory default-directory)))
-             (apply #'call-process executable nil output t arguments))))
+             (make-process :name "glassmacs-process"
+                           :buffer output
+                           :command (cons executable arguments)
+                           :connection-type 'pipe
+                           :sentinel #'glassmacs--process-sentinel))))
+      (process-put process 'glassmacs-program program)
+      (setq glassmacs--current-process process)
       (display-buffer output)
-      (unless (and (integerp status) (zerop status))
-        (user-error "%s failed (exit status %s); see *Glassmacs Process*"
-                    program status))
-      status)))
+      (message "Running %s; see %s" program glassmacs-process-buffer-name)
+      process)))
 
 (defun glassmacs-r-quote (string)
   "Return STRING as a safely escaped R string literal."

@@ -1,7 +1,14 @@
 ;;; init.el --- Glassmacs isolated entry point -*- lexical-binding: t; -*-
 
 (defun glassmacs--configure-native-compilation ()
-  "Restrict native code to the Emacs bundle and disable runtime compilation."
+  "Restrict native code to trusted directories and disable runtime compilation.
+Inside the macOS app bundle only the bundle's own native-lisp directory is
+used.  Elsewhere (a source checkout run with another Emacs), keep only the
+existing directories the user cannot write, such as a distribution's
+system native-lisp directory: built-in libraries still load natively,
+while user-writable caches such as eln-cache stay excluded.
+`LaunchConfiguration.nativeCompilationPolicy' in the Swift launcher
+applies the same policy and must be kept in sync."
   (when (boundp 'native-comp-jit-compilation)
     (setq native-comp-jit-compilation nil))
   (when (boundp 'native-comp-enable-subr-trampolines)
@@ -16,7 +23,12 @@
                      (file-directory-p native-lisp))
                 (list (file-name-as-directory
                        (file-truename native-lisp)))
-              nil)))))
+              (let (trusted)
+                (dolist (directory native-comp-eln-load-path)
+                  (when (and (file-directory-p directory)
+                             (not (file-writable-p directory)))
+                    (push directory trusted)))
+                (nreverse trusted)))))))
 
 (glassmacs--configure-native-compilation)
 

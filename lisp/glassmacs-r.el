@@ -18,7 +18,7 @@ When nil, ESS uses its normal PATH-based discovery."
     (setq inferior-ess-r-program glassmacs-r-executable)))
 
 (defun glassmacs-r-mode ()
-  "Use ESS's R mode when available, otherwise fall back to text mode."
+  "Use ESS's R mode when available, otherwise fall back to `fundamental-mode'."
   (interactive)
   (cond
    ((fboundp 'ess-r-mode) (ess-r-mode))

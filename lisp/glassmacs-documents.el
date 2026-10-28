@@ -34,9 +34,17 @@
 (add-to-list 'auto-mode-alist '("\\.Rd\\'" . glassmacs-rd-mode))
 
 (defun glassmacs--current-file ()
-  "Return the current buffer's file name or report that it is not saved."
-  (or buffer-file-name
-      (user-error "Save this document before rendering")))
+  "Return the current buffer's file name, ready to be rendered.
+Renderers read the file from disk, so unsaved edits would be silently
+left out of the output.  When the buffer is modified, offer to save it
+first and refuse to render stale contents if the user declines."
+  (unless buffer-file-name
+    (user-error "Save this document before rendering"))
+  (when (buffer-modified-p)
+    (if (y-or-n-p (format "Save %s before rendering? " (buffer-name)))
+        (save-buffer)
+      (user-error "Rendering uses the saved file; save your changes first")))
+  buffer-file-name)
 
 (defun glassmacs-render-rmarkdown ()
   "Render the current R Markdown file with rmarkdown::render()."

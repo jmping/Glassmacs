@@ -930,5 +930,37 @@
       (when (buffer-live-p buffer)
         (let ((kill-buffer-query-functions nil)) (kill-buffer buffer))))))
 
+;;; Bounded records
+
+(ert-deftest glassmacs-sessions-history-is-bounded ()
+  (gs-test--with-env
+   (let ((glassmacs-sessions-history-limit 3))
+     (dotimes (i 5)
+       (glassmacs-sessions--record :test :index i))
+     (should (equal (mapcar (lambda (event) (plist-get event :index))
+                            (glassmacs-sessions-history))
+                    '(2 3 4))))))
+
+(ert-deftest glassmacs-queue-prunes-only-oldest-finished-entries ()
+  (gs-test--with-env
+   (let* ((glassmacs-sessions-finished-entry-limit 2)
+          (p (gs-test--proc "R"))
+          (s (glassmacs-sessions-register p))
+          (sources nil))
+     (dotimes (i 4)
+       (glassmacs-queue-submit (format "x%d" i))
+       (gs-test--finish-running p)
+       (glassmacs-sessions--pump s))
+     ;; x0..x3 have completed.  While R is busy the next submission stays
+     ;; pending, and submitting it prunes finished entries down to two.
+     (process-put p 'busy t)
+     (glassmacs-queue-submit "pending")
+     (setq sources (mapcar #'glassmacs-entry-source
+                           (glassmacs-session-entries s)))
+     (should (equal sources '("x2" "x3" "pending")))
+     (should (eq (glassmacs-entry-state
+                  (car (last (glassmacs-session-entries s))))
+                 'pending)))))
+
 (provide 'test-glassmacs-sessions)
 ;;; test-glassmacs-sessions.el ends here

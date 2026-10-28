@@ -3,7 +3,18 @@ set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 emacs=${GLASSMACS_EMACS:-emacs}
-exec "$emacs" -Q --batch -l "$root/init.el" -l "$root/tests/test-glassmacs.el" \
+
+# Run against a throwaway Glassmacs home unless the caller chose one, so the
+# suite never writes recentf, custom.el or package state into the user's
+# real ~/.config/glassmacs.
+if [ -z "${GLASSMACS_HOME:-}" ]; then
+  GLASSMACS_HOME=$(mktemp -d "${TMPDIR:-/tmp}/glassmacs-test-home.XXXXXX")
+  export GLASSMACS_HOME
+  trap 'rm -rf -- "$GLASSMACS_HOME"' EXIT
+  trap 'exit 1' HUP INT TERM
+fi
+
+"$emacs" -Q --batch -l "$root/init.el" -l "$root/tests/test-glassmacs.el" \
   -l "$root/tests/test-glassmacs-sessions.el" \
   -l "$root/tests/test-glassmacs-r-ui.el" \
   -l "$root/tests/test-glassmacs-remote.el" \
