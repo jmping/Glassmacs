@@ -20,7 +20,7 @@ This is the **canonical index** for maintained project documentation. If a docum
 
 ## Comparative audit (informational)
 
-[Menu parity and deliberate differences](aquamacs-menu-parity-audit.md) records the first source-oriented comparison of Aquamacs and Glassmacs, with gaps and GUI acceptance tasks. It does not replace the canonical behavioral inventory or menu architecture, and the historical issue audit remains a separate follow-up.
+[Menu parity and deliberate differences](aquamacs-menu-parity-audit.md) and [historical Aquamacs issue regression candidates](aquamacs-historical-issues-audit.md) records the first source-oriented comparison of Aquamacs and Glassmacs, with gaps and GUI acceptance tasks. It does not replace the canonical behavioral inventory or menu architecture, and the historical issue audit remains a separate follow-up.
 
 ## Authority register
 
