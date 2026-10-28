@@ -1543,3 +1543,64 @@
       (with-current-buffer buffer (set-buffer-modified-p nil))
       (kill-buffer buffer)
       (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-reuses-unchanged-protected-snapshot ()
+  (let* ((glassmacs-recovery-directory (make-temp-file "glassmacs-reuse-" t))
+         (glassmacs-recovery-max-buffer-bytes 1000)
+         (glassmacs-recovery-max-total-bytes 10000)
+         (glassmacs-recovery--last-snapshots (make-hash-table :test 'equal))
+         (buffer (generate-new-buffer "reuse-recovery-test")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "unchanged content"))
+          (let* ((first (glassmacs-recovery--snapshot buffer))
+                 (name (plist-get first :snapshot)))
+            (glassmacs-recovery--write-private
+             (glassmacs-recovery--manifest-path)
+             (prin1-to-string (list :version 1 :buffers (list first))))
+            (let ((second (glassmacs-recovery--snapshot buffer)))
+              (should (equal name (plist-get second :snapshot)))
+              (should (= (length (directory-files
+                                  glassmacs-recovery-directory nil
+                                  "\\.text\\'")) 1)))))
+      (with-current-buffer buffer (set-buffer-modified-p nil))
+      (kill-buffer buffer)
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-reclaim-preserves-indexed-snapshots ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-gc-" t)))
+    (unwind-protect
+        (progn
+          (glassmacs-recovery--write-private
+           (expand-file-name "protected.text" glassmacs-recovery-directory)
+           "protected")
+          (glassmacs-recovery--write-private
+           (expand-file-name "orphan.text" glassmacs-recovery-directory)
+           "orphan")
+          (glassmacs-recovery--write-private
+           (glassmacs-recovery--manifest-path)
+           (prin1-to-string
+            '(:version 1 :buffers ((:snapshot "protected.text")))))
+          (should (= (glassmacs-recovery-reclaim) 6))
+          (should (file-exists-p
+                   (expand-file-name "protected.text"
+                                     glassmacs-recovery-directory)))
+          (should-not (file-exists-p
+                       (expand-file-name "orphan.text"
+                                         glassmacs-recovery-directory))))
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-corrupt-index-blocks-reclamation ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-gc-" t)))
+    (unwind-protect
+        (progn
+          (glassmacs-recovery--write-private
+           (glassmacs-recovery--manifest-path) "not-a-manifest")
+          (glassmacs-recovery--write-private
+           (expand-file-name "unknown.text" glassmacs-recovery-directory)
+           "keep")
+          (should-error (glassmacs-recovery-reclaim))
+          (should (file-exists-p
+                   (expand-file-name "unknown.text"
+                                     glassmacs-recovery-directory))))
+      (delete-directory glassmacs-recovery-directory t))))
