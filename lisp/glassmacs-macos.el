@@ -1,6 +1,7 @@
 ;;; glassmacs-macos.el --- macOS application integration -*- lexical-binding: t; -*-
 
 (require 'cl-lib)
+(require 'glassmacs-frames)
 
 (defvar glassmacs--hidden-final-frame nil
   "The final macOS graphical frame hidden to keep Glassmacs running.")
@@ -45,7 +46,7 @@ Return non-nil when a frame was revealed."
 
 (defvar glassmacs--commands-that-stay-windowless
   '(save-buffers-kill-emacs glassmacs-recovery-quit kill-emacs ns-do-hide-emacs ns-do-hide-others
-    ignore delete-frame handle-delete-frame glassmacs-reopen
+    ignore delete-frame handle-delete-frame glassmacs-close-document glassmacs-reopen
     glassmacs-new-window)
   "Commands that must not reveal the retained frame afterwards.")
 
@@ -84,25 +85,33 @@ the arguments passed to it."
 ;; `save-buffers-kill-emacs' when no other frame is visible, bypassing
 ;; `delete-frame'.  Explicit Quit does not use this path.
 (defun glassmacs--handle-delete-frame-preserving-app (original event)
-  "Hide the final visible macOS frame instead of killing Emacs.
-ORIGINAL is `handle-delete-frame'; EVENT is the delete-frame event."
+  "Close the documents in a window, then hide or delete the window.
+The window close button closes the documents shown only in that frame,
+asking about unsaved changes first (see `glassmacs-close-frame-documents');
+Cancel keeps the window open.  The final visible macOS frame is hidden
+instead of killing Emacs.  ORIGINAL is `handle-delete-frame'; EVENT is
+the delete-frame event."
   (let ((frame (posn-window (event-start event))))
-    (if (and (eq system-type 'darwin)
-             (frame-live-p frame)
-             (display-graphic-p frame)
-             (not (frame-parent frame))
-             (not (cl-some
-                   (lambda (other)
-                     (and (not (eq other frame))
-                          (frame-visible-p other)
-                          (not (frame-parent other))
-                          (not (frame-parameter other 'delete-before))))
-                   (frame-list))))
-        (progn
-          (make-frame-invisible frame t)
-          (setq glassmacs--hidden-final-frame frame)
-          nil)
-      (funcall original event))))
+    (cond
+     ((not (glassmacs-close-frame-documents frame))
+      (message "Close canceled")
+      nil)
+     ((and (eq system-type 'darwin)
+           (frame-live-p frame)
+           (display-graphic-p frame)
+           (not (frame-parent frame))
+           (not (cl-some
+                 (lambda (other)
+                   (and (not (eq other frame))
+                        (frame-visible-p other)
+                        (not (frame-parent other))
+                        (not (frame-parameter other 'delete-before))))
+                 (frame-list))))
+      (make-frame-invisible frame t)
+      (setq glassmacs--hidden-final-frame frame)
+      nil)
+     (t
+      (funcall original event)))))
 
 (defun glassmacs-new-window ()
   "Show the retained hidden frame, or create a new graphical frame.

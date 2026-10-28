@@ -123,6 +123,91 @@ creating an additional one."
   (with-eval-after-load 'ns-win
     (glassmacs--install-ns-file-open-policy)))
 
+;;; Closing documents (Command-W and the window close button)
+
+;; Mac applications close a document when its last window closes, asking
+;; first whether to save unsaved changes.  Aquamacs did this in
+;; `close-window' (one-buffer-one-frame.el).  Plain `delete-frame' instead
+;; hides the window and leaves the edited buffer alive and invisible until
+;; Quit, which is easy to lose track of with one window per document.
+
+(defun glassmacs--buffer-shown-elsewhere-p (buffer windows)
+  "Return non-nil when BUFFER is visible in a window not in WINDOWS."
+  (cl-some (lambda (window) (not (memq window windows)))
+           (get-buffer-window-list buffer nil t)))
+
+(defun glassmacs--resolve-unsaved-changes (buffer)
+  "Ask how to handle unsaved changes in BUFFER before closing it.
+Return non-nil when closing may proceed: the buffer was unmodified,
+was saved, or its changes were explicitly discarded.  Return nil when
+the user cancels or the save does not complete."
+  (if (not (buffer-modified-p buffer))
+      t
+    (pcase (car (read-multiple-choice
+                 (format "Save changes to %s before closing? " (buffer-name buffer))
+                 '((?s "save" "Save the document, then close it")
+                   (?d "don't save" "Discard the unsaved changes and close")
+                   (?c "cancel" "Keep the document open"))))
+      (?s (with-current-buffer buffer (save-buffer))
+          (not (buffer-modified-p buffer)))
+      (?d (with-current-buffer buffer (set-buffer-modified-p nil))
+          t)
+      (_ nil))))
+
+(defun glassmacs--close-documents-in-windows (windows)
+  "Close the documents shown only in WINDOWS, asking about unsaved changes.
+Only ordinary documents are closed (see
+`glassmacs--ordinary-document-buffer-p'): consoles, Help, Dired and
+other special buffers stay alive, so closing a window never stops an R
+session.  A document also visible in another window stays open.  Return
+nil, closing nothing further, as soon as the user cancels."
+  (catch 'canceled
+    (dolist (buffer (delete-dups (mapcar #'window-buffer windows)) t)
+      (when (and (glassmacs--ordinary-document-buffer-p buffer)
+                 (not (glassmacs--buffer-shown-elsewhere-p buffer windows)))
+        (unless (and (glassmacs--resolve-unsaved-changes buffer)
+                     (kill-buffer buffer))
+          (throw 'canceled nil))))))
+
+(defun glassmacs--close-view (window)
+  "Close WINDOW: the window itself, its tab, or its frame.
+A frame's last window closes the tab when the frame has several tabs,
+otherwise the frame.  Closing the final frame keeps Glassmacs running
+(see `glassmacs--delete-frame-preserving-app')."
+  (let ((frame (window-frame window)))
+    (cond
+     ((cdr (window-list frame 'never))
+      (delete-window window))
+     ((and (bound-and-true-p tab-bar-mode)
+           (> (length (funcall tab-bar-tabs-function frame)) 1))
+      (with-selected-frame frame
+        (tab-bar-close-tab)))
+     (t
+      (delete-frame frame)))))
+
+(defun glassmacs-close-document ()
+  "Close the selected window and its document, as Command-W does on a Mac.
+If the window shows an ordinary document that no other window shows,
+ask whether to save unsaved changes (Save, Don't Save, Cancel) and
+then close the document.  Special buffers such as R consoles and Help
+are never killed; only their window closes.  Then close the window, its
+tab, or its frame."
+  (interactive)
+  (when (active-minibuffer-window)
+    (abort-recursive-edit))
+  (let ((window (selected-window)))
+    (if (glassmacs--close-documents-in-windows (list window))
+        (glassmacs--close-view window)
+      (message "Close canceled"))))
+
+(defun glassmacs-close-frame-documents (frame)
+  "Close the documents shown only in FRAME before the frame closes.
+Used for the window close button.  Return nil when the user cancels,
+in which case the frame must stay open."
+  (or (not (framep frame))
+      (not (frame-live-p frame))
+      (glassmacs--close-documents-in-windows (window-list frame 'never))))
+
 (defun glassmacs-save-document-as (filename)
   "Save the current document as FILENAME using Emacs' native file safeguards.
 An existing destination requires the usual Emacs overwrite confirmation.
@@ -249,6 +334,9 @@ This command never saves or discards any contents."
 (defun glassmacs--install-document-menu ()
   "Route macOS File menu open commands through Glassmacs' document policy."
   (when (and (eq system-type 'darwin) (display-graphic-p))
+    (define-key global-map [menu-bar file glassmacs-close-document]
+      '(menu-item "Close Document" glassmacs-close-document
+                  :enable (menu-bar-non-minibuffer-window-p)))
     (define-key global-map [menu-bar file glassmacs-review-unsaved]
       '(menu-item "Review Unsaved Documents…" glassmacs-review-unsaved-documents))
     (define-key global-map [menu-bar file glassmacs-new-in-mode]

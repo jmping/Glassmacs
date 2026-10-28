@@ -19,7 +19,7 @@
     ([?\s-n] . glassmacs-new-document)
     ([?\s-s] . save-buffer)
     ([?\s-S] . write-file)
-    ([?\s-w] . delete-frame)
+    ([?\s-w] . glassmacs-close-document)
     ([?\s-q] . glassmacs-recovery-quit)
     ([?\s-c] . kill-ring-save)
     ([?\s-v] . yank)
