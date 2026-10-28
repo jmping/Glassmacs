@@ -210,6 +210,10 @@ does not provide a native macOS print dialog."
       (define-key opening-menu [reuse-current]
         '(menu-item "Reuse Current Window" glassmacs-select-opening-reuse-current
                     :button (:radio (eq glassmacs-document-opening-policy 'reuse-current))))
+      (define-key glassmacs-menu [restore-workspace]
+        '(menu-item "Reopen Windows at Startup" glassmacs-toggle-restore-workspace
+                    :button (:toggle . glassmacs-restore-workspace)
+                    :help "Reopen the previous session's windows and local files"))
       (define-key glassmacs-menu [check-spelling]
         '(menu-item "Check Document Spelling…" glassmacs-check-spelling
                     :help "Review misspelled words; nothing changes unless you pick a correction"))
