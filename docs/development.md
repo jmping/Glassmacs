@@ -103,8 +103,15 @@ emacs -Q --batch -l init.el \
 sending against throwaway processes, plus real ESS/R tests for output
 suppression, recovery, interruption and concurrent sessions. These skip unless
 R and ESS are discoverable (`GLASSMACS_SKIP_INTEGRATION=1` forces a skip). The
-dedicated CI job supplies these dependencies. To run locally against a system
-ESS, add its directory to `EMACSLOADPATH` when invoking `scripts/test`.
+dedicated CI job supplies these dependencies, together with AUCTeX and
+Hunspell for the LaTeX and spelling tests. To run locally against system
+packages, add their directories to `EMACSLOADPATH` when invoking
+`scripts/test`; AUCTeX also needs the directory containing `tex-site.el`, for
+example on Debian/Ubuntu:
+
+```sh
+EMACSLOADPATH="/usr/share/auctex:/usr/share/emacs/site-lisp:$ESS_DIR:" ./scripts/test
+```
 
 Remote tests use constructed TRAMP paths and mocked commands, not a real SSH server. See the optional manual SSH procedure in [R workflows](r-workflows.md).
 

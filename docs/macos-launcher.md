@@ -218,7 +218,9 @@ network access, and a configured Keychain profile.
 ## User data and R setup
 
 The app's default writable state is
-`~/Library/Application Support/Glassmacs`. Package downloads, `custom.el`, and
+`~/Library/Application Support/Glassmacs`. It also holds the workspace file
+(`workspace.desktop`) when Glassmacs → Reopen Windows at Startup is on, and
+backups in `backups/`. Package downloads, `custom.el`, and
 generated state are written there, never into the app bundle. Setting
 `GLASSMACS_HOME` to an absolute path overrides this location. The development
 launcher `scripts/glassmacs` retains its existing default,

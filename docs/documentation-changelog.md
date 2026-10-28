@@ -8,6 +8,15 @@
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
 
+## 2026-10-28 — Tier 3 research workflows
+
+- **DOC-AQUA-COMPAT:** recorded LaTeX/SyncTeX, check-only spelling with code and R-name exclusions, and opt-in workspace restore; updated DOC-008 and EDIT-004.
+- **DOC-R-WORKFLOWS:** the LaTeX section now describes implemented behavior (planned items kept under "Planned") and spelling.
+- **DOC-DEV, DOC-MAC-LAUNCHER:** CI integration dependencies and local test paths; workspace and backup files in the app home.
+- No document authority or ownership changes.
+
+---
+
 ## 2026-10-28 — Aquamacs feature gap pass
 
 - **DOC-AQUA-COMPAT:** recorded the literal text entry policy (no automatic correction, smart punctuation, substitution or smart spacing without explicit opt-in, never in source code, none by default in mixed prose/code documents) and a dated gap pass; updated statuses for DOC-004, FILE-001–003, EDIT-003, OPT-003, KEY-002 and MAC-001.
