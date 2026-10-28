@@ -1,6 +1,7 @@
 ;;; glassmacs.el --- Glassmacs configuration entry point -*- lexical-binding: t; -*-
 
 (require 'glassmacs-core)
+(require 'glassmacs-recovery)
 (require 'glassmacs-keys)
 (require 'glassmacs-r)
 (require 'glassmacs-sessions)
