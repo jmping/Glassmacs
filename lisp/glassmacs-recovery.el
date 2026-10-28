@@ -513,7 +513,7 @@ A positive retain decision resets the review count for the item."
       (error (display-warning 'glassmacs-recovery
                               (format "Quarantine review skipped: %s"
                                       (error-message-string err))
-                              :warning)))))
+                              :warning))))
 
 (defun glassmacs-recovery--startup ()
   "Offer preserved documents or crash snapshots on startup."
