@@ -1515,3 +1515,32 @@
       (should preserved)
       (should quit-called)
       (should-not prompt-called))))
+
+(ert-deftest glassmacs-recovery-large-dirty-buffer-fails-closed ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-budget-" t))
+        (glassmacs-recovery-max-buffer-bytes 8)
+        (glassmacs-recovery-max-total-bytes 10000)
+        (buffer (generate-new-buffer "large-recovery-test")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "0123456789"))
+          (should-error (glassmacs-recovery--snapshot buffer))
+          (should-not (directory-files glassmacs-recovery-directory nil
+                                       "\\\\.[Tt][Ee][Xx][Tt]\\\\'")))
+      (with-current-buffer buffer (set-buffer-modified-p nil))
+      (kill-buffer buffer)
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-total-budget-blocks-snapshot ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-budget-" t))
+        (glassmacs-recovery-max-buffer-bytes 1000)
+        (glassmacs-recovery-max-total-bytes 5)
+        (buffer (generate-new-buffer "total-budget-test")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "more than five bytes"))
+          (should-error (glassmacs-recovery--snapshot buffer))
+          (should (= (glassmacs-recovery--storage-bytes) 0)))
+      (with-current-buffer buffer (set-buffer-modified-p nil))
+      (kill-buffer buffer)
+      (delete-directory glassmacs-recovery-directory t))))
