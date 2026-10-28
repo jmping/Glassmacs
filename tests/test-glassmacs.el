@@ -1704,4 +1704,4 @@
               (should-not (file-exists-p
                            (expand-file-name "orphan.text"
                                              glassmacs-recovery-directory)))))))
-      (delete-directory glassmacs-recovery-directory t))))
+      (delete-directory glassmacs-recovery-directory t)))
