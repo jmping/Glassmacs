@@ -11,6 +11,9 @@
 (require 'glassmacs-r-ui)
 (require 'glassmacs-remote)
 (require 'glassmacs-documents)
+(require 'glassmacs-latex)
+(require 'glassmacs-spelling)
+(require 'glassmacs-workspace)
 (require 'glassmacs-frames)
 (require 'glassmacs-macos)
 (require 'glassmacs-diagnostics)
@@ -24,6 +27,8 @@
 (glassmacs-environment-initialize)
 (glassmacs-editing-apply)
 (glassmacs--install-hybrid-bindings)
+;; Last, so restored windows get the final settings and keymaps.
+(glassmacs-workspace-restore-at-startup)
 
 (provide 'glassmacs)
 ;;; glassmacs.el ends here

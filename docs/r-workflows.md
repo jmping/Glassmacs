@@ -140,7 +140,39 @@ Existing R/document commands run locally. SSH/TRAMP file and interactive shell w
 
 Project execution configuration must be opt-in and non-executable; never run commands simply because a project or TRAMP path was opened. The profile shape in the architecture document is illustrative and is not yet an available Lisp variable.
 
-## LaTeX and PDF workflows (planned verification)
+## LaTeX and PDF workflows
+
+**Implemented (2026-10-28), GUI unverified.** With AUCTeX installed (Glassmacs →
+Install R & Document Packages…), Glassmacs configures it for PDF output with
+SyncTeX. On macOS the PDF viewer is Skim when `/Applications/Skim.app` is
+installed and Preview otherwise (`glassmacs-latex-pdf-viewer`). With Skim,
+`C-c C-v` shows the PDF at the source line, and Command-Shift-click in Skim
+jumps back to the source once Skim's Sync preference uses the Emacs preset
+with Glassmacs's `emacsclient` (`Glassmacs.app/Contents/MacOS/bin/emacsclient`);
+Glassmacs starts the Emacs server for this when a document is compiled.
+TeX binaries are found through the shell environment import. Glassmacs keeps
+typing literal in TeX buffers: `"` inserts `"` (set
+`glassmacs-latex-smart-quotes` to use AUCTeX's typographic quotes), and
+AUCTeX's electric insertion options stay off. Your own AUCTeX customizations
+are not overridden.
+
+`M-x glassmacs-knit-sweave-pdf` knits an `.Rnw` file with
+`knitr::knit2pdf()` in the document's directory, without blocking Emacs, and
+opens the PDF when it succeeds. SyncTeX positions refer to the generated
+`.tex` file, not the `.Rnw` source.
+
+**Spelling.** Glassmacs → Check Document Spelling… reviews the region or
+document word by word, and Check Spelling While Typing (off by default)
+underlines misspellings in prose modes. Neither changes text unless you pick a
+correction. Code and math, identifier-shaped words (`my_data`, `data.frame`,
+`ggplot2`, `readRDS`) and the names of objects and functions loaded in the
+buffer's R session are not flagged. Those names are read with a hidden `ls()`
+over the workspace and attached packages only while R is idle (never queued
+behind or interrupting your work), when checking starts and on
+`M-x glassmacs-spelling-refresh-r-names`. Install a checker with
+`brew install enchant` (uses the macOS dictionaries) or `brew install hunspell`.
+
+### Planned
 
 LaTeX should use the **same** local/terminal/SSH execution routing as R and document rendering, with AUCTeX and established TeX tooling supplying LaTeX-specific behavior. A separate LaTeX execution backend is not needed. Planned supported engines include `latexmk`, `pdflatex`, `xelatex` and `lualatex`, with BibTeX/Biber where appropriate. Local compilation, log/error navigation and PDF preview must be verified with installed dependencies; remote builds additionally require explicit PDF artifact access and source-to-output path mapping. SyncTeX forward/inverse search across a remote boundary requires dedicated integration and testing. These capabilities are not yet validated in Glassmacs.
 

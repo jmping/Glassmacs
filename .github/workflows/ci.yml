@@ -35,15 +35,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install Emacs, R and ESS
+      - name: Install Emacs, R, ESS, AUCTeX and Hunspell
         run: |
           sudo apt-get update
-          sudo apt-get install --yes emacs-nox r-base-core elpa-ess
-      - name: Run ERT with real ESS and R
+          sudo apt-get install --yes emacs-nox r-base-core elpa-ess auctex hunspell hunspell-en-us
+      - name: Run ERT with real ESS, R and AUCTeX
         run: |
           ess_dir=$(dirname "$(dpkg -L elpa-ess | grep '/ess-site.el$' | head -n 1)")
+          auctex_dir=$(dirname "$(dpkg -L auctex | grep '/latex.el$' | head -n 1)")
           test -n "$ess_dir"
-          EMACSLOADPATH="$ess_dir:" ./scripts/test
+          test -n "$auctex_dir"
+          # AUCTeX also needs tex-site.el from the site-lisp directory.
+          EMACSLOADPATH="$ess_dir:$auctex_dir:/usr/share/emacs/site-lisp:" ./scripts/test
 
   macos-launcher:
     runs-on: macos-15

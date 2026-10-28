@@ -22,4 +22,7 @@ fi
   -l "$root/tests/test-glassmacs-packages.el" \
   -l "$root/tests/test-glassmacs-close.el" \
   -l "$root/tests/test-glassmacs-editing.el" \
+  -l "$root/tests/test-glassmacs-latex.el" \
+  -l "$root/tests/test-glassmacs-spelling.el" \
+  -l "$root/tests/test-glassmacs-workspace.el" \
   -f ert-run-tests-batch-and-exit
