@@ -123,15 +123,46 @@ for a distinct untitled buffer."
   (when (eq system-type 'darwin)
     (define-key global-map [ns-show-prefs] #'glassmacs-open-preferences)))
 
+(defun glassmacs-reveal-in-finder ()
+  "Reveal the current local file in Finder."
+  (interactive)
+  (unless (and buffer-file-name (not (file-remote-p buffer-file-name)))
+    (user-error "Visit a local file before revealing it in Finder"))
+  (unless (file-exists-p buffer-file-name)
+    (user-error "Save this file before revealing it in Finder"))
+  (unless (and (eq system-type 'darwin) (executable-find "open"))
+    (user-error "Finder integration is available only on macOS"))
+  (unless (equal 0 (call-process "open" nil nil nil "-R" (expand-file-name buffer-file-name)))
+    (user-error "Finder could not reveal this file")))
+
+(defun glassmacs-select-opening-new-frame ()
+  "Open documents in new frames." (interactive)
+  (glassmacs-set-document-opening-policy 'new-frame))
+(defun glassmacs-select-opening-new-tab ()
+  "Open documents in new tabs." (interactive)
+  (glassmacs-set-document-opening-policy 'new-tab))
+(defun glassmacs-select-opening-reuse-current ()
+  "Reuse the current window for document opens." (interactive)
+  (glassmacs-set-document-opening-policy 'reuse-current))
+
 (defun glassmacs--install-macos-menus ()
   "Install Glassmacs menu items while preserving upstream menus."
   (when (and (eq system-type 'darwin) (display-graphic-p))
     (let ((glassmacs-menu (make-sparse-keymap "Glassmacs"))
           (keyboard-menu (make-sparse-keymap "Keyboard Profile"))
+          (opening-menu (make-sparse-keymap "Document Opening"))
           (file-menu (lookup-key global-map [menu-bar file]))
           (window-menu (lookup-key global-map [menu-bar window])))
-      (define-key glassmacs-menu [document-opening]
-        '(menu-item "Document Opening…" glassmacs-set-document-opening-policy))
+      (define-key glassmacs-menu [document-opening] opening-menu)
+      (define-key opening-menu [new-frame]
+        '(menu-item "New Frame" glassmacs-select-opening-new-frame
+                    :button (:radio (eq glassmacs-document-opening-policy 'new-frame))))
+      (define-key opening-menu [new-tab]
+        '(menu-item "New Tab" glassmacs-select-opening-new-tab
+                    :button (:radio (eq glassmacs-document-opening-policy 'new-tab))))
+      (define-key opening-menu [reuse-current]
+        '(menu-item "Reuse Current Window" glassmacs-select-opening-reuse-current
+                    :button (:radio (eq glassmacs-document-opening-policy 'reuse-current))))
       (define-key glassmacs-menu [document-preferences]
         '(menu-item "Document Preferences…" glassmacs-open-document-preferences))
       (define-key glassmacs-menu [review-unsaved]
@@ -151,6 +182,10 @@ for a distinct untitled buffer."
                                  'traditional-emacs))))
       (define-key global-map [menu-bar glassmacs] glassmacs-menu)
       (when (keymapp file-menu)
+        (define-key file-menu [glassmacs-reveal-in-finder]
+          '(menu-item "Reveal in Finder" glassmacs-reveal-in-finder
+                      :enable (and buffer-file-name
+                                   (not (file-remote-p buffer-file-name)))))
         (define-key file-menu [glassmacs-new-window]
           '(menu-item "New Window" glassmacs-new-window
                       :enable (display-graphic-p))))
