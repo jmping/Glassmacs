@@ -50,7 +50,10 @@ It prints some startup noise, runs BODY, then the command passed with -c."
         (glassmacs-env-test--with-isolated-environment
          (setenv "SHELL" shell)
          (setenv "R_LIBS_USER")
+         ;; Name the variables explicitly: the inherited environment (for
+         ;; example LANG on CI runners) must not change the expected count.
          (let ((glassmacs-import-shell-environment t)
+               (glassmacs-shell-environment-variables '("PATH" "R_LIBS_USER"))
                (glassmacs-standard-tool-directories nil))
            (should (string-match-p "imported 2 variable"
                                    (glassmacs-import-shell-environment)))
