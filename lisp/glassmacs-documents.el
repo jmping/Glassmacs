@@ -12,20 +12,33 @@
     (glassmacs-packages-offer-installation "R Markdown editing (poly-R)")))
 
 (defun glassmacs-quarto-mode ()
-  "Use quarto-mode for a Quarto document when available."
+  "Use quarto-mode for a Quarto document when available.
+Without it, a Quarto document is edited like R Markdown, which shares its
+chunk syntax."
   (interactive)
-  (if (fboundp 'quarto-mode)
-      (quarto-mode)
+  (cond
+   ((fboundp 'quarto-mode) (quarto-mode))
+   ((fboundp 'poly-markdown+r-mode)
+    (poly-markdown+r-mode)
+    (glassmacs-packages-offer-installation "Quarto editing (quarto-mode)"))
+   (t
     (if (fboundp 'markdown-mode) (markdown-mode) (text-mode))
-    (glassmacs-packages-offer-installation "Quarto editing (quarto-mode)")))
+    (glassmacs-packages-offer-installation "Quarto editing (quarto-mode)"))))
 
 (defun glassmacs-sweave-mode ()
-  "Use ESS's Rnw mode for Sweave documents when available."
+  "Use poly-R's Sweave (noweb) mode for Sweave documents when available.
+ESS removed its own `Rnw-mode' in version 18.10; current Sweave editing,
+with LaTeX prose and R chunks each in their own mode, is poly-R's
+`poly-noweb+r-mode'.  An `Rnw-mode' from an older ESS is still used if
+that is all there is.  Otherwise fall back to LaTeX mode."
   (interactive)
-  (if (fboundp 'Rnw-mode)
-      (Rnw-mode)
-    (tex-mode)
-    (glassmacs-packages-offer-installation "Sweave editing (ESS)")))
+  (cond
+   ((fboundp 'poly-noweb+r-mode) (poly-noweb+r-mode))
+   ((fboundp 'Rnw-mode) (Rnw-mode))
+   (t
+    (cond ((fboundp 'LaTeX-mode) (LaTeX-mode))
+          (t (latex-mode)))
+    (glassmacs-packages-offer-installation "Sweave editing (poly-R)"))))
 
 (defun glassmacs-rd-mode ()
   "Use ESS's Rd mode for R documentation when available."
