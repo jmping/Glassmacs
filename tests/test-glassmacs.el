@@ -1670,3 +1670,38 @@
             (should (glassmacs-recovery--quit-safety-check))))
       (with-current-buffer buffer (set-buffer-modified-p nil))
       (kill-buffer buffer))))
+
+(ert-deftest glassmacs-recovery-quarantine-requires-separate-startups ()
+  (let ((glassmacs-recovery-directory (make-temp-file "glassmacs-expire-" t))
+        (glassmacs-recovery-quarantine-days 90)
+        (glassmacs-recovery-auto-expire-quarantine t)
+        (glassmacs-recovery--quarantine-session-reviewed nil))
+    (unwind-protect
+        (progn
+          (glassmacs-recovery--write-private
+           (expand-file-name "orphan.text" glassmacs-recovery-directory) "old")
+          (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
+                    ((symbol-function 'read-char-choice) (lambda (&rest _) ?n)))
+            (let ((noninteractive nil)
+                  (now (+ (float-time) (* 100 86400))))
+              (glassmacs-recovery--quarantine-review now)
+              (should (file-exists-p
+                       (expand-file-name "orphan.text" glassmacs-recovery-directory)))
+              (should (= (plist-get (car (glassmacs-recovery--quarantine-state))
+                                    :reviews) 1))
+              ;; Re-running within one session must not advance the state.
+              (glassmacs-recovery--quarantine-review now)
+              (should (= (plist-get (car (glassmacs-recovery--quarantine-state))
+                                    :reviews) 1))
+              (setq glassmacs-recovery--quarantine-session-reviewed nil)
+              (glassmacs-recovery--quarantine-review now)
+              (should (file-exists-p
+                       (expand-file-name "orphan.text" glassmacs-recovery-directory)))
+              (should (plist-get (car (glassmacs-recovery--quarantine-state))
+                                 :queued))
+              (setq glassmacs-recovery--quarantine-session-reviewed nil)
+              (glassmacs-recovery--quarantine-review now)
+              (should-not (file-exists-p
+                           (expand-file-name "orphan.text"
+                                             glassmacs-recovery-directory)))))))
+      (delete-directory glassmacs-recovery-directory t))))
