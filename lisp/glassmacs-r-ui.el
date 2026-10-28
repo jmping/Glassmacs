@@ -43,6 +43,20 @@
                   :enable glassmacs-r-target-session))
     (define-key menu [list-sessions]
       '(menu-item "List R Sessions" glassmacs-r-list-sessions))
+    (define-key menu [shiny-separator] menu-bar-separator)
+    (define-key menu [shiny-preview]
+      '(menu-item "Open Shiny Preview" glassmacs-shiny-open-preview
+                  :enable (bound-and-true-p glassmacs-shiny-url)))
+    (define-key menu [shiny-reload]
+      '(menu-item "Reload Shiny App" glassmacs-shiny-reload
+                  :enable (bound-and-true-p glassmacs-shiny--last-start)))
+    (define-key menu [shiny-stop]
+      '(menu-item "Stop Shiny App" glassmacs-shiny-stop
+                  :enable (bound-and-true-p glassmacs-shiny-process)))
+    (define-key menu [shiny-run]
+      '(menu-item "Run Shiny App" glassmacs-shiny-start
+                  :visible (and (fboundp 'glassmacs-shiny-app-file-p)
+                                (glassmacs-shiny-app-file-p))))
     (define-key menu [separator] menu-bar-separator)
     (define-key menu [buffer]
       '(menu-item "Run Buffer" glassmacs-r-send-buffer))

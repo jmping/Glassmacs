@@ -355,23 +355,40 @@ existing chunk this signals an error."
 (declare-function glassmacs-render-rmarkdown "glassmacs-documents" ())
 (declare-function glassmacs-render-quarto "glassmacs-documents" ())
 (declare-function glassmacs-knit-sweave-pdf "glassmacs-latex" ())
+(declare-function glassmacs-shiny-interactive-document-p "glassmacs-shiny" ())
+(declare-function glassmacs-run-interactive-document "glassmacs-shiny" ())
 
 (defun glassmacs-chunks-render ()
-  "Render (knit) the current document with the tool for its type."
+  "Render (knit) the current document with the tool for its type.
+An interactive document (runtime: shiny, or Quarto server: shiny) is run
+as a local Shiny app instead, since it cannot be rendered to a file."
   (interactive)
   (glassmacs-chunks--require-document)
   (let ((file (buffer-file-name (glassmacs-chunks--base))))
     (with-current-buffer (glassmacs-chunks--base)
       (cond
+       ((glassmacs-shiny-interactive-document-p) (glassmacs-run-interactive-document))
        ((and file (string-match-p "\\.qmd\\'" file)) (glassmacs-render-quarto))
        ((eq (glassmacs-chunks-syntax) 'noweb) (glassmacs-knit-sweave-pdf))
        (t (glassmacs-render-rmarkdown))))))
 
 (defvar glassmacs-document-menu
   (let ((menu (make-sparse-keymap "R Document")))
+    (define-key menu [shiny-preview]
+      '(menu-item "Open Shiny Preview" glassmacs-shiny-open-preview
+                  :enable (bound-and-true-p glassmacs-shiny-url)))
+    (define-key menu [shiny-stop]
+      '(menu-item "Stop Interactive Document" glassmacs-shiny-stop
+                  :visible (glassmacs-shiny-interactive-document-p)
+                  :enable (bound-and-true-p glassmacs-shiny-process)))
     (define-key menu [render]
       '(menu-item "Render Document" glassmacs-chunks-render
+                  :visible (not (glassmacs-shiny-interactive-document-p))
                   :help "Knit or render this document and open the result"))
+    (define-key menu [run-interactive]
+      '(menu-item "Run Interactive Document" glassmacs-run-interactive-document
+                  :visible (glassmacs-shiny-interactive-document-p)
+                  :help "Run this runtime: shiny document and open it in the browser"))
     (define-key menu [separator-render] menu-bar-separator)
     (define-key menu [insert]
       '(menu-item "Insert R Chunk" glassmacs-chunks-insert))
