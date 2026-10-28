@@ -26,6 +26,7 @@
     ([?\s-x] . kill-region)
     ([?\s-a] . mark-whole-buffer)
     ([?\s-z] . undo)
+    ([?\s-Z] . undo-redo)
     ([?\s-f] . isearch-forward))
   "Command-key bindings for the `glassmacs-hybrid' profile.
 Control and Meta bindings, including C-x, C-c, and M-x, are untouched.

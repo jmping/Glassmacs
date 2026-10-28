@@ -1348,3 +1348,55 @@
     (define-key global-map [?\s-n] 'make-frame)
     (glassmacs-test-with-profile 'traditional-emacs
       (should (eq (lookup-key global-map [?\s-n]) 'make-frame)))))
+
+;; Small Aquamacs compatibility improvements.
+(ert-deftest glassmacs-finder-reveal-rejects-nonfile-buffer ()
+  (with-temp-buffer
+    (should-error (glassmacs-reveal-in-finder) :type 'user-error)))
+
+(ert-deftest glassmacs-finder-reveal-rejects-remote-path ()
+  (with-temp-buffer
+    (setq buffer-file-name "/ssh:example.invalid:/tmp/file.R")
+    (should-error (glassmacs-reveal-in-finder) :type 'user-error)))
+
+(ert-deftest glassmacs-finder-reveal-invokes-open-with-safe-arguments ()
+  (let ((system-type 'darwin)
+        (path (make-temp-file "glassmacs finder " nil ".R"))
+        observed)
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name path)
+          (cl-letf (((symbol-function 'executable-find) (lambda (_) "/usr/bin/open"))
+                    ((symbol-function 'call-process)
+                     (lambda (&rest args) (setq observed args) 0)))
+            (glassmacs-reveal-in-finder)
+            (should (equal observed (list "open" nil nil nil "-R" path)))))
+      (delete-file path))))
+
+(ert-deftest glassmacs-finder-reveal-reports-command-failure ()
+  (let ((system-type 'darwin)
+        (path (make-temp-file "glassmacs finder " nil ".R")))
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name path)
+          (cl-letf (((symbol-function 'executable-find) (lambda (_) "/usr/bin/open"))
+                    ((symbol-function 'call-process) (lambda (&rest _) 1)))
+            (should-error (glassmacs-reveal-in-finder) :type 'user-error)))
+      (delete-file path))))
+
+(ert-deftest glassmacs-opening-policy-menu-commands-are-installed ()
+  (let ((system-type 'darwin)
+        (global-map (copy-keymap global-map)))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t)))
+      (glassmacs--install-macos-menus)
+      (dolist (entry '((new-frame . glassmacs-select-opening-new-frame)
+                       (new-tab . glassmacs-select-opening-new-tab)
+                       (reuse-current . glassmacs-select-opening-reuse-current)))
+        (should (eq (lookup-key global-map
+                                (vector 'menu-bar 'glassmacs 'document-opening
+                                        (car entry)))
+                    (cdr entry)))))))
+
+(ert-deftest glassmacs-hybrid-profile-binds-redo ()
+  (glassmacs-test-with-profile 'glassmacs-hybrid
+    (should (eq (lookup-key global-map [?\s-Z]) 'undo-redo))))
