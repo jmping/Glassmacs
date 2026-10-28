@@ -50,7 +50,11 @@ Never snapshot process buffers, remote files, or special buffers."
 
 (defun glassmacs-recovery--ensure-directory ()
   "Create a private recovery directory or signal an error."
+  (when (file-symlink-p glassmacs-recovery-directory)
+    (error "Recovery directory must not be a symbolic link"))
   (make-directory glassmacs-recovery-directory t)
+  (when (file-symlink-p glassmacs-recovery-directory)
+    (error "Recovery directory must not be a symbolic link"))
   (set-file-modes glassmacs-recovery-directory #o700)
   (unless (file-writable-p glassmacs-recovery-directory)
     (error "Glassmacs recovery directory is not writable")))
@@ -67,6 +71,11 @@ Never snapshot process buffers, remote files, or special buffers."
 
 (defun glassmacs-recovery--write-private (path content)
   "Atomically write CONTENT to PATH with owner-only permissions."
+  (unless (and (equal (file-name-directory (expand-file-name path))
+                      (file-name-as-directory
+                       (expand-file-name glassmacs-recovery-directory)))
+               (not (file-symlink-p path)))
+    (error "Unsafe recovery destination: %s" path))
   (let ((temporary (make-temp-file
                     (expand-file-name ".pending-" glassmacs-recovery-directory))))
     (unwind-protect
@@ -85,7 +94,7 @@ Never snapshot process buffers, remote files, or special buffers."
   (with-current-buffer buffer
     (let* ((id (glassmacs-recovery--id))
            (dirty (buffer-modified-p))
-           (path (and dirty (expand-file-name (concat id ".text")
+           (path (and dirty (expand-file-name (concat id "-" (format-time-string "%Y%m%d%H%M%S%N") "-" (number-to-string (random most-positive-fixnum)) ".text")
                                              glassmacs-recovery-directory))))
       (when dirty
         (glassmacs-recovery--write-private
@@ -117,11 +126,39 @@ Return the number of recorded buffers.  Never write original documents."
 (defun glassmacs-recovery--read-manifest ()
   "Read the stored manifest as data, not executable Lisp."
   (let ((path (glassmacs-recovery--manifest-path)))
+    (when (file-symlink-p path)
+      (error "Refusing symlinked recovery manifest"))
     (when (file-readable-p path)
       (with-temp-buffer
         (insert-file-contents path)
         (let ((read-eval nil))
-          (read (current-buffer)))))))
+          (let ((data (read (current-buffer))))
+            (skip-chars-forward " \t\r\n")
+            (unless (eobp) (error "Trailing recovery manifest data"))
+            data))))))
+
+(defun glassmacs-recovery-restore-crash ()
+  "Restore snapshots from the latest periodic crash-recovery index."
+  (interactive)
+  (let ((manifest (glassmacs-recovery--manifest-path))
+        (crash (expand-file-name "crash.eldata" glassmacs-recovery-directory)))
+    (unless (file-readable-p crash)
+      (user-error "No crash-recovery index available"))
+    (when (file-symlink-p crash)
+      (user-error "Refusing symlinked crash index"))
+    (let ((temporary (and (file-exists-p manifest)
+                          (with-temp-buffer
+                            (insert-file-contents manifest)
+                            (buffer-string)))))
+      (unwind-protect
+          (progn
+            (glassmacs-recovery--write-private
+             manifest
+             (with-temp-buffer (insert-file-contents crash) (buffer-string)))
+            (glassmacs-recovery-restore))
+        (if temporary
+            (glassmacs-recovery--write-private manifest temporary)
+          (when (file-exists-p manifest) (delete-file manifest)))))))
 
 (defun glassmacs-recovery-restore ()
   "Restore preserved document buffers without executing process commands.
@@ -154,6 +191,7 @@ never overwritten.  Calling this repeatedly does not duplicate buffers."
             (cond
              ((and dirty (stringp snapshot)
                    (equal snapshot (file-name-nondirectory snapshot))
+                   (not (file-symlink-p snapshot-path))
                    (file-readable-p snapshot-path))
               (let ((buffer (generate-new-buffer
                              (format "%s (Recovered)" name))))
@@ -223,9 +261,15 @@ If preservation fails, remain in Emacs and display the error."
     (condition-case err
         (progn
           (glassmacs-recovery--ensure-directory)
-          (dolist (buffer (glassmacs-recovery--documents))
-            (when (buffer-modified-p buffer)
-              (glassmacs-recovery--snapshot buffer))))
+          (let ((records nil))
+            (dolist (buffer (glassmacs-recovery--documents))
+              (when (buffer-modified-p buffer)
+                (push (glassmacs-recovery--snapshot buffer) records)))
+            (when records
+              (glassmacs-recovery--write-private
+               (expand-file-name "crash.eldata" glassmacs-recovery-directory)
+               (prin1-to-string
+                (list :version 1 :buffers (nreverse records)))))))
       (error (display-warning 'glassmacs-recovery
                               (error-message-string err) :warning)))))
 
