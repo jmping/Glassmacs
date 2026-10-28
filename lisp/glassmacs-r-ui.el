@@ -80,17 +80,22 @@
       (call-interactively #'ess-display-help-on-object)
     (user-error "R help requires ESS")))
 
+;; ICON names must be images that GNU Emacs itself ships in `etc/images'
+;; (for example right-arrow, jump-to, next-page, cancel); `find-image'
+;; returns nil for a name that does not exist, and the button then has no
+;; image.  `glassmacs-r-ui-toolbar-icons-are-bundled-with-emacs' checks this.
 (defconst glassmacs-r-ui--toolbar-actions
   '((glassmacs-run-line "Run Line" glassmacs-r-send-line "right-arrow")
     (glassmacs-run-selection "Run Selection" glassmacs-r-send-region "copy")
-    (glassmacs-run-function "Run Function" glassmacs-r-send-function "execute")
-    (glassmacs-run-buffer "Run Buffer" glassmacs-r-send-buffer "right-arrow")
+    (glassmacs-run-function "Run Function" glassmacs-r-send-function "jump-to")
+    (glassmacs-run-buffer "Run Buffer" glassmacs-r-send-buffer "next-page")
     (glassmacs-show-console "R Console" glassmacs-r-inspect-session "open")
     (glassmacs-help "R Help" glassmacs-r-ui-help "help"))
-  "R source toolbar entries: (KEY LABEL COMMAND ICON).")
+  "R source toolbar entries: (KEY LABEL COMMAND ICON).
+ICON is the base name of an image shipped with GNU Emacs.")
 
 (defconst glassmacs-r-ui--console-toolbar-actions
-  '((glassmacs-interrupt "Interrupt" glassmacs-r-interrupt "stop")
+  '((glassmacs-interrupt "Interrupt" glassmacs-r-interrupt "cancel")
     (glassmacs-history "History" glassmacs-r-ui-previous-input-or-line "undo")
     (glassmacs-session "Session" glassmacs-r-select-session "open"))
   "R console toolbar entries.")
@@ -126,18 +131,40 @@
     map))
 
 (defun glassmacs-r-ui--enable-toolbar ()
-  "Install buffer-local R toolbar commands without altering ESS keymaps."
+  "Install buffer-local R toolbar commands without altering ESS keymaps.
+The command map is buffer-local, but `tool-bar-mode' is a global minor
+mode: Emacs has no per-buffer tool-bar toggle, so showing the R toolbar
+turns the tool bar on for every graphical frame.  Other buffers keep their
+own (default) `tool-bar-map'."
   (require 'tool-bar)
   (setq-local tool-bar-map (glassmacs-r-ui--toolbar-map))
   (when (display-graphic-p)
     (tool-bar-mode 1)))
 
+(defvar-local glassmacs-r-ui--local-map nil
+  "Keymap private to this buffer that holds its Glassmacs R controls.")
+
+(defun glassmacs-r-ui--local-map ()
+  "Return a keymap private to the current buffer, installing it if needed.
+`local-set-key' would modify the major mode's keymap, which every buffer
+in that mode shares (for example `ess-r-mode-map').  Instead, install a
+sparse keymap whose parent is the mode's map: ESS bindings stay
+inherited and unchanged, and bindings added here affect only this buffer.
+A major-mode change resets the variable, so a fresh map is built then."
+  (unless (and (keymapp glassmacs-r-ui--local-map)
+               (eq (current-local-map) glassmacs-r-ui--local-map))
+    (let ((map (make-sparse-keymap)))
+      (set-keymap-parent map (current-local-map))
+      (use-local-map map)
+      (setq glassmacs-r-ui--local-map map)))
+  glassmacs-r-ui--local-map)
+
 (defun glassmacs-r-ui--install-controls ()
   "Expose mode-local R menus and optional toolbar in the current buffer."
-  (local-set-key [menu-bar glassmacs-r]
-                 (if (glassmacs-r-ui--source-buffer-p)
-                     glassmacs-r-ui-source-menu
-                   glassmacs-r-ui-console-menu))
+  (define-key (glassmacs-r-ui--local-map) [menu-bar glassmacs-r]
+    (if (glassmacs-r-ui--source-buffer-p)
+        glassmacs-r-ui-source-menu
+      glassmacs-r-ui-console-menu))
   (if glassmacs-r-show-toolbar
       (glassmacs-r-ui--enable-toolbar)
     (kill-local-variable 'tool-bar-map)))
@@ -150,12 +177,15 @@
   (glassmacs-r-ui--install-controls))
 
 (defun glassmacs-r-ui--configure-console ()
-  "Use the comint history owned by this ESS R process buffer."
+  "Use the comint history owned by this ESS R process buffer.
+RET is deliberately left to the mode: ESS binds it to
+`inferior-ess-send-input', which runs `ess-send-input-hook' and resets
+ESS's prompt and completion-cache state before calling `comint-send-input'."
   (setq-local comint-input-ring-size 500)
   (setq-local comint-input-ignoredups t)
-  (local-set-key [up] #'glassmacs-r-ui-previous-input-or-line)
-  (local-set-key [down] #'glassmacs-r-ui-next-input-or-line)
-  (local-set-key (kbd "RET") #'comint-send-input)
+  (let ((map (glassmacs-r-ui--local-map)))
+    (define-key map [up] #'glassmacs-r-ui-previous-input-or-line)
+    (define-key map [down] #'glassmacs-r-ui-next-input-or-line))
   (glassmacs-r-ui--enable-context-menu)
   (glassmacs-r-ui--install-controls))
 
@@ -262,7 +292,9 @@
   menu)
 
 (defun glassmacs-r-ui--enable-context-menu ()
-  "Enable Emacs' native context menu and add Glassmacs R actions locally."
+  "Enable Emacs' native context menu and add Glassmacs R actions locally.
+`context-menu-mode' is a global minor mode, so this enables right-click
+menus everywhere; only the R entries are added buffer-locally."
   (context-menu-mode 1)
   (add-hook 'context-menu-functions
             #'glassmacs-r-ui--populate-context-menu 20 t))
@@ -336,8 +368,7 @@
   (glassmacs-r-ui--install-ess-routing)
   (when (boundp 'inferior-ess-r-mode-map)
     (define-key inferior-ess-r-mode-map [up] #'glassmacs-r-ui-previous-input-or-line)
-    (define-key inferior-ess-r-mode-map [down] #'glassmacs-r-ui-next-input-or-line)
-    (define-key inferior-ess-r-mode-map (kbd "RET") #'comint-send-input)))
+    (define-key inferior-ess-r-mode-map [down] #'glassmacs-r-ui-next-input-or-line)))
 
 (provide 'glassmacs-r-ui)
 ;;; glassmacs-r-ui.el ends here

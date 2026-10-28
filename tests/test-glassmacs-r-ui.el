@@ -38,7 +38,8 @@
     (should (local-variable-p 'comint-input-ring))
     (should (eq (key-binding [up]) #'glassmacs-r-ui-previous-input-or-line))
     (should (eq (key-binding [down]) #'glassmacs-r-ui-next-input-or-line))
-    (should (eq (key-binding (kbd "RET")) #'comint-send-input))
+    ;; ESS's own RET runs `ess-send-input-hook' and resets ESS state.
+    (should (eq (key-binding (kbd "RET")) #'inferior-ess-send-input))
     (should (memq #'glassmacs-r--filter-output
                   comint-preoutput-filter-functions))))
 
@@ -303,6 +304,56 @@
         (goto-char (point-min))
         (should (search-forward "Project root: (remote; not queried)" nil t)))
       (kill-buffer "*Glassmacs R Directories*"))))
+
+(ert-deftest glassmacs-r-ui-toolbar-icons-are-bundled-with-emacs ()
+  "Every toolbar icon must name an image GNU Emacs ships; others render blank."
+  (require 'image)
+  (dolist (entry (append glassmacs-r-ui--toolbar-actions
+                         glassmacs-r-ui--console-toolbar-actions))
+    (let ((icon (nth 3 entry)))
+      (should (locate-file (concat icon ".xpm") image-load-path)))))
+
+(define-derived-mode glassmacs-r-ui-test-mode prog-mode "GlassmacsTest"
+  "Mode whose keymap stands in for a shared ESS mode map.")
+
+(ert-deftest glassmacs-r-ui-controls-do-not-modify-shared-mode-map ()
+  (let ((first (generate-new-buffer " *glassmacs-r-ui-map-1*"))
+        (second (generate-new-buffer " *glassmacs-r-ui-map-2*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer first
+            (glassmacs-r-ui-test-mode)
+            (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
+                       (lambda () t)))
+              (glassmacs-r-ui--install-controls)
+              ;; Reinstalling reuses the buffer's map instead of nesting.
+              (glassmacs-r-ui--install-controls))
+            (should (eq (lookup-key (current-local-map) [menu-bar glassmacs-r])
+                        glassmacs-r-ui-source-menu))
+            (should (eq (keymap-parent (current-local-map))
+                        glassmacs-r-ui-test-mode-map)))
+          ;; `lookup-key' returns an integer when no [menu-bar] prefix exists.
+          (should-not (keymapp (lookup-key glassmacs-r-ui-test-mode-map
+                                           [menu-bar glassmacs-r])))
+          (with-current-buffer second
+            (glassmacs-r-ui-test-mode)
+            (should-not (keymapp (lookup-key (current-local-map)
+                                             [menu-bar glassmacs-r])))))
+      (kill-buffer first)
+      (kill-buffer second))))
+
+(ert-deftest glassmacs-r-ui-console-leaves-return-to-the-mode ()
+  (with-temp-buffer
+    (comint-mode)
+    (glassmacs-r-ui--configure-console)
+    ;; RET is still the mode's own binding, inherited from its keymap.
+    (should (eq (key-binding (kbd "RET")) #'comint-send-input))
+    (let ((own-bindings (copy-keymap glassmacs-r-ui--local-map)))
+      (set-keymap-parent own-bindings nil)
+      (should-not (lookup-key own-bindings (kbd "RET"))))
+    (should (eq (key-binding [up]) #'glassmacs-r-ui-previous-input-or-line))
+    (should-not (eq (lookup-key comint-mode-map [up])
+                    #'glassmacs-r-ui-previous-input-or-line))))
 
 (provide 'test-glassmacs-r-ui)
 ;;; test-glassmacs-r-ui.el ends here
