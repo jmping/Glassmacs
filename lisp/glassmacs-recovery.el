@@ -24,7 +24,6 @@
 
 (defvar glassmacs-recovery--timer nil)
 (defvar glassmacs-recovery--restoring nil)
-(defvar glassmacs-recovery--quit-approved nil)
 (defvar-local glassmacs-recovery--id nil)
 
 (defun glassmacs-recovery--eligible-p (&optional buffer)
@@ -35,7 +34,7 @@ Never snapshot process buffers, remote files, or special buffers."
          (not (get-buffer-process (current-buffer)))
          (not (derived-mode-p 'special-mode 'comint-mode 'term-mode))
          (not (string-prefix-p " " (buffer-name)))
-         (not (string-match-p "\\*.*\\*" (buffer-name)))
+         (not (string-prefix-p "*" (buffer-name)))
          (or (null buffer-file-name)
              (not (file-remote-p buffer-file-name)))
          (not (bound-and-true-p glassmacs-recovery-exclude)))))
@@ -182,6 +181,22 @@ Snapshot files are retained for manual recovery until explicit cleanup."
     (let ((path (glassmacs-recovery--manifest-path)))
       (when (file-exists-p path) (delete-file path)))))
 
+(defun glassmacs-recovery-toggle-preserve ()
+  "Toggle the opt-in buffer-preservation quit policy and persist it."
+  (interactive)
+  (customize-save-variable
+   'glassmacs-preserve-open-buffers-on-quit
+   (not glassmacs-preserve-open-buffers-on-quit))
+  (message "Preserve Open Buffers on Quit: %s"
+           (if glassmacs-preserve-open-buffers-on-quit "on" "off")))
+
+(defun glassmacs-recovery--startup ()
+  "Offer preserved documents on startup; never execute saved commands."
+  (when (and (not noninteractive)
+             (file-readable-p (glassmacs-recovery--manifest-path))
+             (y-or-n-p "Glassmacs has preserved document buffers. Restore them? "))
+    (glassmacs-recovery-restore)))
+
 (defun glassmacs-recovery-quit ()
   "Quit without per-document prompts only after successful preservation.
 If preservation fails, remain in Emacs and display the error."
@@ -222,6 +237,9 @@ If preservation fails, remain in Emacs and display the error."
           (run-with-idle-timer
            glassmacs-recovery-interval t
            #'glassmacs-recovery--periodic-snapshot))))
+
+(add-hook 'emacs-startup-hook #'glassmacs-recovery--startup)
+(glassmacs-recovery-start)
 
 (provide 'glassmacs-recovery)
 ;;; glassmacs-recovery.el ends here
