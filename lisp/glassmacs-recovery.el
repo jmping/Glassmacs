@@ -505,7 +505,7 @@ A positive retain decision resets the review count for the item."
                  ((>= (plist-get entry :reviews) 1)
                   (setq entry (plist-put entry :reviews 2))
                   (setq entry (plist-put entry :queued t)))
-                 (t (setq entry (plist-put entry :reviews 1)))))
+                 (t (setq entry (plist-put entry :reviews 1))))
                 (when entry (push entry next)))))
           (glassmacs-recovery--write-private
            (glassmacs-recovery--quarantine-path)
@@ -513,7 +513,7 @@ A positive retain decision resets the review count for the item."
       (error (display-warning 'glassmacs-recovery
                               (format "Quarantine review skipped: %s"
                                       (error-message-string err))
-                              :warning))))
+                              :warning)))))
 
 (defun glassmacs-recovery--startup ()
   "Offer preserved documents or crash snapshots on startup."
