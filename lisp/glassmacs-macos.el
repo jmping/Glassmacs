@@ -200,6 +200,12 @@ This does not assert that Emacs provides a native macOS print dialog."
                     :button (:radio (eq glassmacs-document-opening-policy 'reuse-current))))
       (define-key glassmacs-menu [document-preferences]
         '(menu-item "Document Preferences…" glassmacs-open-document-preferences))
+      (define-key glassmacs-menu [preserve-buffers]
+        '(menu-item "Preserve Open Buffers on Quit"
+                    glassmacs-recovery-toggle-preserve
+                    :button (:toggle glassmacs-preserve-open-buffers-on-quit)))
+      (define-key glassmacs-menu [restore-buffers]
+        '(menu-item "Restore Preserved Buffers…" glassmacs-recovery-restore))
       (define-key glassmacs-menu [review-unsaved]
         '(menu-item "Review Unsaved Documents…" glassmacs-review-unsaved-documents))
       (define-key glassmacs-menu [keyboard-profile] keyboard-menu)
