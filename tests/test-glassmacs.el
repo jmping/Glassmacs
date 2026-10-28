@@ -1446,14 +1446,17 @@
         (should (eq printed 'native))))))
 
 (ert-deftest glassmacs-recovery-excludes-process-and-special-buffers ()
-  (with-temp-buffer
-    (text-mode)
+  (with-current-buffer (generate-new-buffer "recovery-eligibility-test")
+    (unwind-protect
+        (progn
+          (text-mode)
     (should (glassmacs-recovery--eligible-p))
     (special-mode)
     (should-not (glassmacs-recovery--eligible-p))
     (fundamental-mode)
     (setq buffer-file-name "/ssh:host:/private.R")
-    (should-not (glassmacs-recovery--eligible-p))))
+          (should-not (glassmacs-recovery--eligible-p)))
+      (kill-buffer (current-buffer)))))
 
 (ert-deftest glassmacs-recovery-preserves-two-distinct-untitled-buffers ()
   (let* ((glassmacs-recovery-directory (make-temp-file "glassmacs-safe-" t))
