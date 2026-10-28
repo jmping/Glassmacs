@@ -53,3 +53,44 @@ For each candidate, capture: upstream issue URL/state and exact reported version
 ## Scope of subsequent passes
 
 This first issue pass emphasizes safety and native lifecycle, followed by menu/keyboard/toolbar and ESS packaging. Subsequent passes should paginate older tracker issues and cover printing, clipboard, tabbar, scrolling, Retina/HiDPI, TRAMP, package installation, LaTeX, and performance. Do not automatically import every Aquamacs issue into Glassmacs; prioritize reproductions and desired workflows.
+
+## Second draft — older issue families and implementation backlog (2026-10-27)
+
+This extension samples older upstream tracker entries (including closed issues) and identifies **regression risks**, not reproduced Glassmacs defects. Links point to original reports; closed means historical upstream status only.
+
+| Priority | Historical issue | Risk / difference to test | Proposed Glassmacs disposition |
+| --- | --- | --- | --- |
+| P0 | [#161](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/161) (open) | Confusing unsaved-document quit prompt | Exercise modified file, multiple dirty buffers, cancel and quit; compare Glassmacs review list with actual Emacs quit prompt |
+| P0 | [#160](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/160) (closed) | Crash on Cmd-W of full-screen frame | Full-screen close/reopen regression; verify no orphaned unsaved buffers |
+| P0 | [#168](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/168) (closed) | Arrow keys crash Save Buffer As dialog | Test native Save As navigation, overwrite, Unicode filenames and cancel |
+| P0 | [#165](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/165) (closed) | Dired copy operation crashes | Test Dired file copy and confirm it is not misclassified as a document buffer |
+| P1 | [#81](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/81) (open) | Desktop restoration duplicates frames/buffers | Workspace restore is currently a gap; require idempotent restore before introducing it |
+| P1 | [#102](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/102) (closed) | emacsclient opens unwanted frame across macOS workspaces | Verify current policy when client request arrives from another Space |
+| P1 | [#103](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/103) (closed) | TRAMP hangs when remote file is first document | Test SSH/TRAMP open from fresh app and remote file while ESS is active |
+| P1 | [#98](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/98) (open) | Native pixel scrolling requested | Check modern Cocoa pixel scrolling and trackpad behavior; avoid reviving obsolete workaround |
+| P1 | [#76](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/76) (closed) | Cut/Copy/Paste menu advertises incorrect shortcuts | Compare menu display with effective hybrid/traditional keymap in source and console buffers |
+| P1 | [#153](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/153) (closed) | `recentf-exclude` ignored | Verify exclusions persist and Recent menu does not leak unwanted paths |
+| P1 | [#87](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/87) (closed) | New frames appear on wrong monitor | Test multiple monitors and last-used frame placement; distinguish macOS Spaces behavior |
+| P1 | [#95](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/95) (closed) | Toolbar flickers during frame creation | Stress new-frame creation with R toolbar enabled and disabled |
+| P1 | [#70](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/70) (closed) | Scrolling triggers backtrace | Exercise trackpad/scroll wheel in large R scripts and ESS output |
+| P1 | [#107](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/107) (closed) | Excessive CPU in HTML/Markdown editing | Profile large Markdown/R Markdown files; assess font-lock and parsing, not just ESS execution |
+| P2 | [#137](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/137) (open) | Discoverability of default font / font panel | Audit Options/Appearance and persistence; decide whether dedicated menu action is warranted |
+| P2 | [#151](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/151) (closed) | Delays opening HTML from a process inside Aquamacs | Test R-generated HTML previews and browser handoff without blocking the editor |
+| P2 | [#138](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/138) (closed) | License provenance of bundled toolbar icons | Verify icon licensing and source obligations before shipping a signed distribution |
+
+### Consolidated implementation backlog (provisional)
+
+| Rank | Workstream | Definition of done | Candidate historical evidence |
+| --- | --- | --- | --- |
+| 1 | Native document lifecycle | Finder/client opens after zero frames show the requested file; close/quit/save are non-destructive; full-screen close stable | #270, #219, #161, #160, #168, #247 |
+| 2 | Cocoa file dialogs and external opens | Open, Save As, Recent, external app opens and Unicode paths do not hang; correct buffer/frame focus | #255, #241, #168, #153 |
+| 3 | Keyboard and menu correctness | Visible shortcuts equal effective commands; independent modifier requirements explicitly decided | #233, #76 |
+| 4 | R/ESS installed-bundle integrity | Bundled ESS loads and dispatches correctly; R-generated previews do not block GUI | #184, #151 |
+| 5 | Multi-frame / display behavior | Predictable multiple monitors, Spaces, toolbar layout and frame creation | #87, #95, #102, #236 |
+| 6 | Remote and large-file resilience | First-file TRAMP works, Markdown/R Markdown responsiveness and scroll behavior acceptable | #103, #107, #70, #98 |
+| 7 | Workspace restoration design | Restore is explicit, idempotent, avoids duplicate frames, and never blindly revives R processes | #81 |
+| 8 | Distribution and licensing | File associations, icons, signed/notarized release and licensing verified | #262, #138 |
+
+### Triage policy
+
+Each backlog item is a **candidate workstream** pending current-GUI reproduction. Record one acceptance result per tested macOS version/architecture and link it to the appropriate source issue. Do not open one Glassmacs issue per historical Aquamacs issue by default; group by underlying behavior and prioritize confirmed defects. Avoid porting obsolete implementation mechanisms (for example old tabbar, native PostScript printing or pre-pixel-scroll workarounds) solely for compatibility.
