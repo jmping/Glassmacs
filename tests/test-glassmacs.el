@@ -1525,8 +1525,7 @@
         (progn
           (with-current-buffer buffer (insert "0123456789"))
           (should-error (glassmacs-recovery--snapshot buffer))
-          (should-not (directory-files glassmacs-recovery-directory nil
-                                       "\\\\.[Tt][Ee][Xx][Tt]\\\\'")))
+          (should (= (glassmacs-recovery--storage-bytes) 0)))
       (with-current-buffer buffer (set-buffer-modified-p nil))
       (kill-buffer buffer)
       (delete-directory glassmacs-recovery-directory t))))
