@@ -12,6 +12,7 @@
 (require 'glassmacs-remote)
 (require 'glassmacs-documents)
 (require 'glassmacs-latex)
+(require 'glassmacs-chunks)
 (require 'glassmacs-spelling)
 (require 'glassmacs-workspace)
 (require 'glassmacs-frames)

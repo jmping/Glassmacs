@@ -138,7 +138,8 @@ you pick a replacement."
 
 (defcustom glassmacs-spelling-skip-code t
   "Whether spell checking skips code.
-Skips words shown in a code face (`glassmacs-spelling-code-faces') and
+Skips R chunks and inline R code in R Markdown, Quarto and Sweave
+documents, words shown in a code face (`glassmacs-spelling-code-faces') and
 identifier-shaped words: containing an underscore, a dot or a digit, or a
 lowercase letter followed by a capital (my_data, data.frame, ggplot2,
 readRDS)."
@@ -254,6 +255,9 @@ Trailing dots are dropped, so a sentence's final period is not part of it."
         (identifier (glassmacs-spelling--identifier start end "[:alnum:]_.")))
     (or (and glassmacs-spelling-skip-code
              (or (glassmacs-spelling--code-face-p start)
+                 ;; R chunks and inline R code in R Markdown, Quarto, Sweave.
+                 (and (fboundp 'glassmacs-chunks-code-position-p)
+                      (glassmacs-chunks-code-position-p start))
                  (glassmacs-spelling--code-like-p identifier)))
         (and glassmacs-spelling-skip-r-names
              glassmacs-spelling--r-names
