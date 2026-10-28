@@ -1396,7 +1396,7 @@
                                 (vector 'menu-bar 'glassmacs 'document-opening
                                         (car entry)))))
           (should (eq (nth 2 item) (cdr entry)))
-          (should (eq (car (nth 1 (plist-get (nthcdr 3 item) :button)))
+          (should (eq (car (plist-get (nthcdr 3 item) :button))
                       :radio)))))))
 
 (ert-deftest glassmacs-hybrid-profile-binds-redo ()
