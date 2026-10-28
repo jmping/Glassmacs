@@ -229,11 +229,17 @@ Snapshot files are retained for manual recovery until explicit cleanup."
            (if glassmacs-preserve-open-buffers-on-quit "on" "off")))
 
 (defun glassmacs-recovery--startup ()
-  "Offer preserved documents on startup; never execute saved commands."
-  (when (and (not noninteractive)
-             (file-readable-p (glassmacs-recovery--manifest-path))
+  "Offer preserved documents or crash snapshots on startup."
+  (unless noninteractive
+    (let ((manifest (glassmacs-recovery--manifest-path))
+          (crash (expand-file-name "crash.eldata" glassmacs-recovery-directory)))
+      (cond
+       ((and (file-readable-p manifest)
              (y-or-n-p "Glassmacs has preserved document buffers. Restore them? "))
-    (glassmacs-recovery-restore)))
+        (glassmacs-recovery-restore))
+       ((and (file-readable-p crash)
+             (y-or-n-p "Glassmacs has crash-recovery snapshots. Review them? "))
+        (glassmacs-recovery-restore-crash))))))
 
 (defun glassmacs-recovery-quit ()
   "Quit without per-document prompts only after successful preservation.
