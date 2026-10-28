@@ -15,13 +15,13 @@ This PR adds a persistent `recentf` history, Open Recent / Clear Recent / Prefer
 - **Do not interpret the fallback as native macOS Print or Save as PDF.** GNU `print-buffer` may use a configured external print spooler. The current app build must be inspected for `ns-print-buffer`, `ns-print-region`, `print-buffer`, `ps-print-buffer-with-faces`, and the actual File menu before choosing a native adapter.
 - Acceptance: printing a local text/R source document presents a usable print destination and produces readable output; Save as PDF must be demonstrated in a macOS GUI before claimed. Cancel must not alter buffer or send a job. For R Markdown/Quarto, rendered PDF/HTML printing is a separate workflow.
 
-## Unsaved document protection — design gate, not yet implemented
+## Unsaved document protection — implemented prototype, GUI acceptance pending
 
 **User requirement:** closing a window containing new or modified text should never silently destroy the only copy. Ideally, unsaved contents should survive temporarily until the user decides to save/discard or a configurable retention period elapses.
 
 Current implementation hides the final Cocoa frame and retains its buffers, so *closing the last window is not equivalent to discarding a buffer*. That alone is insufficient: closing another frame, killing a buffer, quitting, a crash, and restarting have different semantics. A save prompt on every close may conflict with the macOS convention that closing a window does not close its document, so the UX must explicitly decide whether to prompt, retain, or both.
 
-**Proposed two-layer design:**
+**Two-layer design (partially implemented in PR #28):**
 
 1. **Durable recovery snapshots:** configure Emacs auto-save for both visited and untitled modified buffers, without enabling `auto-save-visited-mode` (which silently overwrites the user's original document). Place recoverable snapshots in a Glassmacs-specific application-support location with restricted permissions, unique identities, and explicit metadata for original path, timestamp, modified state and source buffer. Use atomic writes and never replace an existing file with a snapshot. Offer a startup recovery view with Preview, Restore as Untitled, Save As, and Discard. Do not delete snapshots merely because a frame was closed.
 2. **Close decision:** a consistent Save / Don't Save / Cancel decision for genuinely discarded modified documents, with Cancel preserving content and focus. Closing a frame that only hides or retains its buffers must not claim content was discarded. Distinguish closing last window, nonfinal window, buffer kill, Cmd-Q, and external shutdown. Treat ESS consoles, TRAMP files, password buffers and transient buffers separately; do not persist sensitive buffers by default.
@@ -132,3 +132,14 @@ Unreferenced immutable snapshots are tracked per filename in `quarantine.eldata`
 An unresolved transaction marker is never automatically deleted; it blocks cleanup until repaired. Malformed active recovery indexes likewise fail closed rather than allowing automatic cleanup. This conservative behavior intentionally prioritizes data preservation over the 90-day expiration goal until corrupt-index quarantine can safely distinguish damaged metadata from recoverable snapshots. Quarantine state is separate from active indexes, and any malformed quarantine state blocks review/deletion. Automatic expiry can be disabled with `glassmacs-recovery-auto-expire-quarantine`.
 
 The startup review currently uses a compact prompt with an optional item list; richer recovery-specific Save/Discard/Cancel controls and end-to-end Cocoa GUI testing remain acceptance work.
+
+
+## PR #28 integration checkpoint — 2026-10-28
+
+**Automated validation:** commit `0f8353f0bb1ceda16dc041ed610dd37190b0247d` passed all three GitHub Actions jobs in run [40711222337](https://github.com/jmping/Glassmacs/actions/runs/40711222337): `emacs-batch`, `ess-r-integration`, and `macos-launcher`. The last job validates the launcher/build workflow, **not** native interactive recovery scenarios.
+
+**Implemented on the PR branch:** opt-in preserve-on-quit; per-buffer immutable local text snapshots with size budgets and exclusions; a distinct crash index; startup restore offers; recovery to a separate buffer for dirty file-backed documents; transaction-marker-based fail-closed reclamation; and 90-day startup-gated quarantine review for unreferenced snapshots. The File menu has a Glassmacs-specific Quit command. Recovery does not restore ESS processes or window/session state.
+
+**Not yet verified for release:** Cocoa application-menu and Dock Quit semantics; canceled quit; disk-full, write interruption, forced kill, and concurrent instance fault injection; robust on-disk synchronization and interprocess locking; strict validation of malformed active recovery indexes; automatic resolution of interrupted transactions and corrupted metadata; and complete recovered-buffer Save/Discard/Cancel UX. A pending transaction marker or malformed active index intentionally blocks cleanup. No automated test run is a substitute for the GUI acceptance matrix in this document.
+
+**Merge gate:** maintain PR #28 as draft until the native macOS and destructive-recovery safety checks have been executed and documented. Green CI alone is insufficient evidence for a data-preservation guarantee.
