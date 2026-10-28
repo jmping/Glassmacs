@@ -102,3 +102,39 @@ The following entries are checked against the current merged Glassmacs Lisp, rat
 ### Evidence limits and next verification
 
 The historical menu taxonomy is already traced in `docs/menu-architecture.md`; this pass confirms **Glassmacs command names and keymap locations**, not the final appearance or behavior of either app. Before converting a gap into a feature issue, inspect GNU Emacs's effective menu in a current macOS build and the relevant historical Aquamacs source. Capture screenshots and command-resolution evidence for each discrepancy. Historical Aquamacs issue triage is the following pass, not part of this one.
+
+## Third pass — historical Aquamacs menu source versus inherited GNU menu (2026-10-27)
+
+**Pinned historical comparison:** [Aquamacs `aquamacs-menu.el`](https://github.com/jmping/aquamacs-emacs/blob/5a2833896341ea02b65ef7ca145a2de3b5f82f30/aquamacs/src/site-lisp/macosx/aquamacs-menu.el) against the [GNU-derived `lisp/menu-bar.el` shipped in that same historical repository](https://github.com/jmping/aquamacs-emacs/blob/5a2833896341ea02b65ef7ca145a2de3b5f82f30/lisp/menu-bar.el), plus merged Glassmacs menu bindings. **Important:** that GNU-derived file is a historical baseline, *not* proof of the exact menu implementation in the current bundled Emacs 31 build. A final upstream-current comparison must inspect the pinned Emacs bundle and running Cocoa menu.
+
+| Aquamacs customization (historical source lines) | Historical GNU-derived baseline | Glassmacs disposition | Next action |
+| --- | --- | --- | --- |
+| Dynamic New Buffer in Mode and Change Buffer Mode (55–118) | Base File menu has Open File, Visit New File, Open Directory (141–151), but not the Aquamacs dynamic mode selectors in this range | **Implemented adapter** in `glassmacs-frames.el` | GUI compare mode ordering, unavailable modes and menu labels |
+| New Buffer in New Frame/Tab (232–249) | Base File menu has Visit New File, but no equivalent two-choice Aquamacs creation policy in its standard entries | **Intentional difference:** Glassmacs defaults to new frame; tab/reuse preferences available | Confirm window vs tab vs buffer behavior |
+| Recent files: 25 items and Open Directory positioning (260–269) | Base File includes Open Directory (141–145); recentf is a separate Emacs facility | **Inherited/partial:** do not implement duplicate Open Directory | Verify `recentf-mode`, menu limit, labels and actual visibility |
+| Close Window dynamic label (278–286) | Base File Close invokes `kill-this-buffer` (132–135), not necessarily frame deletion | **Semantic gap:** Glassmacs Cmd-W frame-close path differs from buffer-close | Test multiple views and modified files; document label accurately |
+| Copy Formatted / Copy as PDF (297–309) | Base Edit copy/paste/selection are available (430–469), but these Aquamacs export variants are distinct | **Missing specialized behavior** | Assess maintained alternatives; no assumption that ordinary clipboard copy preserves formatting |
+| Redo (331–338) | Historical base has Undo; availability and binding of modern `undo-redo` must be checked against current Emacs | **Upstream candidate, not verified parity** | Inspect Shift-Cmd-Z mapping and menu enablement in current Emacs |
+| Search repeat / Use Region For Search (356–375) | Base Search has repeat and incremental/nonincremental entries (236–305) | **Mostly inherited**, but selection-to-search is a distinct Aquamacs affordance | Inspect current isearch menu and effective Command-F/G shortcuts |
+| Fill / Unfill (459–476) | Base Edit has Fill Region (403–407), while Aquamacs exposes explicit unfill | **Partial:** upstream fill exists; Aquamacs unfill is not established | Determine whether a lightweight unfill command is warranted |
+| Reveal in Finder (484–492) | No counterpart in historical base File entries (73–151) | **Missing specialized integration** | Inspect current Emacs macOS equivalent before writing a wrapper |
+| Save Session As / Load Session (495–503) | Base File has Recover Crashed Session (86–90), which is **not** named workspace persistence | **Missing workflow** | Evaluate `desktop-save-mode` / tab session commands; don't confuse recovery with restoration |
+| Save Buffer As (519–527) | Base File already has Save As → `write-file` (115–119) | **Functionally inherited**; Glassmacs additionally exposes Save Document As → `write-file` | Inspect for duplicate menu entries and remove redundancy if necessary |
+| Print / Page Setup (576–593) | Historical base has print-related menu entries, but Aquamacs supplies `aquamacs-print` and native page setup | **Partial / platform-specific** | Verify native printing, selection printing, page setup in bundled Cocoa app |
+| PDF/HTML export declarations (535–555) | Not an active Aquamacs menu feature in this source: **commented out** | **Do not classify as missing parity** | Track separately as optional feature proposal only |
+| Smart Word Spacing in text modes (748–763) | Not established by historical GNU Edit/Options defaults | **Missing Aquamacs-specific behavior** | Consider compatibility value; do not silently change text on paste |
+| Show Tabs / Show Buffers in New Frames (783–795) | Modern Emacs has its own tab and frame concepts | **Intentional redesign** | Test tab-bar vs tab-line semantics; no direct port of Aquamacs tabbar |
+| User Interface, fringes, backups, Customize Aquamacs (798–914) | GNU Options/Customize already provides general customization (550–580), but Aquamacs adds checked UI presets and a dedicated group | **Inherited + partial discoverability** | Compare actual checked/radio state and saved preferences; no duplicate Customize hierarchy |
+| Zoom, Join/Split, Scatter/Tile, Full Screen Editing (1161–1222) | GNU Emacs supplies window/frame primitives, but Aquamacs exposes a specific Extras submenu with wrappers | **Inherited primitives / missing presentation** | Compare Window/Buffers placement, fullscreen state, and current frame-layout commands |
+
+### Corrections to earlier gap classifications
+
+- **Save As is not missing upstream:** historical GNU File menu already invokes `write-file`. Glassmacs's extra Save Document As menu entry may duplicate the inherited Save As item; assess GUI duplication before keeping both.
+- **Open Directory is inherited:** the base File menu contains `dired`. The outstanding question is menu visibility and Aquamacs ordering, not whether a directory-opening command exists.
+- **Recover Crashed Session ≠ Save/Load Session:** do not treat recovery as workspace persistence parity.
+- **Commented export declarations are not shipped Aquamacs functionality:** the historical PDF/HTML export stubs must not generate false parity gaps.
+- **Historical GNU-derived menu is not current GNU Emacs:** source comparison is pinned and reproducible, but current Cocoa runtime behavior remains an independent acceptance gate.
+
+### GUI inspection record template
+
+For each row, record: Glassmacs build/Emacs version, macOS version, menu path and label, enabled/checked state, effective command (`key-binding` / `lookup-key`), keyboard profile, buffer major mode, screenshot or screen recording, outcome, and whether the discrepancy is missing functionality, intentional policy or only presentation. Verify one source R buffer, one ESS console, one ordinary text buffer, and the no-window/reopen state. Avoid declaring parity from static Lisp inspection alone.
