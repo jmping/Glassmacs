@@ -103,5 +103,121 @@
   (should (string-match-p desktop-files-not-to-save "/ssh:server:/home/me/a.R"))
   (should-not (string-match-p desktop-files-not-to-save "/Users/me/a.R")))
 
+;;; Interaction with recovery (glassmacs-recovery.el)
+;;
+;; Required startup order: preferences, then workspace restore, then the
+;; offer to recover unsaved content.  Recovery never overwrites a buffer:
+;; unsaved edits come back in a separate untitled "(Recovered)" buffer, and
+;; preserved clean files reuse the buffer the workspace already opened.
+
+(require 'glassmacs-recovery)
+
+(ert-deftest glassmacs-workspace-restores-before-recovery-is-offered ()
+  "Workspace restore runs while Glassmacs loads; recovery waits for startup."
+  ;; Recovery is offered from `emacs-startup-hook', which Emacs runs after
+  ;; command-line loading (where glassmacs.el, and so the workspace
+  ;; restore, runs) has finished.
+  (should (memq #'glassmacs-recovery--startup emacs-startup-hook))
+  (should-not (memq #'glassmacs-workspace-restore-at-startup emacs-startup-hook))
+  (let ((source (with-temp-buffer
+                  (insert-file-contents (locate-library "glassmacs.el"))
+                  (buffer-string))))
+    ;; Preferences (custom.el) load before the workspace is restored.
+    (should (< (string-search "(load custom-file" source)
+               (string-search "(glassmacs-workspace-restore-at-startup)" source)))))
+
+(defun glassmacs-workspace-test--buffers-visiting (file)
+  "Return the live buffers visiting FILE."
+  (cl-remove-if-not (lambda (buffer)
+                      (equal (buffer-local-value 'buffer-file-name buffer)
+                             (expand-file-name file)))
+                    (buffer-list)))
+
+(defun glassmacs-workspace-test--recovered-copies (file)
+  "Return the recovered untitled buffers holding unsaved edits of FILE."
+  ;; The variable exists only buffer-locally, in recovered buffers.
+  (cl-remove-if-not (lambda (buffer)
+                      (and (local-variable-p 'glassmacs-recovery-source-file buffer)
+                           (equal (buffer-local-value 'glassmacs-recovery-source-file
+                                                      buffer)
+                                  file)))
+                    (buffer-list)))
+
+(ert-deftest glassmacs-workspace-and-recovery-after-abnormal-shutdown ()
+  "Restoring the workspace and then recovery yields no duplicate or stale view.
+The workspace reopens the saved file; recovery adds the unsaved edits as a
+separate untitled buffer and never overwrites the file or its buffer."
+  (glassmacs-workspace-test--with-home
+   (let* ((glassmacs-recovery-directory
+           (file-name-as-directory (make-temp-file "glassmacs-recovery-" t)))
+          (file (expand-file-name "analysis.R" glassmacs-home))
+          (glassmacs-restore-workspace t))
+     (unwind-protect
+         (progn
+           (write-region "saved\n" nil file)
+           (glassmacs-workspace--configure)
+           (setq desktop-restore-frames nil)
+           (let ((buffer (find-file-noselect file)))
+             (desktop-save glassmacs-home t)
+             ;; Unsaved edits are snapshotted, then the session ends abruptly.
+             (with-current-buffer buffer
+               (goto-char (point-max))
+               (insert "unsaved edit\n"))
+             (glassmacs-recovery-preserve)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))
+           ;; Next start, in Glassmacs's order: workspace, then recovery.
+           (let ((noninteractive nil))
+             (desktop-read glassmacs-home))
+           (glassmacs-recovery-restore)
+           (glassmacs-recovery-restore)   ; offered again: still no duplicates
+           (let ((views (glassmacs-workspace-test--buffers-visiting file))
+                 (copies (glassmacs-workspace-test--recovered-copies file)))
+             (should (= (length views) 1))
+             (with-current-buffer (car views)
+               (should (equal (buffer-string) "saved\n"))
+               (should-not (buffer-modified-p)))
+             (should (= (length copies) 1))
+             (with-current-buffer (car copies)
+               (should (equal (buffer-string) "saved\nunsaved edit\n"))
+               (should-not buffer-file-name)))
+           ;; The file on disk is never overwritten by recovery.
+           (should (equal (with-temp-buffer
+                            (insert-file-contents file)
+                            (buffer-string))
+                          "saved\n")))
+       (dolist (buffer (append (glassmacs-workspace-test--buffers-visiting file)
+                               (glassmacs-workspace-test--recovered-copies file)))
+         (with-current-buffer buffer (set-buffer-modified-p nil))
+         (kill-buffer buffer))
+       (desktop-release-lock glassmacs-home)
+       (delete-directory glassmacs-recovery-directory t)))))
+
+(ert-deftest glassmacs-workspace-and-recovery-share-a-clean-file-buffer ()
+  "A preserved clean file that the workspace already reopened is not duplicated."
+  (glassmacs-workspace-test--with-home
+   (let* ((glassmacs-recovery-directory
+           (file-name-as-directory (make-temp-file "glassmacs-recovery-" t)))
+          (file (expand-file-name "notes.txt" glassmacs-home))
+          (glassmacs-restore-workspace t))
+     (unwind-protect
+         (progn
+           (write-region "notes\n" nil file)
+           (glassmacs-workspace--configure)
+           (setq desktop-restore-frames nil)
+           (let ((buffer (find-file-noselect file)))
+             (desktop-save glassmacs-home t)
+             (glassmacs-recovery-preserve)
+             (kill-buffer buffer))
+           (let ((noninteractive nil))
+             (desktop-read glassmacs-home))
+           (glassmacs-recovery-restore)
+           (should (= (length (glassmacs-workspace-test--buffers-visiting file)) 1))
+           (should-not (glassmacs-workspace-test--recovered-copies file)))
+       (dolist (buffer (glassmacs-workspace-test--buffers-visiting file))
+         (kill-buffer buffer))
+       (desktop-release-lock glassmacs-home)
+       (delete-directory glassmacs-recovery-directory t)))))
+
 (provide 'test-glassmacs-workspace)
 ;;; test-glassmacs-workspace.el ends here

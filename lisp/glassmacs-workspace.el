@@ -13,6 +13,16 @@
 ;; home, never in ~/.emacs.d.  It is read at most once per session, and
 ;; restored windows reuse the startup window instead of adding to it, so
 ;; restoring cannot duplicate windows or buffers (Aquamacs issue #81).
+;;
+;; Startup order with recovery: preferences (custom.el) load first; the
+;; workspace is restored at the end of glassmacs.el; recovery of unsaved
+;; content is offered afterwards, from `emacs-startup-hook'.  Recovery
+;; never overwrites a buffer or file: unsaved edits return in a separate
+;; untitled "(Recovered)" buffer, and a preserved clean file reuses the
+;; buffer the workspace reopened.  So an abnormal shutdown cannot produce
+;; two views of one file or restore an outdated buffer over a newer
+;; snapshot; `glassmacs-workspace-and-recovery-after-abnormal-shutdown'
+;; tests this, and it must keep passing before restore becomes a default.
 
 (require 'desktop)
 
