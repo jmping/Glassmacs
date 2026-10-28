@@ -1401,4 +1401,4 @@
 
 (ert-deftest glassmacs-hybrid-profile-binds-redo ()
   (glassmacs-test-with-profile 'glassmacs-hybrid
-    (should (eq (lookup-key global-map [?\\s-Z]) 'undo-redo))))
+    (should (eq (lookup-key global-map [?\s-Z]) 'undo-redo))))
