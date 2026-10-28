@@ -249,9 +249,6 @@ This command never saves or discards any contents."
 (defun glassmacs--install-document-menu ()
   "Route macOS File menu open commands through Glassmacs' document policy."
   (when (and (eq system-type 'darwin) (display-graphic-p))
-    (define-key global-map [menu-bar file glassmacs-save-document-as]
-      '(menu-item "Save Document As…" glassmacs-save-document-as
-                  :enable (menu-bar-non-minibuffer-window-p)))
     (define-key global-map [menu-bar file glassmacs-review-unsaved]
       '(menu-item "Review Unsaved Documents…" glassmacs-review-unsaved-documents))
     (define-key global-map [menu-bar file glassmacs-new-in-mode]
