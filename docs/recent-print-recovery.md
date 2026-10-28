@@ -96,3 +96,15 @@ The user-facing preference should be named **Preserve Open Buffers on Quit**, no
 | BUFFERS-05 | Quit, restore, quit again, restore | No duplicate buffers; preserved edits remain intact until explicitly saved or discarded |
 
 These replace any implication in QUIT-04 through QUIT-06 that preserving document buffers requires restoring window layouts or R process state. All are **unimplemented acceptance criteria**, not claims about current Glassmacs behavior.
+
+## Snapshot storage budget — PR #28 implementation gate
+
+Large-file inspection must not silently generate unlimited copies of a document.
+The initial implementation sets two configurable ceilings:
+
+- **8 MiB per modified buffer** (`glassmacs-recovery-max-buffer-bytes`). Clean, file-backed documents are represented by their paths and do not need text snapshots.
+- **256 MiB total recovery-directory storage** (`glassmacs-recovery-max-total-bytes`). This includes manifests and retained snapshot files. Periodic snapshots stop at the ceiling; explicit preservation fails closed rather than silently skipping a modified buffer.
+
+These are *safety ceilings*, not a complete bounded-retention policy. Previously written immutable snapshots remain on disk, so storage stops growing when the ceiling is reached, but the application cannot keep taking new snapshots until space is reclaimed. Never automatically evict a snapshot that might be the only surviving copy of unsaved edits. A subsequent PR pass must add a reference-aware retention index, a user-visible storage inspector, and explicit review/discard controls before claiming automatic cleanup. Consider change detection/deduplication and a per-session quota so repeated idle snapshots of unchanged large buffers do not exhaust the quota.
+
+**Acceptance:** Open a 1 GiB clean local file: no text snapshot should be written merely for viewing. Modify a file beyond the per-buffer limit: preserve-on-quit must cancel safely with the original content still open. Exhaust the global quota: same fail-closed behavior. Test UTF-8 multibyte sizes and filesystem errors.
