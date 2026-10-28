@@ -208,8 +208,10 @@ For R plotting, see the [ESS graphics smoke path](r-workflows.md#ess-r-graphics-
 It uses ordinary R graphics devices and does not add a Glassmacs plot viewer or
 make X11/XQuartz mandatory.
 
-To install the optional Emacs packages explicitly, run `./scripts/bootstrap`.
-It installs packages that are missing under the isolated package directory and
+To install the optional Emacs packages explicitly, run `./scripts/bootstrap`
+(or, in a running Glassmacs, `M-x glassmacs-install-optional-packages`, also on
+the Glassmacs menu). Both use `lisp/glassmacs-packages.el`, the only place the
+package list is defined. It installs packages that are missing under the isolated package directory and
 requires network access when installation is needed. Each package is installed
 independently: if one cannot be installed, the others still are, and the
 failures are listed together at the end with a nonzero exit status. Package
@@ -240,8 +242,8 @@ the Linux development environment used for this change.
 - If startup reports GNU Emacs is missing, install it or set `GLASSMACS_EMACS`
   to its executable. `GLASSMACS_EMACS` selects an executable, not extra
   command-line options; pass options such as `-nw` to the Glassmacs launcher.
-- If ESS or a document mode is unavailable, run `./scripts/bootstrap` while
-  online. If an external tool is missing, install it separately and ensure it
+- If ESS or a document mode is unavailable, choose Glassmacs → Install R &
+  Document Packages… (or run `./scripts/bootstrap`) while online. If an external tool is missing, install it separately and ensure it
   is on `PATH`; Glassmacs does not install R, Quarto, TeX, SSH or Mosh.
 - If package installation fails offline, plain-text startup remains available;
   retry bootstrap when network access is available.

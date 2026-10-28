@@ -24,7 +24,11 @@ Glassmacs is assembled as one top-level `Glassmacs.app` using the complete
 upstream Cocoa GNU Emacs application bundle as its base. The build preserves
 Emacs's `Contents/MacOS/Emacs`, Cocoa resources, Lisp runtime, and upstream
 bundle metadata, then applies the Glassmacs bundle identifier, display name,
-and document declarations. Glassmacs Lisp and its bootstrap are copied into
+and document declarations. `scripts/merge-info-plist` combines rather than
+replaces document types: the Glassmacs R types (`.R`, `.r`, `.Rmd`, `.qmd`,
+`.Rnw`, `.Snw`, `.Rd`) come first and every upstream Emacs type (`.txt`, `.md`,
+`.tex`, `.bib`, source files and so on) is kept, so Finder's Open With offers
+Glassmacs for ordinary text files too. Glassmacs Lisp and its bootstrap are copied into
 `Contents/Resources/Glassmacs`.
 
 `GlassmacsBootstrap` is the bundle's LaunchServices executable. It sets the
@@ -220,20 +224,46 @@ generated state are written there, never into the app bundle. Setting
 launcher `scripts/glassmacs` retains its existing default,
 `~/.config/glassmacs`.
 
-On first use, install the optional ESS and document packages explicitly:
+On first use, install the optional ESS and document packages with
+**Glassmacs → Install R & Document Packages…**. When an R, R Markdown, Quarto,
+Sweave or Rd file opens without its mode, Glassmacs also offers this once per
+session; nothing is downloaded without consent, and documents that opened in a
+basic mode switch to the proper one after installation. The same installation
+(`glassmacs-install-optional-packages`) can be run from Terminal; inside the
+app the bootstrap defaults to the bundled Emacs and this home directory:
 
 ```sh
-GLASSMACS_HOME="$HOME/Library/Application Support/Glassmacs" \
-GLASSMACS_EMACS="/Applications/Glassmacs.app/Contents/MacOS/Emacs" \
-  "/Applications/Glassmacs.app/Contents/Resources/Glassmacs/scripts/bootstrap"
+"/Applications/Glassmacs.app/Contents/Resources/Glassmacs/scripts/bootstrap"
 ```
 
-This step requires network access when packages are missing. It uses the
-isolated Glassmacs package directory; startup itself does not install packages.
+Installation requires network access. It uses the isolated Glassmacs package
+directory; startup itself does not install packages.
+
+### Shell environment for Finder and Dock launches
+
+Apps started from Finder or the Dock inherit launchd's minimal `PATH`
+(`/usr/bin:/bin:/usr/sbin:/sbin`), which does not include CRAN R
+(`/usr/local/bin`), Homebrew (`/opt/homebrew/bin`), MacTeX
+(`/Library/TeX/texbin`) or Quarto. In graphical macOS sessions Glassmacs
+therefore, after loading `custom.el`:
+
+1. runs your login shell once (`$SHELL -l -i -c …` for sh-family shells,
+   `-l` for fish, `-d` for csh/tcsh), which executes your shell startup files,
+   and copies `PATH`, `MANPATH`, locale variables, `R_LIBS`, `R_LIBS_USER`,
+   `TEXINPUTS` and `BIBINPUTS` (`glassmacs-shell-environment-variables`);
+2. appends `glassmacs-standard-tool-directories` that exist but are missing
+   from `PATH`, after the shell's own entries.
+
+The shell gets `glassmacs-shell-environment-timeout` (5 seconds); on timeout
+or failure Glassmacs warns and keeps the inherited environment plus the
+standard directories. Set `glassmacs-import-shell-environment` to nil to skip
+running the shell. `M-x glassmacs-diagnostics` shows the outcome, and
+`M-x glassmacs-import-shell-environment` runs it again. This mirrors
+Aquamacs's `mac-read-environment-vars-from-shell`.
 R, Quarto, TeX, and other command-line tools remain separate dependencies. Set
 `glassmacs-r-executable` in
-`~/Library/Application Support/Glassmacs/custom.el` if R is not found on the
-app's inherited `PATH`, for example:
+`~/Library/Application Support/Glassmacs/custom.el` if R is still not found
+after the shell environment import, for example:
 
 ```elisp
 (setq glassmacs-r-executable "/opt/homebrew/bin/R")
