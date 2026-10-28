@@ -1444,3 +1444,71 @@
                  (lambda () (interactive) (setq printed 'native))))
         (glassmacs-print-document)
         (should (eq printed 'native))))))
+
+(ert-deftest glassmacs-recovery-excludes-process-and-special-buffers ()
+  (with-temp-buffer
+    (text-mode)
+    (should (glassmacs-recovery--eligible-p))
+    (special-mode)
+    (should-not (glassmacs-recovery--eligible-p))
+    (fundamental-mode)
+    (setq buffer-file-name "/ssh:host:/private.R")
+    (should-not (glassmacs-recovery--eligible-p))))
+
+(ert-deftest glassmacs-recovery-preserves-two-distinct-untitled-buffers ()
+  (let* ((glassmacs-recovery-directory (make-temp-file "glassmacs-safe-" t))
+         (first (generate-new-buffer "recovery-note"))
+         (second (generate-new-buffer "recovery-note"))
+         ids)
+    (unwind-protect
+        (progn
+          (with-current-buffer first (insert "first unsaved note"))
+          (with-current-buffer second (insert "second unsaved note"))
+          (glassmacs-recovery--ensure-directory)
+          (let ((one (glassmacs-recovery--snapshot first))
+                (two (glassmacs-recovery--snapshot second)))
+            (setq ids (list (plist-get one :id) (plist-get two :id)))
+            (should-not (equal (car ids) (cadr ids)))
+            (should (equal (with-temp-buffer
+                             (insert-file-contents
+                              (expand-file-name
+                               (plist-get one :snapshot)
+                               glassmacs-recovery-directory))
+                             (buffer-string))
+                           "first unsaved note"))
+            (should (equal (with-temp-buffer
+                             (insert-file-contents
+                              (expand-file-name
+                               (plist-get two :snapshot)
+                               glassmacs-recovery-directory))
+                             (buffer-string))
+                           "second unsaved note"))))
+      (kill-buffer first)
+      (kill-buffer second)
+      (delete-directory glassmacs-recovery-directory t))))
+
+(ert-deftest glassmacs-recovery-failed-preserve-never-quits ()
+  (let ((glassmacs-preserve-open-buffers-on-quit t)
+        (quit-called nil))
+    (cl-letf (((symbol-function 'glassmacs-recovery-preserve)
+               (lambda () (error "Disk unavailable")))
+              ((symbol-function 'save-buffers-kill-emacs)
+               (lambda (&rest _) (setq quit-called t))))
+      (glassmacs-recovery-quit)
+      (should-not quit-called))))
+
+(ert-deftest glassmacs-recovery-success-quit-avoids-save-prompts ()
+  (let ((glassmacs-preserve-open-buffers-on-quit t)
+        (preserved nil) (quit-called nil) (prompt-called nil))
+    (cl-letf (((symbol-function 'glassmacs-recovery-preserve)
+               (lambda () (setq preserved t)))
+              ((symbol-function 'save-buffers-kill-emacs)
+               (lambda (&rest _)
+                 (setq quit-called t)
+                 (save-some-buffers)))
+              ((symbol-function 'save-some-buffers)
+               (lambda (&rest _) (setq prompt-called t))))
+      (glassmacs-recovery-quit)
+      (should preserved)
+      (should quit-called)
+      (should-not prompt-called))))
