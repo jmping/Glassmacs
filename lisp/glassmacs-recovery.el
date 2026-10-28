@@ -22,6 +22,18 @@
   "Seconds between best-effort snapshots of modified document buffers."
   :type 'integer :group 'glassmacs-recovery)
 
+(defcustom glassmacs-recovery-max-buffer-bytes (* 8 1024 1024)
+  "Maximum UTF-8 bytes of a single dirty buffer eligible for a snapshot.
+A larger dirty buffer blocks preserve-on-quit rather than being silently
+omitted.  Clean file-backed buffers require no snapshot."
+  :type 'integer :group 'glassmacs-recovery)
+
+(defcustom glassmacs-recovery-max-total-bytes (* 256 1024 1024)
+  "Maximum snapshot storage budget in bytes.
+A quit that cannot safely fit within this budget fails closed.  Existing
+snapshots are not silently deleted to make room."
+  :type 'integer :group 'glassmacs-recovery)
+
 (defvar glassmacs-recovery--timer nil)
 (defvar glassmacs-recovery--restoring nil)
 (defvar-local glassmacs-recovery--id nil)
@@ -89,6 +101,15 @@ Never snapshot process buffers, remote files, or special buffers."
       (when (file-exists-p temporary)
         (delete-file temporary)))))
 
+(defun glassmacs-recovery--storage-bytes ()
+  "Return total bytes in regular files directly inside the recovery directory."
+  (let ((total 0))
+    (dolist (file (directory-files glassmacs-recovery-directory t
+                                   directory-files-no-dot-files-regexp))
+      (when (and (file-regular-p file) (not (file-symlink-p file)))
+        (cl-incf total (file-attribute-size (file-attributes file)))))
+    total))
+
 (defun glassmacs-recovery--snapshot (buffer)
   "Write a snapshot for modified eligible BUFFER and return its record."
   (with-current-buffer buffer
@@ -97,8 +118,16 @@ Never snapshot process buffers, remote files, or special buffers."
            (path (and dirty (expand-file-name (concat id "-" (format-time-string "%Y%m%d%H%M%S%N") "-" (number-to-string (random most-positive-fixnum)) ".text")
                                              glassmacs-recovery-directory))))
       (when dirty
-        (glassmacs-recovery--write-private
-         path (buffer-substring-no-properties (point-min) (point-max))))
+        (let* ((text (buffer-substring-no-properties (point-min) (point-max)))
+               (bytes (string-bytes (encode-coding-string text 'utf-8))))
+          (when (> bytes glassmacs-recovery-max-buffer-bytes)
+            (error "Recovery snapshot for %s is %d bytes (limit %d); save or explicitly review before quit"
+                   (buffer-name) bytes glassmacs-recovery-max-buffer-bytes))
+          (when (> (+ (glassmacs-recovery--storage-bytes) bytes)
+                   glassmacs-recovery-max-total-bytes)
+            (error "Recovery storage limit reached (%d bytes); save or explicitly review before quit"
+                   glassmacs-recovery-max-total-bytes))
+          (glassmacs-recovery--write-private path text)))
       (list :id id :name (buffer-name) :file buffer-file-name
             :modified dirty :snapshot (and dirty (file-name-nondirectory path))
             :time (float-time)))))
