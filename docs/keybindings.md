@@ -64,6 +64,22 @@ session. The window close button behaves the same way for the documents shown
 only in that window, and Cancel keeps it open. Closing the final window keeps
 Glassmacs running. Command-Q exits the Emacs process.
 
+### R Markdown, Quarto and Sweave documents
+
+In these documents (prose and polymode chunk buffers alike) Glassmacs adds
+RStudio-style shortcuts on Command, leaving ESS's `C-c` bindings alone:
+
+| Shortcut | Command |
+| --- | --- |
+| Command-Shift-Return | Run the R chunk at point |
+| Command-Option-P | Run chunks above point |
+| Command-Option-R | Run all chunks |
+| Command-Option-I | Insert an R chunk |
+| Command-Option-Down / Up | Next / previous R chunk |
+| Command-Option-K | Render (or run an interactive document) |
+
+See [R workflows](r-workflows.md#mixed-prose-and-r-chunks).
+
 This is a practical macOS mapping, not a claim of complete Aquamacs
 compatibility. No Aquamacs source or preference behavior was imported.
 

@@ -38,15 +38,32 @@ jobs:
       - name: Install Emacs, R, ESS, AUCTeX, Hunspell, Shiny and R Markdown
         run: |
           sudo apt-get update
-          sudo apt-get install --yes emacs-nox r-base-core elpa-ess auctex hunspell hunspell-en-us r-cran-shiny r-cran-rmarkdown pandoc
-      - name: Run ERT with real ESS, R and AUCTeX
+          sudo apt-get install --yes emacs-nox r-base-core elpa-ess auctex hunspell hunspell-en-us r-cran-shiny r-cran-rmarkdown pandoc elpa-markdown-mode
+      - name: Install pinned polymode and poly-R
+        # Not packaged for Ubuntu; fetch exact upstream commits so the mixed
+        # document tests run against known versions.
+        run: |
+          fetch() {
+            mkdir -p "$RUNNER_TEMP/elisp/$2"
+            git -C "$RUNNER_TEMP/elisp/$2" init --quiet
+            git -C "$RUNNER_TEMP/elisp/$2" fetch --quiet --depth 1 "https://github.com/$1" "$3"
+            git -C "$RUNNER_TEMP/elisp/$2" checkout --quiet FETCH_HEAD
+          }
+          fetch polymode/polymode polymode 8cb72fa5dcc0d98746c680043dc121edc7621e3a
+          fetch polymode/poly-markdown poly-markdown 2eb00d1d07a9dd5d94c5c12c27714e095b3b142a
+          fetch polymode/poly-noweb poly-noweb 2074950bafd21f7237bc5eb3f92772a3fa7f0701
+          fetch polymode/poly-R poly-R fee0b6e99943fa49ca5ba8ae1a97cbed5ed51946
+      - name: Run ERT with real ESS, R, AUCTeX and polymode
         run: |
           ess_dir=$(dirname "$(dpkg -L elpa-ess | grep '/ess-site.el$' | head -n 1)")
           auctex_dir=$(dirname "$(dpkg -L auctex | grep '/latex.el$' | head -n 1)")
+          markdown_dir=$(dirname "$(dpkg -L elpa-markdown-mode | grep '/markdown-mode.el$' | head -n 1)")
           test -n "$ess_dir"
           test -n "$auctex_dir"
+          test -n "$markdown_dir"
+          poly="$RUNNER_TEMP/elisp"
           # AUCTeX also needs tex-site.el from the site-lisp directory.
-          EMACSLOADPATH="$ess_dir:$auctex_dir:/usr/share/emacs/site-lisp:" ./scripts/test
+          EMACSLOADPATH="$ess_dir:$auctex_dir:$markdown_dir:$poly/polymode:$poly/poly-markdown:$poly/poly-noweb:$poly/poly-R:/usr/share/emacs/site-lisp:" ./scripts/test
 
   macos-launcher:
     runs-on: macos-15

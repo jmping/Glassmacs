@@ -104,7 +104,13 @@ sending against throwaway processes, plus real ESS/R tests for output
 suppression, recovery, interruption and concurrent sessions. These skip unless
 R and ESS are discoverable (`GLASSMACS_SKIP_INTEGRATION=1` forces a skip). The
 dedicated CI job supplies these dependencies, together with AUCTeX and
-Hunspell for the LaTeX and spelling tests. To run locally against system
+Hunspell for the LaTeX and spelling tests, the Shiny and rmarkdown R
+packages with pandoc for the render and Shiny tests (which fetch a real app
+page and render a real `.Rmd`), and markdown-mode plus pinned upstream commits
+of polymode, poly-markdown, poly-noweb and poly-R for the mixed-document tests
+in `tests/test-glassmacs-polymode.el`. Update the commit hashes in
+`.github/workflows/ci.yml` deliberately when moving to newer polymode
+releases. To run locally against system
 packages, add their directories to `EMACSLOADPATH` when invoking
 `scripts/test`; AUCTeX also needs the directory containing `tex-site.el`, for
 example on Debian/Ubuntu:
