@@ -158,11 +158,13 @@ emacs_module_init(struct emacs_runtime *runtime)
       return 1;
     }
 
-  BOOL added = class_addMethod(object_getClass(delegate), selector,
+  /* Add to the delegate's real class, not the key-value observing
+     subclass object_getClass can return (NSKVONotifying_EmacsApp): that
+     subclass goes away when its observers do.  */
+  Class delegate_class = [delegate class];
+  BOOL added = class_addMethod(delegate_class, selector,
                                (IMP) glassmacs_application_should_handle_reopen,
                                description.types);
-  glassmacs_trace ("installed; delegate %s, reopen callback added: %d",
-                   class_getName(object_getClass(delegate)), (int) added);
   if (!added && ![delegate respondsToSelector:selector])
     {
       fputs("Glassmacs lifecycle bridge: could not install Cocoa reopen callback\n",
@@ -172,8 +174,18 @@ emacs_module_init(struct emacs_runtime *runtime)
 
   SEL menu_down = @selector(menuDown:);
   if (![delegate respondsToSelector:menu_down])
-    class_addMethod(object_getClass(delegate), menu_down,
+    class_addMethod(delegate_class, menu_down,
                     (IMP) glassmacs_menu_down, "@@:@");
+
+  /* NSApplication notes which optional methods its delegate implements
+     when the delegate is set, which Emacs did long before this module
+     loaded.  Set it again so a Dock click reaches the reopen callback.  */
+  application.delegate = nil;
+  application.delegate = delegate;
+  glassmacs_trace ("installed; delegate %s, reopen callback added: %d, "
+                   "delegate responds: %d",
+                   class_getName(delegate_class), (int) added,
+                   (int) [application.delegate respondsToSelector:selector]);
   glassmacs_install_windowless_key_monitor();
 
   [application setApplicationIconImage:icon];
