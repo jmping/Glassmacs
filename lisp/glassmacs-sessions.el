@@ -498,11 +498,13 @@ In a document with R chunks, the target is cleared for the whole document."
           (switch-to-buffer buffer))
         (select-frame-set-input-focus frame)))
      ((eq glassmacs-r-console-placement 'split-right)
-      (pop-to-buffer buffer '((display-buffer-reuse-window
-                               display-buffer-below-selected)
-                              (window-height . 0.4))))
+      (let ((window (split-window-right)))
+        (set-window-buffer window buffer)
+        (select-window window)))
      ((eq glassmacs-r-console-placement 'split-below)
-      (pop-to-buffer buffer '(display-buffer-below-selected)))
+      (let ((window (split-window-below)))
+        (set-window-buffer window buffer)
+        (select-window window)))
      (t (switch-to-buffer buffer)))))
 
 (defun glassmacs-r-start-or-switch-console ()
