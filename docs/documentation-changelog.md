@@ -14,7 +14,8 @@
 - **New DOC-AQUA4-AUDIT** (`docs/aquamacs4-modern-macos-risk-audit.md`, Informational): source-traced Aquamacs 4 audit; registered in the index.
 - **DOC-DEV:** acceptance layers, the GUI harness and its terminal self-test, the matrix check, and running the harness on a Mac.
 - **DOC-MAC-LAUNCHER:** what CI now verifies on the packaged app, the launcher `argv[0]` fix, and `M-x glassmacs-self-check`.
-- **DOC-AQUA-COMPAT:** dated acceptance pass with the defects it found.
+- **DOC-AQUA-COMPAT:** dated acceptance pass with the defects it found, including the four the packaged-app GUI run found.
+- **DOC-MAC-LAUNCHER, DOC-ARCH, DOC-DEV, DOC-KEYS:** the Dock reopen callback is now checked by the packaged-app GUI run; clean-machine checks remain manual.
 - No other authority or ownership changes.
 
 ---

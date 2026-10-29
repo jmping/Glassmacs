@@ -247,8 +247,9 @@ maps to restoring the retained final frame or creating one. Reopen is handled
 through that event rather than a competing focus hook, so Cocoa session
 restoration of already-visible windows does not create an extra frame. The Lisp
 lifecycle tests cover these command decisions; they do not validate runtime
-Objective-C method installation or Dock delivery. Build and sign the standalone
-bundle before the required interactive lifecycle check.
+Objective-C method installation or Dock delivery. The GUI acceptance harness
+does, on the packaged app: set `GLASSMACS_LIFECYCLE_TRACE` to a file and the
+module records whether it installed the callback and each reopen it receives.
 
 Run `M-x glassmacs-diagnostics` for a local report of Emacs/OS/window-system,
 Glassmacs home, ESS/R/Rscript availability and graphics guidance. It does not

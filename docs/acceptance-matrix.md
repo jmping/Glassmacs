@@ -140,7 +140,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 - Evidence: [Aquamacs #270](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/270)
 - Layers: A (batch), C (GUI in CI), D (manual)
 - Tests: `ert:glassmacs-macos-cocoa-close-of-final-frame-does-not-quit`, `ert:glassmacs-macos-reopen-after-cocoa-close-shows-hidden-frame`, `ert:glassmacs-windowless-dock-reopen-creates-no-buffers`, `gui:last-window-close-and-dock-reopen`
-- Not fully automated because: CI delivers the close as Cocoa's delete-frame event and reopens with open -a; a real click and Dock click need a person.
+- Not fully automated because: CI delivers the close as Cocoa's delete-frame event and reopens by clicking the Dock icon through System Events; a person still has to click the close button on a clean machine.
 - Manual: see [checklist](macos-acceptance-checklist.md#life-001)
 
 ## LIFE-002

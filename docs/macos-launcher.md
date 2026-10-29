@@ -66,7 +66,9 @@ buffer changes. The retained frame is restored by the native Cocoa
 Dock-reopen callback. That callback is a small Emacs dynamic module,
 compiled from `macos/GlassmacsLifecycle.m` against the bundled Emacs 31 module
 header and AppKit. It adds `applicationShouldHandleReopen:hasVisibleWindows:`
-to Emacs's existing `EmacsApp` delegate and asks Emacs's existing `newFrame:`
+to Emacs's existing `EmacsApp` delegate class, then sets the delegate again,
+because AppKit only notices a delegate's optional methods when the delegate is
+set, which Emacs did before the module loaded. It asks Emacs's existing `newFrame:`
 event path to reopen only when Cocoa reports no visible windows. Emacs Lisp
 maps that native event to `glassmacs-reopen`, which restores the retained frame
 or creates a frame when none was retained. For the no-window case, the
@@ -99,10 +101,11 @@ for example because `Glassmacs.icns` is not in the main bundle) is also only a
 warning: startup continues, so later modules, `custom.el` and the keyboard
 profile still load. `scripts/validate-macos-app` rejects a
 bundle missing the module.
-Native callback registration, Dock activation, final-window close, and state
-restoration still require interactive verification in the signed Glassmacs
-application on macOS; ERT and bundle structure checks alone do not prove these
-behaviors.
+ERT and bundle structure checks alone do not prove these behaviors. The
+`macos-gui-acceptance` CI job checks the packaged app: it closes the final
+window, clicks the Dock icon through System Events, and checks that the
+retained frame returns, also from full screen. Real clicks on a clean machine
+remain the manual checks in the [macOS checklist](macos-acceptance-checklist.md).
 
 This decision is informed by GNU Emacs's Cocoa bundle structure and
 self-contained installation instructions: the app bundle includes the

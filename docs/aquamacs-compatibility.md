@@ -85,6 +85,27 @@ for what needs a person. Building the tests found and fixed:
   filter called `process-get` on nil; Glassmacs lists no templates until an R
   session exists.
 
+Running the 15 GUI scenarios on the packaged app found four more:
+
+- **Dock reopen never reached Glassmacs** (LIFE-001, FULL-001): the module
+  added its reopen callback after Emacs had set the application delegate, and
+  AppKit only notices a delegate's optional methods when the delegate is set,
+  so a Dock click after closing the last window did nothing. The module now
+  sets the delegate again.
+- **Startup hung when restoring a workspace** (RESTORE-001): the optional
+  package offer asked its question while `init.el` was still loading, which
+  blocked the restored windows. The offer now waits until startup has
+  finished and Emacs is idle.
+- **An empty `~/.emacs.d` was created** (LAUNCH-001): Emacs created its
+  default user directory at startup. The launcher now passes
+  `--init-directory` with the Glassmacs home.
+- **Menu toggles and radio items** (MENU-001): some `:button` specs were not
+  dotted pairs, so the Cocoa menu could not show their state.
+
+On 2026-10-29 all 15 GUI scenarios passed on the packaged app on CI (macOS
+15.7.9, arm64), twice. Clean-machine checks remain NOT RUN; see the
+[checklist](macos-acceptance-checklist.md).
+
 ## Tier 3 research workflows — 2026-10-28
 
 - **Mixed prose/code documents (Glassmacs extension):** `glassmacs-chunks.el` adds chunk commands, shortcuts, a Document menu and toolbar to R Markdown, Quarto and Sweave, with or without polymode; Sweave uses poly-R's `poly-noweb+r-mode` because ESS 18.10 removed `Rnw-mode`. Following the literal-text policy, markdown-mode's electric backquote is disabled and chunk code is excluded from spelling. Rendering opens its output; Shiny apps and `runtime: shiny` documents open in the browser once listening.

@@ -138,7 +138,7 @@ automated = "partial"
 packaged_app = "ci"
 clean_machine = "NOT RUN"
 manual = ["Click the red close button of the last window: Glassmacs stays in the Dock and menu bar.", "Click the Dock icon: the window returns, with no new buffers."]
-rationale = "CI delivers the close as Cocoa's delete-frame event and reopens with open -a; a real click and Dock click need a person."
+rationale = "CI delivers the close as Cocoa's delete-frame event and reopens by clicking the Dock icon through System Events; a person still has to click the close button on a clean machine."
 
 [[check]]
 id = "LIFE-002"
