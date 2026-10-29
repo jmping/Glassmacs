@@ -26,10 +26,112 @@ test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundleExecutable' "$plist")" = 
 test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundleIconFile' "$plist")" = Glassmacs
 test "$(/usr/bin/env "$plist_buddy" -c 'Print :LSMinimumSystemVersion' "$plist")" = 13.0
 
-for extension in R r Rmd qmd Rnw; do
-  /usr/bin/env "$plist_buddy" -c 'Print :CFBundleDocumentTypes:0:CFBundleTypeExtensions' \
-    "$plist" | grep -Eq "^[[:space:]]*${extension}[[:space:]]*$"
-done
+
+# Static packaged-app checks (acceptance matrix DIST-001 to DIST-004,
+# ASSOC-001): document types, architectures, build-machine references,
+# permissions and the code signature.  Mach-O headers are read directly,
+# so the checks run with mocked tools on Linux too.
+GLASSMACS_REQUIRED_ARCHITECTURES=${GLASSMACS_REQUIRED_ARCHITECTURES:-arm64 x86_64} \
+python3 - "$contents" "$root" <<'PY'
+import os
+import plistlib
+import stat
+import sys
+from pathlib import Path
+
+contents = Path(sys.argv[1]).resolve()
+root = Path(sys.argv[2]).resolve()
+sys.path.insert(0, str(root / "scripts"))
+from macos_macho import discover_macho_binaries, macho_architectures
+
+def fail(message):
+    sys.exit(f"Packaged-app check failed: {message}")
+
+# Every document type Glassmacs declares must survive the Info.plist merge,
+# and only one instance may run, so Finder opens reach the running app.
+bundle_plist = plistlib.loads((contents / "Info.plist").read_bytes())
+source_plist = plistlib.loads((root / "macos/Info.plist").read_bytes())
+declared = {extension for entry in bundle_plist.get("CFBundleDocumentTypes", [])
+            for extension in entry.get("CFBundleTypeExtensions", [])}
+expected = {extension for entry in source_plist.get("CFBundleDocumentTypes", [])
+            for extension in entry.get("CFBundleTypeExtensions", [])}
+if expected - declared:
+    fail(f"document types missing from Info.plist: {sorted(expected - declared)}")
+if bundle_plist.get("LSMultipleInstancesProhibited") is not True:
+    fail("LSMultipleInstancesProhibited must be true so documents open in the running app")
+
+# Glassmacs's own binaries and Emacs must contain every supported architecture.
+required = set(os.environ["GLASSMACS_REQUIRED_ARCHITECTURES"].split())
+own = [contents / "MacOS/GlassmacsBootstrap",
+       contents / "Resources/Glassmacs/macos/libglassmacs-lifecycle.dylib"]
+for binary in own + [contents / "MacOS/Emacs"]:
+    try:
+        architectures = macho_architectures(binary)
+    except RuntimeError as error:
+        fail(str(error))
+    if required - architectures:
+        fail(f"{binary.relative_to(contents)} lacks {sorted(required - architectures)} "
+             f"(has {sorted(architectures)})")
+
+binaries = discover_macho_binaries(contents, progress_interval=0)
+counts = {}
+for binary in binaries:
+    key = " ".join(sorted(macho_architectures(binary)))
+    counts[key] = counts.get(key, 0) + 1
+print("Mach-O architectures: " + "; ".join(f"{k}: {v}" for k, v in sorted(counts.items())))
+
+# Build-machine references.  Runtime linkage outside the bundle is
+# rejected by the dependency check above.  Here, fail on references that
+# tie the app to one machine: its own location (not relocatable) anywhere,
+# or this build's checkout or temporary directories inside the binaries
+# Glassmacs compiles.  Upstream binaries legitimately embed build paths in
+# strings (libgccjit's /nix/store gcc driver paths, used only for
+# just-in-time native compilation, which Glassmacs disables), so prefixes
+# such as /nix/store, /opt/homebrew and /usr/local are counted, not failed.
+app_path = str(contents.parent).encode()
+build_paths = [str(root).encode(), b"/tmp/glassmacs-build.", b"/private/tmp/glassmacs-build."]
+if os.environ.get("RUNNER_TEMP"):
+    build_paths.append(os.environ["RUNNER_TEMP"].encode())
+informational = [b"/nix/store/", b"/opt/homebrew/", b"/usr/local/", b"/Users/"]
+reported = {prefix: 0 for prefix in informational}
+own_resolved = {path.resolve() for path in own}
+for binary in binaries:
+    data = binary.read_bytes()
+    if app_path in data:
+        fail(f"{binary.relative_to(contents)} refers to the app's own location {app_path.decode()}")
+    if binary in own_resolved:
+        for path in build_paths:
+            if path in data:
+                fail(f"{binary.relative_to(contents)} refers to the build machine path {path.decode()}")
+    for prefix in informational:
+        if prefix in data:
+            reported[prefix] += 1
+print("Mach-O files mentioning absolute prefixes (informational): "
+      + ", ".join(f"{p.decode()} {n}" for p, n in reported.items()))
+
+# Permissions: nothing world-writable or set-id; executables executable.
+for directory, directories, files in os.walk(contents.parent):
+    for name in directories + files:
+        path = Path(directory) / name
+        mode = path.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            continue
+        if mode & stat.S_IWOTH:
+            fail(f"world-writable: {path.relative_to(contents.parent)}")
+        if mode & (stat.S_ISUID | stat.S_ISGID):
+            fail(f"set-user or set-group ID: {path.relative_to(contents.parent)}")
+for path in (contents / "MacOS").iterdir():
+    if path.resolve() in set(binaries) and not os.access(path, os.X_OK):
+        fail(f"not executable: {path.relative_to(contents)}")
+print(f"Checked document types, architectures ({' '.join(sorted(required))}), "
+      f"build-machine references and permissions")
+PY
+
+codesign=${GLASSMACS_CODESIGN:-/usr/bin/codesign}
+if ! /usr/bin/env "$codesign" --verify --deep --strict "$app"; then
+  printf 'Packaged-app check failed: the code signature does not verify: %s\n' "$app" >&2
+  exit 1
+fi
 
 GLASSMACS_OTOOL=${GLASSMACS_OTOOL:-/usr/bin/otool} \
 python3 - "$contents" "$emacs" "$root/scripts" <<'PY'

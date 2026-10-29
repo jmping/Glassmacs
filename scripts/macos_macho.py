@@ -98,6 +98,61 @@ def _image_filetypes(file_handle, magic):
     return filetypes
 
 
+CPU_TYPE_NAMES = {0x01000007: "x86_64", 0x0100000C: "arm64", 7: "i386", 12: "arm"}
+
+
+def _architecture_name(cputype, cpusubtype):
+    name = CPU_TYPE_NAMES.get(cputype, f"cputype-{cputype:#x}")
+    subtype = cpusubtype & 0x00FFFFFF
+    if name == "arm64" and subtype == 2:
+        return "arm64e"
+    if name == "x86_64" and subtype == 8:
+        return "x86_64h"
+    return name
+
+
+def macho_architectures(path):
+    """Return the set of architecture names in the Mach-O file at PATH.
+
+    Read from the Mach-O or universal header itself, so no Apple tool is
+    needed.  Raise RuntimeError when PATH is not a Mach-O file.
+    """
+    with open(path, "rb") as file_handle:
+        header = file_handle.read(8)
+        magic = header[:4]
+        thin = {
+            b"\xfe\xed\xfa\xce": "big", b"\xce\xfa\xed\xfe": "little",
+            b"\xfe\xed\xfa\xcf": "big", b"\xcf\xfa\xed\xfe": "little",
+        }
+        if magic in thin:
+            file_handle.seek(4)
+            fields = file_handle.read(8)
+            if len(fields) < 8:
+                raise RuntimeError(f"Truncated Mach-O header: {path}")
+            order = thin[magic]
+            return {_architecture_name(int.from_bytes(fields[0:4], order),
+                                       int.from_bytes(fields[4:8], order))}
+        fat = {
+            b"\xca\xfe\xba\xbe": ("big", 20), b"\xbe\xba\xfe\xca": ("little", 20),
+            b"\xca\xfe\xba\xbf": ("big", 32), b"\xbf\xba\xfe\xca": ("little", 32),
+        }
+        if magic not in fat:
+            raise RuntimeError(f"Not a Mach-O file: {path}")
+        order, entry_size = fat[magic]
+        count = int.from_bytes(header[4:8], order)
+        if count == 0 or count > 4096:
+            raise RuntimeError(f"Invalid universal Mach-O slice count {count}: {path}")
+        entries = file_handle.read(count * entry_size)
+        if len(entries) != count * entry_size:
+            raise RuntimeError(f"Truncated universal Mach-O header: {path}")
+        return {
+            _architecture_name(
+                int.from_bytes(entries[i * entry_size:i * entry_size + 4], order),
+                int.from_bytes(entries[i * entry_size + 4:i * entry_size + 8], order))
+            for i in range(count)
+        }
+
+
 def is_runtime_macho_image(file_handle, magic):
     """Return whether a Mach-O file contains only runtime-loadable image slices."""
     filetypes = _image_filetypes(file_handle, magic)
