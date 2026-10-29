@@ -1571,6 +1571,75 @@ not written into the directory Emacs started in."
   (let ((process-environment (cons "GLASSMACS_HOME=/tmp/glassmacs-home" process-environment)))
     (should (equal (glassmacs--default-home) "/tmp/glassmacs-home/"))))
 
+(ert-deftest glassmacs-preference-toggles-are-saved-in-glassmacs-home ()
+  "Glassmacs starts with -Q; its preference commands must still save.
+Emacs refuses to save customizations when it thinks no init file was
+read, so without Glassmacs recording its init.el, toggles changed only
+the session."
+  (should (equal user-init-file (expand-file-name "init.el" glassmacs-root)))
+  (should (equal (custom-file t) custom-file))
+  (let* ((home (file-name-as-directory (make-temp-file "glassmacs-toggles-" t)))
+         (custom-file (expand-file-name "custom.el" home))
+         (original glassmacs-right-option-types-characters))
+    (unwind-protect
+        (progn
+          (glassmacs-toggle-right-option-types-characters)
+          (should (string-match-p "glassmacs-right-option-types-characters"
+                                  (with-temp-buffer
+                                    (insert-file-contents custom-file)
+                                    (buffer-string)))))
+      (customize-set-variable 'glassmacs-right-option-types-characters original)
+      (put 'glassmacs-right-option-types-characters 'saved-value nil)
+      (delete-directory home t))))
+
+(ert-deftest glassmacs-safe-local-variables-are-saved-in-glassmacs-home ()
+  "Answering \"!\" to a file's local variables saves them in the Glassmacs
+custom file, so the choice survives relaunch without touching ~/.emacs.d
+(Aquamacs #251)."
+  (let* ((home (file-name-as-directory (make-temp-file "glassmacs-safe-locals-" t)))
+         (custom-file (expand-file-name "custom.el" home))
+         (safe-local-variable-values nil))
+    (unwind-protect
+        (progn
+          (customize-push-and-save 'safe-local-variable-values '((fill-column . 72)))
+          (should (file-readable-p custom-file))
+          (should (string-match-p "(fill-column \\. 72)"
+                                  (with-temp-buffer
+                                    (insert-file-contents custom-file)
+                                    (buffer-string)))))
+      (put 'safe-local-variable-values 'saved-value nil)
+      (delete-directory home t))))
+
+(ert-deftest glassmacs-files-round-trip-encodings-and-line-endings ()
+  "Opening and saving a file after an edit keeps its encoding, byte-order
+mark and line endings."
+  (let ((directory (make-temp-file "glassmacs-encodings-" t))
+        (glassmacs-offer-package-installation nil))
+    (unwind-protect
+        (dolist (case `(("utf8-bom.txt" ,(encode-coding-string "\ufeffré\n" 'utf-8))
+                        ("latin1.txt" ,(encode-coding-string "café\n" 'latin-1))
+                        ("crlf.R" "x <- 1\r\ny <- 2\r\n")
+                        ("utf8.R" ,(encode-coding-string "# naïve ✓\nx <- 1\n" 'utf-8))))
+          (let ((file (expand-file-name (car case) directory))
+                (original (cadr case)))
+            (let ((coding-system-for-write 'binary))
+              (write-region original nil file))
+            (with-current-buffer (find-file-noselect file)
+              (goto-char (point-max))
+              (insert "z")
+              (delete-char -1)
+              (set-buffer-modified-p t)
+              (save-buffer)
+              (kill-buffer))
+            (should (equal (list (car case)
+                                 (with-temp-buffer
+                                   (set-buffer-multibyte nil)
+                                   (let ((coding-system-for-read 'binary))
+                                     (insert-file-contents file))
+                                   (buffer-string)))
+                           (list (car case) original)))))
+      (delete-directory directory t))))
+
 (ert-deftest glassmacs-home-is-created-when-missing ()
   (let* ((parent (make-temp-file "glassmacs-home-parent-" t))
          (glassmacs-home (file-name-as-directory
