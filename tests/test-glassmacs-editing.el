@@ -177,6 +177,25 @@ events.  It is turned off again afterwards."
                        (buffer-string)))
                    "x <- 2\n"))))
 
+(ert-deftest glassmacs-editing-file-following-polls-on-macos ()
+  "On macOS, files are polled rather than watched (Aquamacs #245), unless
+the user chose otherwise."
+  (let ((auto-revert-use-notify t))
+    (let ((system-type 'darwin))
+      (glassmacs-editing--apply-file-following))
+    (should-not auto-revert-use-notify))
+  (let ((auto-revert-use-notify t))
+    (let ((system-type 'gnu/linux))
+      (glassmacs-editing--apply-file-following))
+    (should auto-revert-use-notify))
+  (let ((auto-revert-use-notify t))
+    (put 'auto-revert-use-notify 'saved-value '(t))
+    (unwind-protect
+        (let ((system-type 'darwin))
+          (glassmacs-editing--apply-file-following)
+          (should auto-revert-use-notify))
+      (put 'auto-revert-use-notify 'saved-value nil))))
+
 (ert-deftest glassmacs-editing-file-following-is-interactive-and-optional ()
   (unwind-protect
       (progn

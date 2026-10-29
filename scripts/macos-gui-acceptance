@@ -742,28 +742,36 @@ def clipboard_round_trip(ctx):
 
 @scenario("external-file-changes", ["REVERT-001"])
 def external_file_changes(ctx):
-    """A file changed by another program shows its new contents without any
-    action; a buffer with unsaved edits is never reverted, and saving it
-    asks before overwriting the other program's file."""
+    """A file changed by another program, in place or replaced by rename,
+    shows its new contents without any action; a buffer with unsaved edits
+    is never reverted, and saving it asks before overwriting the other
+    program's file."""
     harness = ctx.harness
     document = harness.document("changed elsewhere.R", "a <- 1\n")
     instance = harness.launch(harness.new_home("revert"))
     ctx.ready(instance)
     emacs = instance.emacs
     emacs.eval(f"(find-file {el(document)})")
-    library = emacs.eval("(bound-and-true-p file-notify--library)")
-    ctx.note(f"file notification library: {library or 'none (polling)'}")
+    mode = emacs.eval("(list :notify auto-revert-use-notify :interval auto-revert-interval "
+                      ":library (bound-and-true-p file-notify--library))")
+    ctx.note(f"file following: {mode}")
     time.sleep(1.5)
     document.write_text("a <- 2\n")
     emacs.wait(f"(equal (glassmacs-acceptance-buffer-text (find-buffer-visiting {el(document)})) "
                f"\"a <- 2\\n\")", "the buffer to show the file's new contents", timeout=20)
+    # Git and many programs write a new file and rename it over the old one.
+    replacement = document.with_name("changed elsewhere.R.new")
+    replacement.write_text("a <- 2.5\n")
+    os.replace(replacement, document)
+    emacs.wait(f"(equal (glassmacs-acceptance-buffer-text (find-buffer-visiting {el(document)})) "
+               f"\"a <- 2.5\\n\")", "the buffer to follow a file replaced by rename", timeout=20)
     emacs.eval(f"(with-current-buffer (find-buffer-visiting {el(document)}) "
                f"(goto-char (point-max)) (insert \"# mine\\n\"))")
     time.sleep(1.5)
     document.write_text("a <- 3\n")
     time.sleep(8)
     text = emacs.eval(f"(glassmacs-acceptance-buffer-text (find-buffer-visiting {el(document)}))")
-    ctx.expect(text == "a <- 2\n# mine\n", f"Unsaved edits were replaced: {text!r}")
+    ctx.expect(text == "a <- 2.5\n# mine\n", f"Unsaved edits were replaced: {text!r}")
     declined = emacs.eval(f"""(with-current-buffer (find-buffer-visiting {el(document)})
                                 (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
                                           ((symbol-function 'ask-user-about-supersession-threat)

@@ -86,9 +86,10 @@ This enables `pixel-scroll-precision-mode' in graphical sessions."
 This enables `global-auto-revert-mode', so a file rewritten by Git, R, a
 renderer or another editor shows its new contents.  Emacs never reverts a
 buffer with unsaved changes; saving such a buffer after the file changed
-on disk asks before overwriting.  macOS file notifications are used, with
-polling as the fallback; remote (TRAMP) files are not polled.  Batch
-sessions never follow file changes."
+on disk asks before overwriting.  On macOS, files are checked every
+`auto-revert-interval' seconds rather than through file notifications
+(see `glassmacs-editing--apply-file-following'); remote (TRAMP) files are
+not checked.  Batch sessions never follow file changes."
   :type 'boolean
   :set #'glassmacs-editing--set-and-apply
   :group 'glassmacs-editing)
@@ -130,6 +131,23 @@ A `backup-directory-alist' set by the user is never replaced."
   (when (fboundp mode)
     (funcall mode (if enable 1 -1))))
 
+(defvar auto-revert-use-notify)
+
+(defun glassmacs-editing--apply-file-following ()
+  "On macOS, check followed files by polling instead of file notifications.
+Emacs's macOS notifications (kqueue) hold an open file descriptor per
+watched file, and apps started from Finder get a low descriptor limit,
+so many open documents can exhaust it; replacing a file by renaming
+another over it, as Git and many programs do, can also go unnoticed.
+Aquamacs 4 met this and turned notifications off (Aquamacs issue #245).
+Polling a few seconds apart costs one stat per open file.  A value the
+user set is kept."
+  (when (and (eq system-type 'darwin)
+             (not (get 'auto-revert-use-notify 'saved-value))
+             (not (get 'auto-revert-use-notify 'customized-value)))
+    (require 'autorevert)
+    (setq auto-revert-use-notify nil)))
+
 (defun glassmacs-editing-apply ()
   "Apply the Glassmacs editing options to the running session."
   (glassmacs-editing--enable 'delete-selection-mode
@@ -146,6 +164,7 @@ A `backup-directory-alist' set by the user is never replaced."
   (glassmacs-editing--enable 'save-place-mode glassmacs-remember-positions)
   (glassmacs-editing--enable 'savehist-mode glassmacs-remember-positions)
   (glassmacs-editing--apply-backups)
+  (glassmacs-editing--apply-file-following)
   ;; Only interactive sessions follow file changes.  In batch Emacs
   ;; nothing reads input, so queued file-notification events pile up and
   ;; can keep `accept-process-output' loops from running process sentinels.

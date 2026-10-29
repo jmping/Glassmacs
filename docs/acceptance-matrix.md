@@ -266,11 +266,11 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 
 ## REVERT-001
 
-**Files changed by other programs update; unsaved edits are kept** (P1). Found by this audit: Glassmacs had no auto-revert; added (glassmacs-follow-file-changes).
+**Files changed by other programs update; unsaved edits are kept** (P1). Found by this audit: Glassmacs had no auto-revert; added (glassmacs-follow-file-changes). On macOS it polls, as Aquamacs 4 settled on: kqueue notifications need a descriptor per file and miss files replaced by rename.
 
 - Evidence: [Aquamacs #245](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/245)
 - Layers: A (batch), C (GUI in CI)
-- Tests: `ert:glassmacs-editing-follows-external-file-changes`, `ert:glassmacs-editing-external-change-never-discards-unsaved-edits`, `ert:glassmacs-editing-file-following-is-interactive-and-optional`, `gui:external-file-changes`
+- Tests: `ert:glassmacs-editing-follows-external-file-changes`, `ert:glassmacs-editing-external-change-never-discards-unsaved-edits`, `ert:glassmacs-editing-file-following-is-interactive-and-optional`, `ert:glassmacs-editing-file-following-polls-on-macos`, `gui:external-file-changes`
 
 ## NATIVE-001
 
