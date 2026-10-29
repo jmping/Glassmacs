@@ -258,9 +258,7 @@ class Harness:
         while not port_file.exists():
             if time.monotonic() > deadline:
                 leftovers = self.app_processes()
-                for pid in leftovers:
-                    print(f"   windows of {pid}: {self.front_window_text(pid)!r}", flush=True)
-                self.screenshot(f"launch-{self.launch_count}-timeout")
+                self.diagnose_stuck_launch(leftovers, port_file, log)
                 self.kill_leftovers()
                 raise Failure(f"Glassmacs did not start its acceptance driver within "
                               f"{LAUNCH_TIMEOUT}s (app processes then: {leftovers}); "
@@ -344,6 +342,41 @@ class Harness:
 
     def bundle_id(self):
         return self._info("CFBundleIdentifier")
+
+    def diagnose_stuck_launch(self, pids, port_file, log):
+        """Record why a launch's driver did not start: whether Emacs runs,
+        what it is doing, whether anything is listening, what it shows."""
+        name = f"launch-{self.launch_count}-stuck"
+        lines = [f"port file exists: {port_file.exists()}",
+                 f"driver log: {self.log_tail(self.output / f'driver-{self.launch_count}.log', 1500)!r}",
+                 f"app output: {self.log_tail(log)!r}",
+                 f"app processes: {pids}"]
+        for pid in pids:
+            for label, command in (
+                    ("ps", ["ps", "-o", "pid,ppid,stat,etime,command", "-p", str(pid)]),
+                    ("listening", ["lsof", "-nP", "-a", "-p", str(pid), "-iTCP", "-sTCP:LISTEN"])):
+                try:
+                    out = run(command, timeout=20, check=False)
+                    lines.append(f"{label} {pid}: {(out.stdout + out.stderr).strip()!r}")
+                except Failure as error:
+                    lines.append(f"{label} {pid}: {error}")
+            lines.append(f"windows {pid}: {self.front_window_text(pid)!r}")
+            sample = self.output / f"{name}-{pid}-sample.txt"
+            try:
+                run(["sample", str(pid), "2", "-file", str(sample)], timeout=60, check=False)
+                text = sample.read_text(errors="replace") if sample.exists() else ""
+                # The main thread's stack shows where startup is blocked.
+                main = text.split("Thread_", 2)
+                lines.append(f"sample {pid} (main thread excerpt): "
+                             f"{(main[1] if len(main) > 1 else text)[:2500]!r}")
+            except Failure as error:
+                lines.append(f"sample {pid}: {error}")
+        shot = self.screenshot(name)
+        lines.append(f"screenshot: {shot}")
+        report = "\n".join(lines)
+        (self.output / f"{name}.txt").write_text(report)
+        for line in lines:
+            print(f"   {line}", flush=True)
 
     def front_window_text(self, pid):
         """Return the text of the app's windows and dialogs (Accessibility)."""
@@ -976,7 +1009,10 @@ def crash_restore_and_recovery(ctx):
     recovery = Path(emacs.eval("glassmacs-recovery-directory"))
     snapshot_files = sorted(p.name for p in recovery.iterdir())
     ctx.expect(snapshot_files, "No crash-recovery snapshot was written")
+    crashed_pid = instance.pid
     instance.crash()
+    ctx.note(f"killed pid {crashed_pid} with SIGKILL; it exited; "
+             f"app processes before relaunch: {harness.app_processes()}")
     second = harness.launch(home, files=[incoming])
     emacs = second.emacs
     emacs.wait("(glassmacs-acceptance-prompt-matches-p \"crash-recovery\")",
