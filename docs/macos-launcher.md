@@ -14,7 +14,7 @@ Implemented capabilities include native application/menu/window infrastructure; 
 > **Status:** Informational<br>
 > **Owner:** Glassmacs maintainers<br>
 > **Effective date:** 2026-10-20<br>
-> **Last reviewed:** 2026-10-28<br>
+> **Last reviewed:** 2026-10-29<br>
 > **Coverage:** Building and operating the standalone Cocoa application<br>
 > **Supersedes:** Optional Swift launcher guide
 
@@ -346,7 +346,10 @@ diagnostics, the bundle bootstrap forwards its command-line arguments:
   --batch --eval '(princ emacs-version)'
 ```
 
-Once Emacs starts, use `M-x glassmacs-diagnostics`, inspect `*Messages*` and
+Once Emacs starts, use `M-x glassmacs-diagnostics` and `M-x glassmacs-self-check`
+(the in-app acceptance checks: native-code policy, literal text entry, file
+following, environment import, spell checker, startup warnings and the menus
+of the current buffer; it runs no programs and changes nothing), inspect `*Messages*` and
 `*Warnings*`, and check package initialization errors. Bootstrap failures are
 written to standard error; when launched from Finder, inspect them in Console
 if available. To debug a build, run
@@ -398,7 +401,20 @@ test pass.
 
 ## Verification and limitations
 
-The macOS CI job validates build inputs, bundle structure and metadata, direct
+**2026-10-29:** CI now also runs static checks of the packaged app
+(architectures, build-machine references, permissions, code signature,
+document types), checks that the app does not load the user's own
+`~/.emacs.d` init files, and runs GUI scenarios against the packaged app
+through LaunchServices (`macos-gui-acceptance` job). What each check covers,
+how it is exercised, and what still needs a person is in the
+[acceptance matrix](acceptance-matrix.md) and the
+[manual checklist](macos-acceptance-checklist.md); the GUI job's summary and
+artifact have the latest results. Building these checks found that the
+bootstrap passed `-Q` as `argv[0]`, so builds before this fix
+ignored `-Q` and loaded the user's `~/.emacs.d` init files and packages; the
+bootstrap now passes the Emacs path as `argv[0]`.
+
+Earlier, the macOS CI job validated build inputs, bundle structure and metadata, direct
 Mach-O dependencies, Swift tests, batch startup, existing ERT tests, and app
 relocation. These are **build and batch checks, not interactive GUI tests**.
 The signed app was launched through LaunchServices during Milestone 5, but no

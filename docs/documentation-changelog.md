@@ -8,6 +8,16 @@
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
 
+## 2026-10-29 — acceptance gates (issue #34)
+
+- **New DOC-ACCEPT** (`docs/acceptance-matrix.md`) and **DOC-MAC-CHECKLIST** (`docs/macos-acceptance-checklist.md`), both generated from `acceptance/matrix.toml` by `scripts/acceptance-matrix`; registered in the index. The matrix is the authority for acceptance status; other documents link to it rather than restate results.
+- **DOC-DEV:** acceptance layers, the GUI harness and its terminal self-test, the matrix check, and running the harness on a Mac.
+- **DOC-MAC-LAUNCHER:** what CI now verifies on the packaged app, the launcher `argv[0]` fix, and `M-x glassmacs-self-check`.
+- **DOC-AQUA-COMPAT:** dated acceptance pass with the defects it found.
+- No other authority or ownership changes.
+
+---
+
 ## 2026-10-28 — mixed prose/code documents
 
 - **DOC-R-WORKFLOWS:** mode selection table for Rmd/Quarto/Sweave/Rd, the chunk commands and shortcuts, shared R target across polymode buffers, render dispatch and output opening, Shiny apps and interactive documents.

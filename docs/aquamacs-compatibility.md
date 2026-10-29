@@ -4,7 +4,7 @@
 > **Status:** Proposed  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-28
+> **Last reviewed:** 2026-10-29
 > **Coverage:** Source-traced Aquamacs behavior, required Glassmacs replacements, defaults, acceptance contracts, and parity tracking  
 > **Supersedes:** None
 
@@ -58,6 +58,30 @@ Already provided by GNU Emacs's Cocoa port, so not reimplemented: most Command s
 
 Still open after this pass: following the macOS light/dark appearance (GNU Emacs has no appearance-change hook, so this needs the native bridge).
 
+## Acceptance pass for modern macOS risks — 2026-10-29
+
+Issue #34 turned the Aquamacs 4 (`aquamacs-4-dev`) regression reports into the
+[acceptance matrix](acceptance-matrix.md): each risk now has evidence, tests
+in up to four layers and separate implemented / automated / packaged-app /
+clean-machine status, with a [manual checklist](macos-acceptance-checklist.md)
+for what needs a person. Building the tests found and fixed:
+
+- **The app ignored `-Q`** (LAUNCH-002): the bootstrap passed `-Q` as
+  `argv[0]`, so the user's `~/.emacs.d` init files and packages loaded before
+  Glassmacs's isolated configuration (an Aquamacs #251-class isolation
+  failure, hidden from batch tests because `--batch` implies `-q`).
+- **Preferences did not persist under `-Q`** (PREF-001): Emacs refuses to save
+  customizations when it thinks no init file was read, so several preference
+  toggles, `M-x customize` and safe-local-variable answers changed only the
+  session. Glassmacs now records its `init.el` as the init file.
+- **No auto-revert** (REVERT-001, Aquamacs #245): `glassmacs-follow-file-changes`
+  (on by default, interactive sessions) shows files changed by other
+  programs; unsaved edits are never reverted, and saving over a changed file
+  asks first.
+- **poly-R's Templates menu failed without R** (MODE-001, Aquamacs #180): its
+  filter called `process-get` on nil; Glassmacs lists no templates until an R
+  session exists.
+
 ## Tier 3 research workflows — 2026-10-28
 
 - **Mixed prose/code documents (Glassmacs extension):** `glassmacs-chunks.el` adds chunk commands, shortcuts, a Document menu and toolbar to R Markdown, Quarto and Sweave, with or without polymode; Sweave uses poly-R's `poly-noweb+r-mode` because ESS 18.10 removed `Rnw-mode`. Following the literal-text policy, markdown-mode's electric backquote is disabled and chunk code is excluded from spelling. Rendering opens its output; Shiny apps and `runtime: shiny` documents open in the browser once listening.
@@ -108,7 +132,7 @@ Historical source: [jmping/aquamacs-emacs, branch `aquamacs3`](https://github.co
 | SEARCH-003 | String/regexp replace, tagged-file search/replace, grep and search options; inherited GNU Search menu verified in Aquamacs | `query-replace`, `grep`, tags and isearch options | **Configure upstream:** retain available GNU Emacs operations and prompts; don't replace the search engine | Upstream base only; menu customization unverified | P1/P2 | ERT/menu check for representative commands; GUI verifies labels and operation on selected buffer/project |
 | OPT-001 | Tabs and Show Buffers in New Frames; menu L785–798 | `tab-bar-mode`, `tab-line-mode`, `display-buffer-alist` | **Replace:** Documents & Windows policy: New Window default, New Tab, Reuse Current; separate auxiliary-buffer choice | Planned | P1 | ERT persistence and GUI policy test; changing preference does not move open documents |
 | OPT-002 | Show/hide UI: line highlight, newlines, parens, fringes, cursor and scrollbars; menu L798–881 | Emacs display modes and frame parameters | **Configure upstream:** controls read/write actual Emacs state; no duplicate state | Partial: light/dark themes only | P1 | Checked state reflects actual values and persists where configured |
-| OPT-003 | Backup/save-place, Customize and Save Options; menu L882–925; `aquamacs.el` | `customize`, `custom-file`, `save-place-mode`, backup/autosave vars | **Implement:** scoped preferences and explicit persistence in Glassmacs storage; never write ordinary Emacs/Aquamacs config | Partial: `save-place-mode`/`savehist-mode` on by default; backups kept in `GLASSMACS_HOME/backups` (remote backups stay remote); preference UI incomplete | P1 | Change/readback/restart modifies only `GLASSMACS_HOME` |
+| OPT-003 | Backup/save-place, Customize and Save Options; menu L882–925; `aquamacs.el` | `customize`, `custom-file`, `save-place-mode`, backup/autosave vars | **Implement:** scoped preferences and explicit persistence in Glassmacs storage; never write ordinary Emacs/Aquamacs config | Partial: `save-place-mode`/`savehist-mode` on by default; backups kept in `GLASSMACS_HOME/backups` (remote backups stay remote); since 2026-10-29 every Customize save works under `-Q` and files follow external changes (`glassmacs-follow-file-changes`); preference UI incomplete | P1 | Change/readback/restart modifies only `GLASSMACS_HOME` |
 | OPT-004 | Word-wrap, theme/font, tab/frame, toolbar, language/input and print settings; `aquamacs.el` L1428–1490 | Custom variables, face/frame parameters, buffer-local modes | **Configure upstream:** use `defcustom`/Customize; Glassmacs owns only coherent defaults/adapters | Partial: themes exist; other settings incomplete | P1 | Each setting has type/scope/owner, survives restart and matches UI |
 | VIEW-001 | Auto Faces and per-mode font/face presets; `aquamacs.el`, Auto Faces | Faces, `face-remap-add-relative`, frame font parameters | **Replace:** supported face/theme/font facilities and modern fallback over old global patches | Partial: themes exist; per-mode fonts absent | P1 | Code/prose profiles apply per buffer and survive theme switches |
 | VIEW-002 | Font zoom, themes, cursor and mode line; menu L1161–1176; `aquamacs.el` | `text-scale-*`, `load-theme`, frame parameters | **Configure upstream:** built-in themes/scaling and system appearance signals where supported | Partial: Glassmacs themes exist; zoom/persistence incomplete | P1 | Zoom targets intended buffer/frame; theme switch leaves one Glassmacs theme active |
