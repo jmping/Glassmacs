@@ -203,13 +203,13 @@ does not provide a native macOS print dialog."
       (define-key glassmacs-menu [document-opening] opening-menu)
       (define-key opening-menu [new-frame]
         '(menu-item "New Frame" glassmacs-select-opening-new-frame
-                    :button (:radio (eq glassmacs-document-opening-policy 'new-frame))))
+                    :button (:radio . (eq glassmacs-document-opening-policy 'new-frame))))
       (define-key opening-menu [new-tab]
         '(menu-item "New Tab" glassmacs-select-opening-new-tab
-                    :button (:radio (eq glassmacs-document-opening-policy 'new-tab))))
+                    :button (:radio . (eq glassmacs-document-opening-policy 'new-tab))))
       (define-key opening-menu [reuse-current]
         '(menu-item "Reuse Current Window" glassmacs-select-opening-reuse-current
-                    :button (:radio (eq glassmacs-document-opening-policy 'reuse-current))))
+                    :button (:radio . (eq glassmacs-document-opening-policy 'reuse-current))))
       (define-key glassmacs-menu [restore-workspace]
         '(menu-item "Reopen Windows at Startup" glassmacs-toggle-restore-workspace
                     :button (:toggle . glassmacs-restore-workspace)
@@ -230,7 +230,7 @@ does not provide a native macOS print dialog."
       (define-key glassmacs-menu [preserve-buffers]
         '(menu-item "Preserve Open Buffers on Quit"
                     glassmacs-recovery-toggle-preserve
-                    :button (:toggle glassmacs-preserve-open-buffers-on-quit)))
+                    :button (:toggle . glassmacs-preserve-open-buffers-on-quit)))
       (define-key glassmacs-menu [restore-buffers]
         '(menu-item "Restore Preserved Buffers…" glassmacs-recovery-restore))
       (define-key glassmacs-menu [review-unsaved]
@@ -239,13 +239,13 @@ does not provide a native macOS print dialog."
       (define-key keyboard-menu [hybrid]
         '(menu-item "Hybrid macOS / Emacs"
                     glassmacs-select-hybrid-keyboard-profile
-                    :button (:radio
+                    :button (:radio .
                              (eq glassmacs-keyboard-profile
                                  'glassmacs-hybrid))))
       (define-key keyboard-menu [traditional]
         '(menu-item "Traditional Emacs"
                     glassmacs-select-traditional-keyboard-profile
-                    :button (:radio
+                    :button (:radio .
                              (eq glassmacs-keyboard-profile
                                  'traditional-emacs))))
       (define-key keyboard-menu [right-option]

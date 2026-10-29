@@ -114,6 +114,28 @@ document's R target must not be lost or diverge."
         (should (string-search (concat "Some prose here. " prose) text))
         (should (string-search (concat "x <- 1\n" code) text))))))
 
+(ert-deftest glassmacs-polymode-menus-evaluate-in-prose-and-chunks ()
+  "Menus built in polymode's buffers evaluate cleanly (Aquamacs #180)."
+  (glassmacs-polymode-test--require)
+  (glassmacs-polymode-test--visiting "report.Rmd" glassmacs-polymode-test--rmd
+    (glassmacs-polymode-test--go-to "Some prose")
+    (should-not (glassmacs-diagnostics-menu-problems))
+    (glassmacs-polymode-test--go-to "y <- x")
+    (should (derived-mode-p 'ess-r-mode))
+    (should-not (glassmacs-diagnostics-menu-problems)))
+  (glassmacs-polymode-test--visiting "paper.Rnw"
+      "\\documentclass{article}\n\\begin{document}\nProse.\n<<setup>>=\nx <- 1\n@\n\\end{document}\n"
+    (should-not (glassmacs-diagnostics-menu-problems))
+    (glassmacs-polymode-test--go-to "x <- ")
+    (should-not (glassmacs-diagnostics-menu-problems))))
+
+(ert-deftest glassmacs-polymode-templates-menu-needs-no-r-session ()
+  "poly-R's Templates menu filter fails without an R session; Glassmacs
+makes it list no templates instead."
+  (glassmacs-polymode-test--require)
+  (cl-letf (((symbol-function 'ess-get-next-available-process) (lambda (&rest _) nil)))
+    (should-not (poly-r-rmarkdown-templates-menu))))
+
 (ert-deftest glassmacs-polymode-spelling-skips-chunk-code ()
   (glassmacs-polymode-test--require)
   (glassmacs-polymode-test--visiting "report.Rmd"

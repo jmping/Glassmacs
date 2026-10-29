@@ -56,11 +56,16 @@ if [ ! -f "$root/assets/icon/Glassmacs.icns" ]; then
   exit 1
 fi
 
+# Map the checkout path out of compiled paths, and strip the debug map
+# (which names the .build object files) below, so the launcher does not
+# mention this build machine (validate-macos-app checks this).
 for architecture in arm64 x86_64; do
   swift build --package-path "$root/macos" -c release \
-    --triple "$architecture-apple-macosx13.0"
+    --triple "$architecture-apple-macosx13.0" \
+    -Xswiftc -file-prefix-map -Xswiftc "$root=."
   bin_path="$(swift build --package-path "$root/macos" -c release \
-    --triple "$architecture-apple-macosx13.0" --show-bin-path)"
+    --triple "$architecture-apple-macosx13.0" \
+    -Xswiftc -file-prefix-map -Xswiftc "$root=." --show-bin-path)"
   cp "$bin_path/GlassmacsLauncher" \
     "$tmp/GlassmacsLauncher-$architecture"
 done
@@ -68,6 +73,7 @@ done
   "$tmp/GlassmacsLauncher-arm64" \
   "$tmp/GlassmacsLauncher-x86_64" \
   -output "$tmp/GlassmacsLauncher"
+/usr/bin/strip -S -x "$tmp/GlassmacsLauncher"
 ditto --rsrc --extattr --acl "$upstream_app" "$output"
 cp "$tmp/GlassmacsLauncher" \
   "$output/Contents/MacOS/GlassmacsBootstrap"

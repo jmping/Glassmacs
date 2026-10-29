@@ -110,19 +110,26 @@
         (should (equal opened "/tmp/glassmacs project/report.pdf"))))
     (setq buffer-file-name nil)))
 
+(defun glassmacs-latex-test--wait-for-sentinel (process)
+  "Wait until PROCESS has exited and its sentinel has run."
+  (let ((sentinel-ran nil))
+    (add-function :after (process-sentinel process)
+                  (lambda (&rest _) (setq sentinel-ran t)))
+    (with-timeout (10 (error "Process %s did not finish" process))
+      (while (not sentinel-ran)
+        (accept-process-output process 0.05)))))
+
 (ert-deftest glassmacs-run-process-calls-on-success-only-on-success ()
   (let ((glassmacs--current-process nil) succeeded)
     (cl-letf (((symbol-function 'display-buffer) #'ignore)
               ((symbol-function 'message) #'ignore))
       (let ((process (glassmacs-run-process "sh" '("-c" "exit 1") nil
                                             (lambda () (setq succeeded 'failed-run)))))
-        (while (process-live-p process) (accept-process-output process 0.05))
-        (accept-process-output nil 0.05))
+        (glassmacs-latex-test--wait-for-sentinel process))
       (should-not succeeded)
       (let ((process (glassmacs-run-process "sh" '("-c" "true") nil
                                             (lambda () (setq succeeded t)))))
-        (while (process-live-p process) (accept-process-output process 0.05))
-        (accept-process-output nil 0.05))
+        (glassmacs-latex-test--wait-for-sentinel process))
       (should (eq succeeded t)))))
 
 (provide 'test-glassmacs-latex)

@@ -4,10 +4,18 @@
   "A modern Emacs configuration for macOS and reproducible research."
   :group 'environment)
 
-(defcustom glassmacs-home
-  (file-name-as-directory
-   (expand-file-name
-    (or (getenv "GLASSMACS_HOME") "~/.config/glassmacs")))
+(defun glassmacs--default-home ()
+  "Return the Glassmacs home named by GLASSMACS_HOME, or the default.
+An empty GLASSMACS_HOME counts as unset, as in the macOS launcher, so
+state is never written into whatever directory Emacs started in."
+  (let ((configured (getenv "GLASSMACS_HOME")))
+    (file-name-as-directory
+     (expand-file-name
+      (if (and configured (not (equal configured "")))
+          configured
+        "~/.config/glassmacs")))))
+
+(defcustom glassmacs-home (glassmacs--default-home)
   "Directory for Glassmacs package data and generated state."
   :type 'directory
   :group 'glassmacs)

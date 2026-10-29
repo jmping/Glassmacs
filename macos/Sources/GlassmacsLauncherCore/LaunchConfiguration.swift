@@ -33,14 +33,31 @@ public struct LaunchConfiguration: Equatable, Sendable {
         return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
     }
 
-    public func emacsArguments(forwarding arguments: [String]) -> [String] {
-        [
-            "-Q",
-            "--eval",
-            Self.nativeCompilationPolicy,
-            "--load",
-            initFile.path
-        ] + arguments
+    /// With `initDirectory` (the Glassmacs home), Emacs uses it as
+    /// `user-emacs-directory` from the start.  Without it, Emacs's own
+    /// startup creates an empty `~/.emacs.d` in interactive sessions
+    /// (`locate-user-emacs-file`) before Glassmacs's configuration runs.
+    public func emacsArguments(forwarding arguments: [String],
+                               initDirectory: URL? = nil) -> [String] {
+        ["-Q"]
+            + (initDirectory.map { ["--init-directory=\($0.path)"] } ?? [])
+            + [
+                "--eval",
+                Self.nativeCompilationPolicy,
+                "--load",
+                initFile.path
+            ]
+            + arguments
+    }
+
+    /// The complete argument vector for `execv`, beginning with the program
+    /// name.  Emacs reads options only after `argv[0]`, so without it the
+    /// first option (`-Q`) would be taken as the program name and ignored,
+    /// and Emacs would load the user's own init files and packages.
+    public func processArguments(forwarding arguments: [String],
+                                 initDirectory: URL? = nil) -> [String] {
+        [emacsExecutable.path]
+            + emacsArguments(forwarding: arguments, initDirectory: initDirectory)
     }
 
     /// Mirrors `glassmacs--configure-native-compilation` in init.el: inside

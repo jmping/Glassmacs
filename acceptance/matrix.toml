@@ -1,0 +1,724 @@
+# Glassmacs acceptance matrix (issue #34).
+#
+# One entry per risk.  `scripts/acceptance-matrix check` validates this file
+# (every referenced test, scenario and CI step must exist, every issue #34
+# Aquamacs report must be covered) and that the generated documents
+# docs/acceptance-matrix.md and docs/macos-acceptance-checklist.md are
+# current; `scripts/acceptance-matrix render` regenerates them.
+#
+# Fields:
+#   evidence   upstream reports (aquamacs#N: aquamacs-emacs/aquamacs-emacs
+#              issue N), Glassmacs findings (glassmacs:...) or policy
+#   exposure   how Glassmacs could be affected
+#   layers     A batch/unit, B packaged-app static, C GUI on CI,
+#              D physical / clean machine / manual
+#   tests      ert:NAME (tests/*.el), py:NAME (tests/*.py), swift:NAME
+#              (macos/Tests), gui:NAME (scripts/macos-gui-acceptance),
+#              ci:STEP (a step name in .github/workflows/ci.yml)
+#   implemented          yes | partial | no
+#   automated            yes | partial | no
+#   packaged_app         ci (checked on the packaged app in every CI run) |
+#                        NOT RUN
+#   clean_machine        NOT RUN until someone records a dated result
+#   manual               Layer D steps, listed in the checklist
+#
+# A green batch run never counts as GUI acceptance: packaged_app is "ci"
+# only when a Layer B check or Layer C scenario runs against the app.
+
+reviewed = "2026-10-29"
+
+[[check]]
+id = "DIST-001"
+title = "Bundled native libraries resolve inside the app"
+severity = "P0"
+evidence = ["aquamacs#243"]
+exposure = "The pinned upstream Cocoa Emacs links libgccjit and friends from /nix/store; the build relocates them into the bundle."
+layers = ["B"]
+tests = ["py:test_validator_shell_entrypoint_runs_with_literal_python_heredoc", "py:test_dependency_relocator_targets_the_unique_arch_compatible_bundle_library", "py:test_dependency_relocator_requires_a_library_for_every_binary_architecture", "py:test_rpath_sanitizer_cleans_all_binaries_but_preserves_relocatable_entries", "ci:Build standalone app bundle", "ci:Verify relocation"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["On a Mac without Homebrew, Nix or Xcode, launch the app and open an .R file; Console.app shows no dyld errors."]
+
+[[check]]
+id = "DIST-002"
+title = "Apple Silicon and Intel architectures"
+severity = "P0"
+evidence = ["aquamacs#264", "aquamacs#268"]
+exposure = "A missing slice crashes at launch on that architecture."
+layers = ["B", "D"]
+tests = ["py:test_validator_shell_entrypoint_runs_with_literal_python_heredoc", "ci:Build standalone app bundle"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["Launch the same build on an Intel Mac and on Apple Silicon without Rosetta; open, edit and save a file on each."]
+rationale = "CI runs on Apple Silicon only; the Intel slice is checked statically."
+
+[[check]]
+id = "DIST-003"
+title = "No build-machine paths in the app"
+severity = "P0"
+evidence = ["aquamacs#243"]
+exposure = "Glassmacs-compiled binaries could embed the checkout or temporary build paths; any binary could embed the app's own location."
+layers = ["B"]
+tests = ["py:test_validator_shell_entrypoint_runs_with_literal_python_heredoc", "ci:Verify relocation"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+rationale = "Upstream /nix/store, Homebrew and /usr/local strings are counted, not failed: runtime linkage outside the bundle is rejected separately and libgccjit's embedded paths serve only the disabled JIT compiler."
+
+[[check]]
+id = "DIST-004"
+title = "Code signature, permissions and executables"
+severity = "P0"
+evidence = ["aquamacs#264", "aquamacs#268"]
+exposure = "Editing Mach-O files invalidates signatures, which arm64 macOS enforces with SIGKILL at exec."
+layers = ["B"]
+tests = ["py:test_validator_shell_entrypoint_runs_with_literal_python_heredoc", "py:test_build_sanitizes_before_strict_bundle_validation", "ci:Build standalone app bundle"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "DIST-005"
+title = "Builds with the supported Xcode and macOS versions"
+severity = "P0"
+evidence = ["aquamacs#258", "aquamacs#266"]
+exposure = "Glassmacs compiles only the Swift launcher and the Objective-C lifecycle module; Emacs itself is the pinned upstream universal build, so toolchain exposure is much smaller than Aquamacs's."
+layers = ["B", "D"]
+tests = ["ci:Test Glassmacs bootstrap package", "ci:Build standalone app bundle"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["Build with scripts/build-macos-app on the newest macOS and Xcode release (Tahoe) and on macOS 13 with its Xcode; record versions."]
+rationale = "CI builds on the macos-15 runner image only; other macOS/Xcode versions are a follow-up runner matrix."
+
+[[check]]
+id = "LAUNCH-001"
+title = "Packaged app launches from LaunchServices in a clean home"
+severity = "P0"
+evidence = ["aquamacs#264", "aquamacs#268"]
+exposure = "Launch via Finder/Dock uses launchd's environment, not a developer shell."
+layers = ["C", "D"]
+tests = ["gui:launch-clean-home", "ci:Verify bootstrap with bundled configuration", "swift:testBundlePathsAndArgumentsUseTheBundledEmacsAndConfiguration"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["On a fresh user account, copy the app to /Applications, open it from Finder, and confirm one Dock icon and one window."]
+
+[[check]]
+id = "LAUNCH-002"
+title = "The app ignores the user's own Emacs init files"
+severity = "P0"
+evidence = ["glassmacs:launcher-argv0", "aquamacs#251"]
+exposure = "Found by this audit: the launcher passed -Q as argv[0], so Emacs ignored it and loaded ~/.emacs.d init files and packages."
+layers = ["A", "B", "C"]
+tests = ["swift:testProcessArgumentsStartWithTheProgramSoQuickStartIsAnOption", "ci:Verify the app does not load the user's Emacs init files", "gui:user-emacs-init-is-not-loaded", "ert:glassmacs-startup-does-not-touch-ordinary-emacs-home"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "LIFE-001"
+title = "Closing the last window keeps the app running; the Dock reopens it"
+severity = "P0"
+evidence = ["aquamacs#270"]
+exposure = "Cocoa sends handle-delete-frame for the close button; Glassmacs hides the final frame and its lifecycle module answers reopen."
+layers = ["A", "C", "D"]
+tests = ["ert:glassmacs-macos-cocoa-close-of-final-frame-does-not-quit", "ert:glassmacs-macos-reopen-after-cocoa-close-shows-hidden-frame", "ert:glassmacs-windowless-dock-reopen-creates-no-buffers", "gui:last-window-close-and-dock-reopen"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["Click the red close button of the last window: Glassmacs stays in the Dock and menu bar.", "Click the Dock icon: the window returns, with no new buffers."]
+rationale = "CI delivers the close as Cocoa's delete-frame event and reopens by clicking the Dock icon through System Events; a person still has to click the close button on a clean machine."
+
+[[check]]
+id = "LIFE-002"
+title = "Menus and shortcuts work with no window open"
+severity = "P0"
+evidence = ["aquamacs#270"]
+exposure = "Cocoa routes menu actions and key equivalents through the key window, which does not exist; the lifecycle module forwards them."
+layers = ["A", "C", "D"]
+tests = ["ert:glassmacs-windowless-command-n-follows-keyboard-profile", "ert:glassmacs-windowless-buffer-command-reveals-frame", "py:test_lifecycle_bridge_routes_windowless_menu_and_key_events", "gui:windowless-menu-and-shortcuts"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["With every window closed, choose File > New Document from the menu bar and press Command-N: each opens a visible Untitled document."]
+rationale = "The GUI scenario needs Accessibility for System Events; without it the scenario is NOT RUN."
+
+[[check]]
+id = "FINDER-001"
+title = "Opening a file from Finder with no window shows it"
+severity = "P0"
+evidence = ["aquamacs#270"]
+exposure = "A Finder open arrives as an Apple Event while the only frame is hidden."
+layers = ["A", "C", "D"]
+tests = ["ert:glassmacs-windowless-open-file-shows-in-hidden-frame", "ert:glassmacs-cocoa-file-open-event-uses-document-policy", "gui:finder-open-while-windowless"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["Close all windows, then double-click an .R file in Finder whose default app is Glassmacs: it appears in a visible window."]
+
+[[check]]
+id = "FINDER-002"
+title = "Repeated and duplicate opens do not duplicate buffers or windows"
+severity = "P1"
+evidence = ["aquamacs#247", "aquamacs#249", "aquamacs#270"]
+exposure = "LaunchServices may deliver the same document again; paths can contain spaces and non-ASCII characters."
+layers = ["A", "C"]
+tests = ["ert:glassmacs-visible-document-is-not-opened-in-an-extra-frame", "gui:finder-repeat-and-mixed-documents", "gui:finder-open-while-windowless"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "FINDER-003"
+title = "A Finder open during startup restore is shown in front"
+severity = "P0"
+evidence = ["aquamacs#270", "glassmacs:issue-34-scenario-1"]
+exposure = "Workspace restore reuses the startup frame while LaunchServices delivers the document."
+layers = ["A", "C"]
+tests = ["ert:glassmacs-workspace-restores-before-recovery-is-offered", "gui:crash-restore-recovery-and-finder-open"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "CLIENT-001"
+title = "emacsclient and server opens use the right window"
+severity = "P2"
+evidence = ["aquamacs#247", "aquamacs#249"]
+exposure = "Not exposed by default: Glassmacs starts no server and ships no client wrapper; documents arrive as Apple Events (FINDER-*)."
+layers = ["D"]
+tests = []
+implemented = "no"
+automated = "no"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["Only if you enable server-start: run the bundled emacsclient -n FILE and confirm the file opens in a visible Glassmacs window."]
+rationale = "No server is started by Glassmacs; revisit if a command-line opener is added."
+
+[[check]]
+id = "MENU-001"
+title = "Menu items evaluate without errors in key modes"
+severity = "P1"
+evidence = ["aquamacs#256", "aquamacs#180"]
+exposure = "Emacs evaluates every item's :enable/:visible/:button/:filter when it updates the Cocoa menu."
+layers = ["A", "C"]
+tests = ["ert:glassmacs-menu-check-reports-broken-items", "ert:glassmacs-menus-evaluate-cleanly-in-key-modes", "gui:menus-in-key-modes"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "MENU-002"
+title = "Menu presentation: shortcuts, About and Preferences items"
+severity = "P1"
+evidence = ["aquamacs#256", "aquamacs#248"]
+exposure = "Shortcut annotations and the application menu are drawn by Cocoa."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-macos-menus-install-without-duplicating-cocoa-items", "ert:glassmacs-native-preferences-menu-opens-glassmacs-settings", "ert:glassmacs-hybrid-bindings-use-cocoa-integer-events"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["Open each menu: shortcuts shown match what the keys do (Command-N, Command-W, Command-S).", "Glassmacs > About and Glassmacs > Settings… open the right windows."]
+rationale = "How Cocoa draws menus can only be judged by looking."
+
+[[check]]
+id = "MODE-001"
+title = "Mode menus with ESS, polymode and TRAMP do not break"
+severity = "P2"
+evidence = ["aquamacs#180"]
+exposure = "Third-party mode menus are evaluated in Glassmacs's menu bar."
+layers = ["A", "C"]
+tests = ["ert:glassmacs-polymode-menus-evaluate-in-prose-and-chunks", "ert:glassmacs-menus-evaluate-cleanly-in-key-modes", "ert:glassmacs-r-source-and-console-menus-have-distinct-actions", "gui:menus-in-key-modes"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["Open a remote file over SSH (TRAMP) and open each menu while it is current."]
+rationale = "ESS and polymode menus run in the integration CI job; TRAMP buffers need a host."
+
+[[check]]
+id = "PREF-001"
+title = "Preferences persist across relaunch"
+severity = "P1"
+evidence = ["aquamacs#246", "glassmacs:customize-under-q"]
+exposure = "Found by this audit: under -Q Emacs refused to save customizations, so several preference toggles changed the session only."
+layers = ["A", "C"]
+tests = ["ert:glassmacs-preference-toggles-are-saved-in-glassmacs-home", "ert:glassmacs-document-opening-policy-is-persisted", "ert:glassmacs-keyboard-profile-is-persisted", "gui:preferences-persist-across-relaunch"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "PREF-002"
+title = "State stays in the Glassmacs home"
+severity = "P1"
+evidence = ["aquamacs#251"]
+exposure = "Glassmacs must not read or write ~/.emacs.d or its eln-cache, or the directory it started in. Found by the GUI clean-home scenario: Emacs's own interactive startup created an empty ~/.emacs.d (locate-user-emacs-file) before Glassmacs's configuration ran; the launchers now pass --init-directory with the Glassmacs home."
+layers = ["A", "C"]
+tests = ["ert:glassmacs-startup-does-not-touch-ordinary-emacs-home", "ert:glassmacs-package-state-is-isolated", "ert:glassmacs-empty-home-variable-means-the-default-home", "ert:glassmacs-native-compilation-does-not-use-user-cache", "ert:glassmacs-launcher-forwards-emacs-arguments", "swift:testInitDirectoryIsTheGlassmacsHomeSoEmacsCreatesNoDotEmacsD", "gui:launch-clean-home"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "PREF-003"
+title = "Safe local variables and upgrades keep the user's choices"
+severity = "P1"
+evidence = ["aquamacs#251"]
+exposure = "Answers to file-local variable questions are customizations; an upgraded app must read the existing home."
+layers = ["A", "C", "D"]
+tests = ["ert:glassmacs-safe-local-variables-are-saved-in-glassmacs-home", "gui:user-emacs-init-is-not-loaded", "gui:preferences-persist-across-relaunch"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["Replace the installed app with a newer build: preferences, recent files and workspace remain.", "Go back to the older build with the newer home: it starts and keeps editing working."]
+
+[[check]]
+id = "SPELL-001"
+title = "Spell checker discovery and absence"
+severity = "P1"
+evidence = ["aquamacs#265"]
+exposure = "Glassmacs uses enchant-2, hunspell or aspell when present and must keep editing working without any."
+layers = ["A", "C"]
+tests = ["ert:glassmacs-spelling-prefers-enchant-then-hunspell-then-aspell", "ert:glassmacs-spelling-missing-checker-explains-installation", "ert:glassmacs-spelling-real-checker-flags-only-prose-misspellings", "gui:launch-clean-home"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "SPELL-002"
+title = "Interactive spelling suggestions"
+severity = "P1"
+evidence = ["aquamacs#235"]
+exposure = "Correction choices are shown by ispell/flyspell menus, drawn by Cocoa."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-spelling-highlights-but-never-changes-typed-text", "ert:glassmacs-spelling-document-check-accepts-skipped-words-for-session-only"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["With hunspell or enchant installed, run M-x ispell-word on a misspelling: a menu of suggestions appears and choosing one replaces only that word."]
+
+[[check]]
+id = "SPELL-003"
+title = "Native spelling never corrects or substitutes"
+severity = "P0"
+evidence = ["policy:literal-text-entry"]
+exposure = "macOS spelling (AppleSpell via enchant) must only check, never correct, quote or replace."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-spelling-never-corrects-on-its-own", "ert:glassmacs-spelling-while-typing-is-prose-only-and-opt-in"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["With enchant using AppleSpell and macOS text replacements enabled (System Settings > Keyboard > Text Replacements), type a replacement shortcut, \"quotes\" and -- in an .R file and a .Rmd file: nothing changes."]
+
+[[check]]
+id = "REVERT-001"
+title = "Files changed by other programs update; unsaved edits are kept"
+severity = "P1"
+evidence = ["aquamacs#245"]
+exposure = "Found by this audit: Glassmacs had no auto-revert; added (glassmacs-follow-file-changes). On macOS it polls, as Aquamacs 4 settled on: kqueue notifications need a descriptor per file and miss files replaced by rename."
+layers = ["A", "C"]
+tests = ["ert:glassmacs-editing-follows-external-file-changes", "ert:glassmacs-editing-external-change-never-discards-unsaved-edits", "ert:glassmacs-editing-file-following-is-interactive-and-optional", "ert:glassmacs-editing-file-following-polls-on-macos", "gui:external-file-changes"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "NATIVE-001"
+title = "Bundled native code loads without a compiler; no user cache"
+severity = "P1"
+evidence = ["aquamacs#253"]
+exposure = "Only the bundle's signed .eln files are loaded; JIT compilation and trampolines are off."
+layers = ["A", "B", "C", "D"]
+tests = ["ert:glassmacs-native-jit-is-disabled-by-default-before-packages", "ert:glassmacs-native-compilation-does-not-use-user-cache", "py:test_native_compilation_is_configured_before_package_loading", "gui:launch-clean-home"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["On a Mac without Xcode command-line tools, launch the app and install the optional packages: no compiler prompt appears and packages work."]
+
+[[check]]
+id = "NATIVE-002"
+title = "Packages work when native compilation is unavailable"
+severity = "P1"
+evidence = ["aquamacs#253"]
+exposure = "Packages load as byte code because Glassmacs never compiles native code at run time."
+layers = ["A"]
+tests = ["ert:glassmacs-ordinary-elisp-and-bytecode-remain-loadable", "ert:glassmacs-native-jit-is-disabled-by-default-before-packages"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "DIALOG-001"
+title = "Open and recent-file dialogs do not hang"
+severity = "P1"
+evidence = ["aquamacs#255", "aquamacs#241"]
+exposure = "File > Open uses the Cocoa open panel when invoked from the menu."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-recent-files-respects-document-policy", "ert:glassmacs-recent-files-rejects-missing-path"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["Choose File > Open… from the menu ten times in a row, cancelling and choosing files alternately: the panel always appears and Glassmacs stays responsive.", "Open a file from File > Open Recent while another app changes it."]
+rationale = "The Cocoa open panel needs a person; elsewhere, every GUI scenario has deadlines, so a hang fails CI rather than stalling it."
+
+[[check]]
+id = "FULL-001"
+title = "Closing full-screen windows"
+severity = "P1"
+evidence = ["aquamacs#218", "aquamacs#160"]
+exposure = "Full-screen windows live in their own Space; closing the last one must hide it, not quit."
+layers = ["C", "D"]
+tests = ["gui:fullscreen-close-and-reopen"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["Make a window full screen with the green button, press Command-W on a saved document, then reopen from the Dock.", "Repeat with two windows, one full screen."]
+rationale = "CI uses toggle-frame-fullscreen; the green button and Spaces animation need a person."
+
+[[check]]
+id = "CLOSE-001"
+title = "Command-W never loses unsaved changes"
+severity = "P0"
+evidence = ["aquamacs#218", "glassmacs:issue-34-scenario-6"]
+exposure = "Command-W closes the document and window; Save / Don't Save / Cancel must protect edits."
+layers = ["A", "C"]
+tests = ["ert:glassmacs-close-cancel-keeps-modified-document-open", "ert:glassmacs-close-dont-save-discards-without-writing", "ert:glassmacs-close-save-writes-then-closes", "ert:glassmacs-close-button-cancel-keeps-frame-open", "gui:command-w-never-loses-changes"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "CLOSE-002"
+title = "Quitting with unsaved documents asks first"
+severity = "P0"
+evidence = ["glassmacs:issue-34-scenario-6"]
+exposure = "Command-Q and other quit paths must not discard edits silently."
+layers = ["A", "C", "D"]
+tests = ["ert:glassmacs-recovery-direct-kill-guard-blocks-unsaved-documents", "ert:glassmacs-macos-explicit-quit-is-not-intercepted", "gui:quit-with-unsaved-document-asks"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["With an unsaved document, choose Quit from the Dock icon's menu and log out of macOS: both ask before quitting."]
+
+[[check]]
+id = "RESTORE-001"
+title = "Workspace restore reopens files once and starts no processes"
+severity = "P1"
+evidence = ["glassmacs:issue-34-scenario-2"]
+exposure = "Opt-in desktop.el restore after normal quit or crash."
+layers = ["A", "C", "D"]
+tests = ["ert:glassmacs-workspace-round-trip-reopens-local-files-only", "ert:glassmacs-workspace-restores-once-from-glassmacs-home", "ert:glassmacs-workspace-and-recovery-after-abnormal-shutdown", "gui:crash-restore-recovery-and-finder-open"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["With restore on, quit from the Dock menu with two windows; relaunch: both return once.", "Disconnect an external display, relaunch: windows open on the remaining display."]
+
+[[check]]
+id = "RECOVER-001"
+title = "Crash recovery is offered and never overwrites data"
+severity = "P0"
+evidence = ["glassmacs:issue-34-scenario-2"]
+exposure = "Snapshots of unsaved edits must survive a crash and the next startup."
+layers = ["A", "C"]
+tests = ["ert:glassmacs-recovery-crash-restore-does-not-replace-quit-index", "ert:glassmacs-workspace-and-recovery-share-a-clean-file-buffer", "gui:crash-restore-recovery-and-finder-open"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "TEXT-001"
+title = "Typed text stays literal in code, consoles and mixed documents"
+severity = "P0"
+evidence = ["policy:literal-text-entry"]
+exposure = "No autocorrect, smart quotes, dashes or substitutions unless explicitly enabled, and never in source code."
+layers = ["A", "C", "D"]
+tests = ["ert:glassmacs-editing-literal-text-entry", "ert:glassmacs-latex-typing-is-literal", "ert:glassmacs-editing-markdown-typing-is-literal", "ert:glassmacs-polymode-typing-is-literal-in-prose-and-chunks", "gui:command-w-never-loses-changes"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["With macOS 'Use smart quotes and dashes' and text replacements on, type \"quotes\", -- and a replacement shortcut into an .R file, an R console and a .Rmd chunk: text stays as typed."]
+rationale = "CI types through System Events only when Accessibility is granted; otherwise keys are Emacs events."
+
+[[check]]
+id = "KEY-001"
+title = "International keyboards, input methods and Option keys"
+severity = "P1"
+evidence = ["policy:literal-text-entry"]
+exposure = "The right Option key types characters; input methods compose text through Cocoa."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-editing-right-option-types-characters-on-macos"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["With German and French layouts, type @, {, [ and é with Option; with Japanese or Chinese input, compose and commit text in a document and the minibuffer."]
+
+[[check]]
+id = "CLIP-001"
+title = "Clipboard round trip with other apps"
+severity = "P1"
+evidence = ["policy:literal-text-entry"]
+exposure = "Copy and paste must keep quotes, dashes and non-ASCII text unchanged."
+layers = ["C"]
+tests = ["gui:clipboard-round-trip"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "ENC-001"
+title = "File encodings and line endings round trip"
+severity = "P2"
+evidence = ["glassmacs:issue-34-other-risks"]
+exposure = "Editing must not convert byte-order marks, Latin-1 or CRLF files."
+layers = ["A"]
+tests = ["ert:glassmacs-files-round-trip-encodings-and-line-endings", "ert:glassmacs-plain-text-files-open-and-save-without-research-tools"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "PATH-001"
+title = "Finder launches find tools on the login-shell PATH"
+severity = "P1"
+evidence = ["glassmacs:issue-34-other-risks"]
+exposure = "launchd gives apps a minimal PATH; Glassmacs imports the login shell's."
+layers = ["A", "C"]
+tests = ["ert:glassmacs-environment-imports-variables-from-login-shell", "ert:glassmacs-environment-times-out-without-blocking-startup", "gui:launch-clean-home"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "ASSOC-001"
+title = "Finder document types are declared"
+severity = "P1"
+evidence = ["glassmacs:issue-34-other-risks"]
+exposure = "Merging Info.plist must keep upstream and Glassmacs document types."
+layers = ["B"]
+tests = ["py:test_info_plist_merge_keeps_upstream_document_types", "py:test_validator_shell_entrypoint_runs_with_literal_python_heredoc"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "ASSOC-002"
+title = "Documents open by type through LaunchServices"
+severity = "P1"
+evidence = ["glassmacs:issue-34-other-risks"]
+exposure = "open -a delivers R, R Markdown, Quarto and Sweave documents; Finder's default app is the user's choice."
+layers = ["C", "D"]
+tests = ["gui:finder-open-while-windowless", "gui:finder-repeat-and-mixed-documents"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["Choose Glassmacs as the default app for .R and .Rmd in Finder's Get Info, then double-click files of both types."]
+
+[[check]]
+id = "PKG-001"
+title = "Optional packages are offered once; declining installs nothing"
+severity = "P1"
+evidence = ["glassmacs:issue-34-other-risks"]
+exposure = "Startup must not reach the network; the offer comes after the document is visible. Found by the GUI crash scenario: a file reopened by workspace restore asked during startup, holding up the Finder document and the recovery offer; it now waits until startup is over and no other question is open."
+layers = ["A", "C"]
+tests = ["ert:glassmacs-packages-decline-installs-nothing", "ert:glassmacs-packages-offer-is-asked-once-per-session", "ert:glassmacs-packages-offer-waits-for-startup-and-other-questions", "gui:package-offer-declined-installs-nothing"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "MIX-001"
+title = "Mixed documents: modes, shared R target, chunks, literal typing, spelling"
+severity = "P1"
+evidence = ["glassmacs:mixed-documents"]
+exposure = "R Markdown, Quarto and Sweave with polymode's indirect chunk buffers."
+layers = ["A"]
+tests = ["ert:glassmacs-polymode-r-markdown-uses-poly-r", "ert:glassmacs-polymode-sweave-uses-poly-noweb", "ert:glassmacs-polymode-target-chosen-in-a-chunk-survives-switching", "ert:glassmacs-polymode-run-chunk-from-inside-the-chunk", "ert:glassmacs-polymode-spelling-skips-chunk-code", "ert:glassmacs-chunks-run-in-a-real-r-session", "ert:glassmacs-chunks-spelling-skips-chunk-and-inline-code"]
+implemented = "yes"
+automated = "yes"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+
+[[check]]
+id = "MIX-GUI-001"
+title = "Mixed documents in the app: document menu and Command shortcuts"
+severity = "P1"
+evidence = ["glassmacs:mixed-documents"]
+exposure = "Command chords arrive from Cocoa as integer and symbol events that the document keymap must match."
+layers = ["C", "D"]
+tests = ["gui:finder-repeat-and-mixed-documents", "ert:glassmacs-chunks-shortcuts-and-menu"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["With R, ESS and poly-R installed, open an .Rmd, press Command-Shift-Return in a chunk and Command-Option-K: the chunk runs in the R console and the rendered HTML opens in the browser."]
+
+[[check]]
+id = "MIX-002"
+title = "Rendering and Shiny previews open their output"
+severity = "P1"
+evidence = ["glassmacs:mixed-documents"]
+exposure = "Rendered HTML opens in the browser, PDF in Skim or Preview; Shiny opens once listening on 127.0.0.1."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-documents-real-rmarkdown-render-opens-html", "ert:glassmacs-documents-real-shiny-app-serves-at-its-reported-address", "ert:glassmacs-documents-shiny-opens-the-app-once-it-is-listening"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["Render an .Rmd and an .Rnw: the HTML opens in the default browser and the PDF in Skim or Preview.", "Run a Shiny app: the browser opens on the app once it is ready."]
+
+[[check]]
+id = "R-001"
+title = "ESS, R and Quarto run from the app"
+severity = "P1"
+evidence = ["glassmacs:issue-34-other-risks"]
+exposure = "Subprocesses need the imported PATH and the R installation's Quartz device."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-ess-starts-r-and-evaluates-when-available", "ert:glassmacs-chunks-run-in-a-real-r-session"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["With CRAN R installed, start R from the R menu, evaluate plot(cars): a Quartz window shows the plot and editing focus returns to the document."]
+rationale = "R is not installed on the macOS runner; ESS/R runs in the Linux integration job."
+
+[[check]]
+id = "SYNC-001"
+title = "Skim SyncTeX forward and inverse search"
+severity = "P2"
+evidence = ["glassmacs:issue-34-other-risks"]
+exposure = "Skim's displayline and its inverse-search command."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-latex-prefers-skim-for-synctex-on-macos"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["With MacTeX and Skim, compile a .tex file, press C-c C-v: Skim shows the line; Command-Shift-click in Skim: Glassmacs shows the source line."]
+
+[[check]]
+id = "DISPLAY-001"
+title = "Multiple displays, Spaces, Stage Manager and scaling"
+severity = "P2"
+evidence = ["glassmacs:issue-34-other-risks"]
+exposure = "Frame placement and redisplay are Cocoa's."
+layers = ["D"]
+tests = []
+implemented = "yes"
+automated = "no"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["Move a window between a Retina and a non-Retina display, between Spaces, and in and out of Stage Manager: text stays sharp and the window keeps focus."]
+
+[[check]]
+id = "APPEAR-001"
+title = "Light and dark appearance changes"
+severity = "P2"
+evidence = ["glassmacs:issue-34-other-risks"]
+exposure = "Glassmacs does not yet follow the system appearance (deferred)."
+layers = ["D"]
+tests = []
+implemented = "no"
+automated = "no"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["Switch System Settings > Appearance between Light and Dark while Glassmacs runs: windows stay readable (following the change is not yet implemented)."]
+
+[[check]]
+id = "SEC-001"
+title = "Developer ID signing, notarization and Gatekeeper"
+severity = "P0"
+evidence = ["aquamacs#264", "glassmacs:issue-34-other-risks"]
+exposure = "Release builds must pass notarization and Gatekeeper on a fresh Mac."
+layers = ["A", "D"]
+tests = ["py:test_hardened_signing_preserves_library_validation_and_signing_order", "py:test_accepted_release_staples_then_validates_before_final_archive", "py:test_missing_submission_id_and_gatekeeper_failure_prevent_final_archive"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["Sign and notarize with scripts/sign-macos-app and scripts/notarize-macos-app; on another Mac, download the archive with a browser and open it: Gatekeeper allows it without warnings."]
+rationale = "Needs the maintainer's Developer ID; maintainers reported a successful run for an earlier build, which does not certify the current tree."
+
+[[check]]
+id = "PERM-001"
+title = "No privacy permission prompts at launch"
+severity = "P2"
+evidence = ["glassmacs:issue-34-other-risks"]
+exposure = "Glassmacs should not ask for Files, Automation or Accessibility access until a user action needs it."
+layers = ["D"]
+tests = []
+implemented = "yes"
+automated = "no"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["On a fresh account, launch the app and open a file in Documents: only the standard folder-access prompt for Documents appears, once."]
+
+[[check]]
+id = "UPSTREAM-001"
+title = "NS scroll crash fixed after Emacs 31.1 (bug#81585)"
+severity = "P1"
+evidence = ["glassmacs:emacs-31-1-missing-ns-fixes"]
+exposure = "Upstream b59a6ea35 (master only) fixes negative destinations reaching ns_scroll_run; Aquamacs 4 carries it (b52cca9aa9), the bundled Emacs 31.1 does not."
+layers = ["D"]
+tests = []
+implemented = "no"
+automated = "no"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["When updating the Emacs pin, confirm the new release contains upstream commit b59a6ea35 (git merge-base --is-ancestor b59a6ea35 TAG).", "Until then, report any crash in ns_scroll_run or copyRect:to: from Console's crash reports against this check."]
+rationale = "Glassmacs bundles the released Emacs binary and carries no C patches; the fix arrives with the pin."
+
+[[check]]
+id = "UPSTREAM-002"
+title = "NS freeze from events sent to a closed window, fixed after Emacs 31.1 (bug#72496)"
+severity = "P1"
+evidence = ["glassmacs:emacs-31-1-missing-ns-fixes"]
+exposure = "Upstream ef448d2ca (master only) addresses app-defined events to a window that exists; Glassmacs hides and restores frames, the path this concerns."
+layers = ["C", "D"]
+tests = ["gui:last-window-close-and-dock-reopen", "gui:fullscreen-close-and-reopen"]
+implemented = "no"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["When updating the Emacs pin, confirm the new release contains upstream commit ef448d2ca.", "Close and reopen windows repeatedly (Command-W, Dock click, full screen) for a few minutes: Glassmacs never stops responding."]
+rationale = "The GUI scenarios close and reopen windows under deadlines, so a freeze fails them, but the race is not reliably reproducible."

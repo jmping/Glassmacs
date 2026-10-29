@@ -9,4 +9,11 @@ if ! emacs=$(command -v "$emacs_command" 2>/dev/null); then
   exit 127
 fi
 
-exec "$emacs" -Q --load "$root/init.el" "$@"
+# Give Emacs the Glassmacs home as its user directory from the start, as the
+# app does; otherwise interactive startup creates an empty ~/.emacs.d.
+# The default must match `glassmacs-home' in lisp/glassmacs-core.el, where an
+# empty GLASSMACS_HOME also means the default.
+home=${GLASSMACS_HOME:-}
+[ -n "$home" ] || home="$HOME/.config/glassmacs"
+mkdir -p -- "$home"
+exec "$emacs" -Q --init-directory="$home" --load "$root/init.el" "$@"

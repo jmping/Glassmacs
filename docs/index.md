@@ -12,7 +12,7 @@ Outstanding: real macOS testing for reopening, document safety, keyboard/menu di
 > **Status:** Canonical documentation governance  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-27
+> **Last reviewed:** 2026-10-29
 > **Coverage:** Documentation authority, status, ownership and navigation  
 > **Supersedes:** None
 
@@ -35,6 +35,9 @@ This is the **canonical index** for maintained project documentation. If a docum
 | [macOS application](macos-launcher.md) | DOC-MAC-LAUNCHER | Informational | Standalone Cocoa app build, installation, configuration, and GUI verification limits | Emacs/Lisp workflow authority, proof of GUI behavior |
 | [R workflows](r-workflows.md) | DOC-R-WORKFLOWS | Canonical for documented user workflows | Available R/document commands and explicitly labeled proposed workflows | General architecture decisions |
 | [Keybindings](keybindings.md) | DOC-KEYS | Canonical for keyboard profile | Implemented shortcuts, conflicts, Option/Meta and left/right international modifier behavior | General macOS architecture, feature parity status |
+| [Aquamacs 4 modern macOS risk audit](aquamacs4-modern-macos-risk-audit.md) | DOC-AQUA4-AUDIT | Informational | Source-traced evidence for the Aquamacs 4 reports in issue #34 and upstream fixes missing from the bundled Emacs | Test status (see the acceptance matrix) |
+| [Acceptance matrix](acceptance-matrix.md) | DOC-ACCEPT | Canonical for acceptance status (generated from `acceptance/matrix.toml`) | Every acceptance risk, its evidence and tests, and its implemented / automated / packaged-app / clean-machine status | Feature specifications, delivery schedule |
+| [macOS manual acceptance checklist](macos-acceptance-checklist.md) | DOC-MAC-CHECKLIST | Canonical procedure (generated from `acceptance/matrix.toml`) | Manual (Layer D) checks on a physical or clean Mac and how to record them | Automated checks, which the matrix lists |
 | [Documentation change register](documentation-changelog.md) | DOC-CHANGELOG | Canonical historical register | Changes to document scope, authority, status, ownership, splits, mergers and supersession | Complete code change history |
 | [Documentation governance](documentation-governance.md) | DOC-GOV | Canonical policy | Metadata requirements, precedence, lifecycle, review and update procedure | Individual feature specifications |
 

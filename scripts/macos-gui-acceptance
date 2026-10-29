@@ -1,0 +1,1243 @@
+#!/usr/bin/env python3
+"""GUI acceptance scenarios for the packaged Glassmacs.app (Layer C).
+
+Each scenario launches the app the way Finder and the Dock do, through
+LaunchServices (`open -a`), with a fresh Glassmacs home, and inspects the
+running app through tests/acceptance/glassmacs-acceptance-driver.el (a
+token-protected listener on 127.0.0.1, loaded with `--args -l`).  Documents
+are opened with `open -a Glassmacs.app FILE`, so they arrive as Apple
+Events, and a crash is simulated with SIGKILL.
+
+What this does not prove is recorded, not hidden: keyboard input is queued
+as Emacs events by default (Emacs's own key handling, not macOS text
+input); when the runner grants Accessibility, the same keys are also typed
+through System Events.  Window close-button clicks are delivered as the
+delete-frame event Cocoa sends.  Dialogs, the Dock icon, signing and
+display configurations remain manual (Layer D, see
+docs/macos-acceptance-checklist.md).
+
+Every wait has a deadline, so a hang fails the scenario instead of the CI
+job; a whole-run limit stops the run.  On failure the scenario saves a
+screenshot, the app's *Messages* and *Warnings*, its frames and buffers,
+and the driver log in the output directory, and any new Emacs crash report
+is collected and fails the run.
+
+Usage:
+  scripts/macos-gui-acceptance APP OUTPUT-DIR [--only NAME ...] [--list]
+  scripts/macos-gui-acceptance --tty OUTPUT-DIR   (harness self-test with
+      terminal Emacs in a pseudo-terminal; macOS-only scenarios are skipped)
+
+Writes OUTPUT-DIR/results.json and OUTPUT-DIR/summary.md.  Exits 1 when a
+scenario fails, 0 otherwise (scenarios that cannot run are reported as
+not run).
+"""
+
+import argparse
+import json
+import os
+import pty
+import secrets
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import traceback
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DRIVER = ROOT / "tests/acceptance/glassmacs-acceptance-driver.el"
+LAUNCH_TIMEOUT = 120
+REQUEST_TIMEOUT = 30
+RUN_TIMEOUT = 25 * 60
+SCENARIOS = []
+
+
+class Failure(Exception):
+    """A scenario check failed."""
+
+
+class NotRun(Exception):
+    """A scenario cannot run in this environment."""
+
+
+def el(value):
+    """Return VALUE (a string or path) as an Emacs Lisp string literal."""
+    # JSON string syntax (with \\uXXXX escapes) is valid Emacs Lisp.
+    return json.dumps(str(value))
+
+
+def run(command, timeout=60, check=True, **kwargs):
+    """Run COMMAND with a deadline and return the completed process."""
+    try:
+        result = subprocess.run(command, capture_output=True, text=True,
+                                timeout=timeout, **kwargs)
+    except subprocess.TimeoutExpired as error:
+        raise Failure(f"Timed out after {timeout}s: {command}") from error
+    if check and result.returncode != 0:
+        raise Failure(f"{command} exited {result.returncode}: "
+                      f"{result.stdout}{result.stderr}".strip())
+    return result
+
+
+class Connection:
+    """A connection to the acceptance driver in a running Emacs."""
+
+    def __init__(self, port, token):
+        self.token = token
+        self.socket = socket.create_connection(("127.0.0.1", port), timeout=REQUEST_TIMEOUT)
+        self.stream = self.socket.makefile("rwb")
+        self.next_id = 0
+
+    def request(self, form, timeout=REQUEST_TIMEOUT):
+        """Evaluate FORM; return the reply dictionary."""
+        self.next_id += 1
+        self.socket.settimeout(timeout)
+        line = json.dumps({"token": self.token, "id": self.next_id, "form": form})
+        try:
+            self.stream.write((line + "\n").encode())
+            self.stream.flush()
+            reply = self.stream.readline()
+        except (OSError, socket.timeout) as error:
+            raise Failure(f"No reply within {timeout}s to {form}") from error
+        if not reply:
+            raise Failure(f"Glassmacs closed the connection during {form}")
+        return json.loads(reply)
+
+    def eval(self, form, timeout=REQUEST_TIMEOUT):
+        """Evaluate FORM and return its value; fail on an Emacs error."""
+        reply = self.request(form, timeout)
+        if not reply["ok"]:
+            raise Failure(f"Emacs error in {form}: {reply['value']}")
+        return reply["value"]
+
+    def wait(self, form, what, timeout=20, interval=0.25):
+        """Poll FORM until its value is true; fail after TIMEOUT seconds."""
+        deadline = time.monotonic() + timeout
+        value = None
+        while time.monotonic() < deadline:
+            value = self.eval(form)
+            # Any Emacs value but nil is true, including 0 and "".
+            if value is not False and value is not None:
+                return value
+            time.sleep(interval)
+        raise Failure(f"Timed out after {timeout}s waiting for {what} "
+                      f"(last value: {value!r})")
+
+    def close(self):
+        try:
+            self.socket.close()
+        except OSError:
+            pass
+
+
+class Instance:
+    """One running Glassmacs process and its driver connection."""
+
+    def __init__(self, harness, pid, connection, log):
+        self.harness = harness
+        self.pid = pid
+        self.emacs = connection
+        self.log = log
+
+    def alive(self):
+        try:
+            os.kill(self.pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def wait_exit(self, timeout=30):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            self.harness.reap()
+            if not self.alive():
+                return
+            time.sleep(0.25)
+        raise Failure(f"Glassmacs (pid {self.pid}) did not exit within {timeout}s")
+
+    def quit(self):
+        """Quit as Command-Q does (no unsaved documents expected)."""
+        if not self.alive():
+            return
+        self.emacs.eval("(glassmacs-acceptance-run-later #'save-buffers-kill-emacs)")
+        try:
+            self.wait_exit()
+        except Failure:
+            # Still running: report the question it is waiting on, if any.
+            try:
+                prompt = self.emacs.eval("(glassmacs-acceptance-prompt)", timeout=5)
+            except Failure:
+                prompt = None
+            raise Failure(f"Glassmacs (pid {self.pid}) did not quit within 30s"
+                          + (f"; it is asking: {prompt!r}" if prompt else ""))
+        finally:
+            self.emacs.close()
+
+    def crash(self):
+        """End the process abruptly, as a crash or power loss would."""
+        self.emacs.close()
+        os.kill(self.pid, signal.SIGKILL)
+        self.wait_exit()
+        # Let LaunchServices notice the app is gone before it is relaunched.
+        time.sleep(3)
+
+    def kill_quietly(self):
+        self.emacs.close()
+        if self.alive():
+            try:
+                os.kill(self.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+class Harness:
+    """Launches Glassmacs and records scenario results."""
+
+    def __init__(self, output, app=None, tty=False):
+        self.output = output
+        self.app = app
+        self.tty = tty
+        self.macos = sys.platform == "darwin" and not tty
+        self.work = Path(tempfile.mkdtemp(prefix="glassmacs-acceptance-"))
+        self.documents = self.work / "Documents with spaces" / "ñ résumé"
+        self.documents.mkdir(parents=True)
+        self.instances = []
+        self.tty_children = []
+        self.launch_count = 0
+        self.accessibility = None
+        self.started = time.time()
+
+    # Launching
+
+    def new_home(self, name):
+        home = self.work / f"home-{name}"
+        home.mkdir()
+        return home
+
+    def document(self, name, contents):
+        path = self.documents / name
+        path.write_text(contents, encoding="utf-8")
+        return path
+
+    def _driver_config(self):
+        self.launch_count += 1
+        directory = self.work / f"launch-{self.launch_count}"
+        directory.mkdir()
+        token = secrets.token_hex(16)
+        port_file = directory / "port"
+        log_file = self.output / f"driver-{self.launch_count}.log"
+        config = directory / "config.json"
+        config.write_text(json.dumps({"token": token, "port_file": str(port_file),
+                                      "log_file": str(log_file)}))
+        config.chmod(0o600)
+        return config, port_file, token, self.output / f"app-{self.launch_count}.log"
+
+    def launch(self, home, files=(), env=None):
+        """Launch Glassmacs with HOME as its home; return an Instance."""
+        config, port_file, token, log = self._driver_config()
+        eval_form = f"(glassmacs-acceptance-start {el(config)})"
+        if self.tty:
+            pid = self._launch_tty(home, files, eval_form, log, env)
+        else:
+            command = ["open", "-n", "-a", str(self.app),
+                       "--env", f"GLASSMACS_HOME={home}",
+                       "--env", f"GLASSMACS_LIFECYCLE_TRACE={self.trace_file()}",
+                       "--stdout", str(log), "--stderr", str(log)]
+            for key, value in (env or {}).items():
+                command += ["--env", f"{key}={value}"]
+            command += [str(path) for path in files]
+            command += ["--args", "-l", str(DRIVER), "--eval", eval_form]
+            run(command, timeout=60)
+            pid = None
+        deadline = time.monotonic() + LAUNCH_TIMEOUT
+        while not port_file.exists():
+            if time.monotonic() > deadline:
+                leftovers = self.app_processes()
+                self.diagnose_stuck_launch(leftovers, port_file, log)
+                self.kill_leftovers()
+                raise Failure(f"Glassmacs did not start its acceptance driver within "
+                              f"{LAUNCH_TIMEOUT}s (app processes then: {leftovers}); "
+                              f"app output: {self.log_tail(log)!r}")
+            time.sleep(0.25)
+        connection = Connection(int(port_file.read_text()), token)
+        actual_pid = connection.eval("(emacs-pid)")
+        instance = Instance(self, actual_pid if pid is None else pid, connection, log)
+        if self.tty:
+            instance.pid = actual_pid
+        self.instances.append(instance)
+        return instance
+
+    def _launch_tty(self, home, files, eval_form, log, env):
+        environment = dict(os.environ, GLASSMACS_HOME=str(home), TERM="xterm-256color")
+        environment.update(env or {})
+        emacs = os.environ.get("GLASSMACS_EMACS", "emacs")
+        arguments = [emacs, "-nw", "-Q", "-l", str(ROOT / "init.el"),
+                     "-l", str(DRIVER), "--eval", eval_form] + [str(f) for f in files]
+        pid, fd = pty.fork()
+        if pid == 0:
+            os.execvpe(emacs, arguments, environment)
+        log_handle = open(log, "wb")
+
+        def drain():
+            while True:
+                try:
+                    data = os.read(fd, 65536)
+                except OSError:
+                    break
+                if not data:
+                    break
+                log_handle.write(data)
+            log_handle.close()
+
+        threading.Thread(target=drain, daemon=True).start()
+        self.tty_children.append(pid)
+        return pid
+
+    def reap(self):
+        for pid in list(self.tty_children):
+            try:
+                if os.waitpid(pid, os.WNOHANG)[0]:
+                    self.tty_children.remove(pid)
+            except ChildProcessError:
+                self.tty_children.remove(pid)
+
+    def open_documents(self, *files):
+        """Open FILES in the running app as Finder does."""
+        if self.tty:
+            raise NotRun("Finder document opening needs macOS")
+        if not files:
+            raise ValueError("use reopen() to reopen the app")
+        run(["open", "-a", str(self.app)] + [str(path) for path in files], timeout=60)
+
+    def trace_file(self):
+        """The lifecycle module's trace file for the current launch."""
+        return self.output / f"lifecycle-{self.launch_count}.log"
+
+    def lifecycle_trace(self):
+        try:
+            return self.trace_file().read_text(errors="replace").splitlines()
+        except OSError:
+            return []
+
+    def reopen(self, ctx):
+        """Reopen the running app as a Dock click does.  `open -a' on a
+        running app does not send the reopen event, so click the app's Dock
+        icon through System Events when Accessibility allows, else send the
+        same reopen Apple Event with AppleScript."""
+        if self.tty:
+            raise NotRun("reopening from the Dock needs macOS")
+        name = self.bundle_name()
+        if self.system_events_available():
+            click = run(["osascript", "-e",
+                         f'tell application "System Events" to tell process "Dock" to '
+                         f'click (first UI element of list 1 whose name is "{name}")'],
+                        timeout=30, check=False)
+            ctx.method("reopen: Dock icon click (System Events)")
+            ctx.note(f"Dock click: status {click.returncode}, "
+                     f"output {(click.stdout + click.stderr).strip()!r}")
+        else:
+            run(["osascript", "-e", f'tell application id "{self.bundle_id()}" to reopen'],
+                timeout=30)
+            ctx.method("reopen: reopen Apple Event (AppleScript)")
+
+    def wait_for_reopen(self, ctx, instance, what, timeout=20):
+        """Reopen as the Dock does and wait for a visible window.  When none
+        appears, record the evidence: whether macOS called the lifecycle
+        reopen callback, whether the reopen command ran in Lisp, and whether
+        the reopen Apple Event sent by AppleScript does better."""
+        emacs = instance.emacs
+        emacs.eval("(setq glassmacs-acceptance-calls nil)")
+        self.reopen(ctx)
+        try:
+            emacs.wait("(> (glassmacs-acceptance-visible-frames) 0)", what, timeout=timeout)
+            return
+        except Failure as first:
+            evidence = {
+                "lifecycle trace": self.lifecycle_trace(),
+                "lisp calls after Dock click": emacs.eval("glassmacs-acceptance-calls"),
+                "frames": emacs.eval("(glassmacs-acceptance-frames)"),
+            }
+            emacs.eval("(setq glassmacs-acceptance-calls nil)")
+            apple_event = run(["osascript", "-e",
+                               f'tell application id "{self.bundle_id()}" to reopen'],
+                              timeout=30, check=False)
+            evidence["reopen Apple Event osascript"] = {
+                "status": apple_event.returncode,
+                "output": (apple_event.stdout + apple_event.stderr).strip()}
+            time.sleep(5)
+            evidence["visible after reopen Apple Event"] = emacs.eval(
+                "(glassmacs-acceptance-visible-frames)")
+            evidence["lisp calls after reopen Apple Event"] = emacs.eval("glassmacs-acceptance-calls")
+            evidence["lifecycle trace (all)"] = self.lifecycle_trace()
+            raise Failure(f"{first}; evidence: {json.dumps(evidence)}")
+
+    def _info(self, key):
+        import plistlib
+        with open(Path(self.app) / "Contents/Info.plist", "rb") as handle:
+            return plistlib.load(handle)[key]
+
+    def bundle_name(self):
+        return self._info("CFBundleName")
+
+    def bundle_id(self):
+        return self._info("CFBundleIdentifier")
+
+    def diagnose_stuck_launch(self, pids, port_file, log):
+        """Record why a launch's driver did not start: whether Emacs runs,
+        what it is doing, whether anything is listening, what it shows."""
+        name = f"launch-{self.launch_count}-stuck"
+        lines = [f"port file exists: {port_file.exists()}",
+                 f"driver log: {self.log_tail(self.output / f'driver-{self.launch_count}.log', 1500)!r}",
+                 f"app output: {self.log_tail(log)!r}",
+                 f"app processes: {pids}"]
+        for pid in pids:
+            for label, command in (
+                    ("ps", ["ps", "-o", "pid,ppid,stat,etime,command", "-p", str(pid)]),
+                    ("listening", ["lsof", "-nP", "-a", "-p", str(pid), "-iTCP", "-sTCP:LISTEN"])):
+                try:
+                    out = run(command, timeout=20, check=False)
+                    lines.append(f"{label} {pid}: {(out.stdout + out.stderr).strip()!r}")
+                except Failure as error:
+                    lines.append(f"{label} {pid}: {error}")
+            lines.append(f"windows {pid}: {self.front_window_text(pid)!r}")
+            sample = self.output / f"{name}-{pid}-sample.txt"
+            try:
+                run(["sample", str(pid), "2", "-file", str(sample)], timeout=60, check=False)
+                text = sample.read_text(errors="replace") if sample.exists() else ""
+                # The main thread's stack shows where startup is blocked.
+                main = text.split("Thread_", 2)
+                stack = (main[1] if len(main) > 1 else text).splitlines()
+                # The deepest frames say what startup is waiting in.
+                lines.append(f"sample {pid} (main thread, deepest frames): "
+                             f"{chr(10).join(stack[:4] + ['...'] + stack[-40:])!r}")
+            except Failure as error:
+                lines.append(f"sample {pid}: {error}")
+        shot = self.screenshot(name)
+        lines.append(f"screenshot: {shot}")
+        report = "\n".join(lines)
+        (self.output / f"{name}.txt").write_text(report)
+        for line in lines:
+            print(f"   {line}", flush=True)
+
+    def front_window_text(self, pid):
+        """Return the text of the app's windows and dialogs (Accessibility)."""
+        if not self.macos or not self.system_events_available():
+            return None
+        script = (f'tell application "System Events" to tell (first process whose unix id is {pid})\n'
+                  f'  set out to ""\n'
+                  f'  repeat with w in windows\n'
+                  f'    set out to out & "[" & (name of w as text) & "] "\n'
+                  f'    try\n'
+                  f'      repeat with t in (static texts of w)\n'
+                  f'        set out to out & (value of t as text) & " | "\n'
+                  f'      end repeat\n'
+                  f'    end try\n'
+                  f'  end repeat\n'
+                  f'  return out\n'
+                  f'end tell')
+        try:
+            return run(["osascript", "-e", script], timeout=20, check=False).stdout.strip()
+        except Failure:
+            return None
+
+    def app_processes(self):
+        """Return the pids of processes running from the app's Contents/MacOS.
+        Contents/MacOS/Emacs starts the architecture's Emacs binary
+        (Emacs-arm64-11 on Apple Silicon); both match."""
+        if self.tty:
+            return []
+        executable = str(Path(self.app) / "Contents/MacOS/")
+        result = run(["pgrep", "-f", executable], check=False, timeout=15)
+        return [int(pid) for pid in result.stdout.split() if int(pid) != os.getpid()]
+
+    def kill_leftovers(self):
+        """Kill app processes no scenario holds, such as an instance that never
+        started its driver.  Only one instance may run, so a leftover would
+        make every later launch fail."""
+        pids = self.app_processes()
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        deadline = time.monotonic() + 15
+        while self.app_processes() and time.monotonic() < deadline:
+            time.sleep(0.25)
+        return pids
+
+    @staticmethod
+    def log_tail(log, size=1500):
+        try:
+            return log.read_text(errors="replace")[-size:]
+        except OSError:
+            return ""
+
+    # macOS helpers
+
+    def screenshot(self, name):
+        if not self.macos:
+            return None
+        path = self.output / f"{name}.png"
+        try:
+            run(["screencapture", "-x", str(path)], timeout=20, check=False)
+        except Failure:
+            return None
+        return path.name if path.exists() else None
+
+    def system_events_available(self):
+        """Return whether System Events may send keystrokes (Accessibility)."""
+        if self.accessibility is None:
+            self.accessibility = False
+            if self.macos:
+                try:
+                    result = run(["osascript", "-e",
+                                  'tell application "System Events" to get UI elements enabled'],
+                                 timeout=20, check=False)
+                    self.accessibility = result.stdout.strip() == "true"
+                except Failure:
+                    self.accessibility = False
+        return self.accessibility
+
+    def system_events_keys(self, pid, script_body):
+        """Bring process PID to the front and run System Events SCRIPT_BODY."""
+        script = (f'tell application "System Events"\n'
+                  f'  set frontmost of (first process whose unix id is {pid}) to true\n'
+                  f'  delay 0.5\n'
+                  f'  {script_body}\n'
+                  f'end tell')
+        run(["osascript", "-e", script], timeout=30)
+
+    def crash_reports(self):
+        directory = Path.home() / "Library/Logs/DiagnosticReports"
+        if not directory.is_dir():
+            return []
+        return [path for path in directory.iterdir()
+                if path.name.startswith(("Emacs", "GlassmacsBootstrap"))
+                and path.stat().st_mtime >= self.started]
+
+    def cleanup(self):
+        for instance in self.instances:
+            instance.kill_quietly()
+        self.reap()
+        shutil.rmtree(self.work, ignore_errors=True)
+
+
+def scenario(name, checks, macos_only=False):
+    """Register a scenario covering acceptance matrix CHECKS."""
+    def register(function):
+        SCENARIOS.append({"name": name, "checks": checks, "macos_only": macos_only,
+                          "function": function, "doc": (function.__doc__ or "").strip()})
+        return function
+    return register
+
+
+class Context:
+    """What a scenario uses: the harness plus notes for the report."""
+
+    def __init__(self, harness, name):
+        self.harness = harness
+        self.name = name
+        self.notes = []
+        self.methods = set()
+
+    def note(self, text):
+        self.notes.append(text)
+
+    def method(self, text):
+        self.methods.add(text)
+
+    def expect(self, condition, message):
+        if not condition:
+            raise Failure(message)
+
+    def ready(self, instance):
+        """Wait until INSTANCE shows a window, then turn off the one-time
+        optional-package offer for this session only (it is tested in its own
+        scenario), so it cannot interrupt other scenarios.  The driver also
+        asks questions in the minibuffer rather than Cocoa dialogs, which
+        would block it; dialogs are checked by hand (Layer D)."""
+        self.method("questions: minibuffer (Cocoa dialogs are manual)")
+        if self.harness.tty:
+            instance.emacs.wait("(frame-live-p (selected-frame))", "a terminal frame")
+        else:
+            instance.emacs.wait("(eq window-system 'ns)", "the Cocoa window system")
+            instance.emacs.wait("(> (glassmacs-acceptance-visible-frames) 0)",
+                                "a visible window", timeout=30)
+        instance.emacs.eval("(setq glassmacs-offer-package-installation nil)")
+        # A document opened at launch may already have asked; decline it.
+        if instance.emacs.eval("(glassmacs-acceptance-prompt-matches-p \"optional packages\")"):
+            instance.emacs.eval("(glassmacs-acceptance-type \"n\")")
+
+    def close_last_window(self, instance):
+        """Close the frame's window as the close button does."""
+        instance.emacs.eval("(glassmacs-acceptance-close-selected-window-like-cocoa)")
+        self.method("window close button: Cocoa delete-frame event")
+        instance.emacs.wait("(= (glassmacs-acceptance-visible-frames) 0)",
+                            "no visible window after closing the last one")
+
+    def type(self, instance, keys, system_events=None, text=False):
+        """Type KEYS into the app: `kbd' syntax, or literal characters when
+        TEXT.  When Accessibility is available and SYSTEM_EVENTS is given (an
+        AppleScript keystroke command), System Events types it instead,
+        through macOS input."""
+        if system_events and self.harness.system_events_available():
+            self.harness.system_events_keys(instance.pid, system_events)
+            self.method("keyboard: System Events (macOS input)")
+        else:
+            helper = "glassmacs-acceptance-type-text" if text else "glassmacs-acceptance-type"
+            instance.emacs.eval(f"({helper} {el(keys)})")
+            self.method("keyboard: queued Emacs events")
+
+
+# Scenarios.  Each docstring says what it establishes.
+
+
+@scenario("launch-clean-home", ["LAUNCH-001", "NATIVE-001", "PATH-001", "PREF-002", "SPELL-001"],
+          macos_only=True)
+def launch_clean_home(ctx):
+    """Launches from LaunchServices with an empty home and the launchd
+    environment: one Cocoa process, one visible window, no Glassmacs
+    warnings, only bundled read-only native code, the login-shell PATH
+    imported, and nothing written to ~/.emacs.d or ~/.config/emacs."""
+    harness = ctx.harness
+    watched = [Path.home() / ".emacs.d", Path.home() / ".config/emacs",
+               Path.home() / ".config/glassmacs"]
+    before = {path: path.exists() for path in watched}
+    home = harness.new_home("clean")
+    instance = harness.launch(home)
+    ctx.ready(instance)
+    emacs = instance.emacs
+    ctx.expect(harness.app_processes() == [instance.pid],
+               f"Expected exactly one Glassmacs Emacs process, found {harness.app_processes()}")
+    ctx.expect(emacs.eval("(glassmacs-acceptance-visible-frames)") == 1,
+               "Expected exactly one visible window at launch")
+    checks = emacs.eval("(glassmacs-self-check-results)")
+    for name, status, detail in checks:
+        ctx.note(f"self-check {status}: {name}: {detail}")
+    failed = [check for check in checks if check[1] in ("fail", "warn")]
+    ctx.expect(not failed, f"Self-check problems: {failed}")
+    native = emacs.eval("""(list :available (and (fboundp 'native-comp-available-p)
+                                                 (native-comp-available-p))
+                                 :path native-comp-eln-load-path
+                                 :pp-native
+                                 (cl-some (lambda (function)
+                                            (let ((definition (symbol-function function)))
+                                              (or (and (fboundp 'native-comp-function-p)
+                                                       (native-comp-function-p definition))
+                                                  (and (fboundp 'subr-native-elisp-p)
+                                                       (subr-native-elisp-p definition)))))
+                                          '(find-file window-normalize-buffer
+                                            buffer-file-name-with-version)))""")
+    if native["available"]:
+        bundle = str(Path(harness.app).resolve())
+        ctx.expect(all(str(Path(p).resolve()).startswith(bundle) for p in native["path"]),
+                   f"Native code loads from outside the bundle: {native['path']}")
+        ctx.expect(native["pp-native"],
+                   "Bundled native code did not load (preloaded find-file is not native)")
+    login_shell = os.environ.get("SHELL", "/bin/zsh")
+    login_path = run([login_shell, "-l", "-c", 'printf %s "$PATH"'], timeout=30).stdout
+    emacs_path = emacs.eval('(getenv "PATH")').split(":")
+    missing = [d for d in login_path.split(":") if d and Path(d).is_dir() and d not in emacs_path]
+    ctx.expect(not missing, f"Login-shell PATH entries missing in Glassmacs: {missing}")
+    startup = emacs.eval("(list :program (car command-line-args) :name invocation-name "
+                         ":init user-init-file)")
+    # Contents/MacOS/Emacs starts the architecture's binary (Emacs-arm64-11).
+    bundle_programs = str(Path(harness.app).resolve() / "Contents/MacOS") + "/"
+    ctx.expect(str(Path(startup["program"]).resolve()).startswith(bundle_programs)
+               and startup["name"].startswith("Emacs"),
+               f"Emacs did not start as the bundled program (so -Q is ignored): {startup}")
+    # Glassmacs records its own bundled init.el as the init file (so that
+    # preferences can be saved under -Q); anything else is a user's file.
+    bundled_init = str(Path(harness.app).resolve() / "Contents/Resources/Glassmacs/init.el")
+    ctx.expect(not startup["init"] or str(Path(startup["init"]).resolve()) == bundled_init,
+               f"A user init file was loaded: {startup['init']}")
+    custom = emacs.eval("custom-file")
+    ctx.expect(str(Path(custom).resolve()).startswith(str(home.resolve())),
+               f"custom-file is outside the Glassmacs home: {custom}")
+    instance.quit()
+    after = {path: path.exists() for path in watched}
+    ctx.expect(before == after, f"Glassmacs created files outside its home: {after}")
+    ctx.expect(not list(home.rglob("eln-cache")), "A native-code cache was created in the home")
+
+
+@scenario("user-emacs-init-is-not-loaded", ["LAUNCH-002", "PREF-003"], macos_only=True)
+def user_emacs_init_is_not_loaded(ctx):
+    """The packaged app ignores the user's own ~/.emacs.d early-init.el and
+    init.el (Glassmacs runs its isolated configuration with -Q).  Runs only
+    when those files do not exist, so a person's own configuration is never
+    touched; trap files are created and removed again."""
+    harness = ctx.harness
+    directory = Path.home() / ".emacs.d"
+    traps = [directory / "early-init.el", directory / "init.el"]
+    if any(path.exists() for path in traps):
+        raise NotRun("~/.emacs.d already has init files; not replacing them")
+    created_directory = not directory.exists()
+    marker = harness.work / "user-init-was-loaded"
+    directory.mkdir(exist_ok=True)
+    try:
+        for path in traps:
+            path.write_text(f"(write-region {el(path.name)} nil {el(marker)} t)\n")
+        instance = harness.launch(harness.new_home("trap"))
+        ctx.ready(instance)
+        time.sleep(2)
+        ctx.expect(not marker.exists(),
+                   f"The packaged app loaded the user's {marker.read_text() if marker.exists() else ''}")
+        instance.quit()
+    finally:
+        for path in traps:
+            path.unlink(missing_ok=True)
+        if created_directory:
+            shutil.rmtree(directory, ignore_errors=True)
+
+
+@scenario("last-window-close-and-dock-reopen", ["LIFE-001", "UPSTREAM-002"], macos_only=True)
+def last_window_close_and_reopen(ctx):
+    """Closing the last window leaves Glassmacs running with no window;
+    reopening the app (as a Dock click does) shows the window again without
+    creating buffers or a second process."""
+    harness = ctx.harness
+    instance = harness.launch(harness.new_home("reopen"))
+    ctx.ready(instance)
+    emacs = instance.emacs
+    before = set(emacs.eval("(mapcar #'buffer-name (buffer-list))"))
+    ctx.close_last_window(instance)
+    time.sleep(1)
+    ctx.expect(instance.alive(), "Closing the last window quit Glassmacs")
+    harness.wait_for_reopen(ctx, instance, "the window to come back after reopening the app")
+    ctx.expect(emacs.eval("(glassmacs-acceptance-visible-frames)") == 1,
+               "Reopening showed more than one window")
+    after = set(emacs.eval("(mapcar #'buffer-name (buffer-list))"))
+    new = {name for name in after - before if not name.startswith(" ")}
+    ctx.expect(not new, f"Reopening created buffers: {new}")
+    ctx.expect(harness.app_processes() == [instance.pid], "Reopening started a second process")
+    instance.quit()
+
+
+@scenario("finder-open-while-windowless", ["FINDER-001", "FINDER-002", "ASSOC-002"], macos_only=True)
+def finder_open_while_windowless(ctx):
+    """With no window open, opening a file from Finder (`open -a`) shows it in
+    a visible window of the running app, for a path with spaces and
+    non-ASCII characters."""
+    harness = ctx.harness
+    document = harness.document("windowless analysis.R", "x <- 1\n")
+    instance = harness.launch(harness.new_home("windowless"))
+    ctx.ready(instance)
+    ctx.close_last_window(instance)
+    harness.open_documents(document)
+    instance.emacs.wait(f"(glassmacs-acceptance-file-shown-p {el(document)})",
+                        "the document to appear in a visible window", timeout=30)
+    ctx.expect(len(instance.emacs.eval(f"(glassmacs-acceptance-file-buffers {el(document)})")) == 1,
+               "The document was opened more than once")
+    ctx.expect(harness.app_processes() == [instance.pid], "Opening started a second process")
+    instance.quit()
+
+
+@scenario("finder-repeat-and-mixed-documents", ["FINDER-002", "ASSOC-002", "MIX-GUI-001"],
+          macos_only=True)
+def finder_repeat_and_mixed_documents(ctx):
+    """A document opened at launch is shown; opening it again neither
+    duplicates its buffer nor adds a window; R Markdown, Quarto and Sweave
+    documents open with the document menu and Command shortcuts."""
+    harness = ctx.harness
+    script = harness.document("repeat.R", "y <- 2\n")
+    documents = {
+        "report.Rmd": "Prose.\n\n```{r}\nx <- 1\n```\n",
+        "slides.qmd": "Prose.\n\n```{r}\nx <- 1\n```\n",
+        "paper.Rnw": "\\documentclass{article}\n<<a>>=\nx <- 1\n@\n",
+    }
+    paths = [harness.document(name, text) for name, text in documents.items()]
+    instance = harness.launch(harness.new_home("repeat"), files=[script])
+    ctx.ready(instance)
+    emacs = instance.emacs
+    emacs.wait(f"(glassmacs-acceptance-file-shown-p {el(script)})",
+               "the document opened at launch", timeout=30)
+    frames = emacs.eval("(glassmacs-acceptance-visible-frames)")
+    harness.open_documents(script)
+    time.sleep(3)
+    ctx.expect(len(emacs.eval(f"(glassmacs-acceptance-file-buffers {el(script)})")) == 1,
+               "Opening the document again duplicated its buffer")
+    ctx.expect(emacs.eval("(glassmacs-acceptance-visible-frames)") == frames,
+               "Opening an already visible document added a window")
+    harness.open_documents(*paths)
+    for path in paths:
+        emacs.wait(f"(glassmacs-acceptance-file-buffers {el(path)})",
+                   f"{path.name} to open", timeout=30)
+        state = emacs.eval(f"""(with-current-buffer (find-buffer-visiting {el(path)})
+                                 (list :mode major-mode
+                                       :document (bound-and-true-p glassmacs-document-mode)
+                                       :run (key-binding [S-s-return])
+                                       :render (key-binding [?\\M-\\s-k])
+                                       :menu (and (lookup-key (current-active-maps) [menu-bar glassmacs-document]) t)
+                                       :problems (glassmacs-diagnostics-menu-problems)))""")
+        ctx.note(f"{path.name}: {state}")
+        ctx.expect(state["document"], f"{path.name}: document commands are not on")
+        ctx.expect(state["run"] == "glassmacs-chunks-run-current",
+                   f"{path.name}: Command-Shift-Return runs {state['run']}")
+        ctx.expect(state["render"] == "glassmacs-chunks-render",
+                   f"{path.name}: Command-Option-K runs {state['render']}")
+        ctx.expect(not state["problems"], f"{path.name}: menu problems {state['problems']}")
+    instance.quit()
+
+
+@scenario("command-w-never-loses-changes", ["CLOSE-001", "TEXT-001"])
+def command_w_never_loses_changes(ctx):
+    """Command-W on a modified document asks Save / Don't Save / Cancel;
+    Cancel keeps the edits and the window; Don't Save closes without writing
+    the file.  Text typed before is inserted literally."""
+    harness = ctx.harness
+    document = harness.document("close me.txt", "original\n")
+    instance = harness.launch(harness.new_home("close"), files=[] if harness.macos else [document])
+    ctx.ready(instance)
+    emacs = instance.emacs
+    if harness.macos:
+        harness.open_documents(document)
+    emacs.wait(f"(glassmacs-acceptance-file-shown-p {el(document)})"
+               if harness.macos else f"(get-file-buffer {el(document)})",
+               "the document", timeout=30)
+    emacs.eval(f"(select-window (get-buffer-window (find-buffer-visiting {el(document)}) t))")
+    emacs.eval("(goto-char (point-max))")
+    typed = "\"quoted\" -- it's teh ..."
+    applescript_text = typed.replace('"', '\\"')
+    ctx.type(instance, typed, text=True,
+             system_events=f'keystroke "{applescript_text}"')
+    emacs.wait(f"(equal (glassmacs-acceptance-buffer-text (find-buffer-visiting {el(document)})) "
+               f"{el('original' + chr(10) + typed)})",
+               "the typed text, inserted literally", timeout=15)
+    close_key = "s-w" if harness.macos else "M-x glassmacs-close-document RET"
+    ctx.type(instance, close_key, system_events='keystroke "w" using command down')
+    emacs.wait("(glassmacs-acceptance-prompt-matches-p \"Save changes\")",
+               "the Save / Don't Save / Cancel question", timeout=15)
+    ctx.expect(document.read_text() == "original\n", "The file was written before answering")
+    ctx.type(instance, "c", system_events='keystroke "c"')
+    time.sleep(1)
+    state = emacs.eval(f"""(let ((buffer (find-buffer-visiting {el(document)})))
+                             (list :alive (buffer-live-p buffer)
+                                   :modified (and buffer (buffer-modified-p buffer))))""")
+    ctx.expect(state["alive"] and state["modified"], f"Cancel lost the document: {state}")
+    ctx.type(instance, close_key, system_events='keystroke "w" using command down')
+    emacs.wait("(glassmacs-acceptance-prompt-matches-p \"Save changes\")",
+               "the question again", timeout=15)
+    ctx.type(instance, "d", system_events='keystroke "d"')
+    emacs.wait(f"(not (find-buffer-visiting {el(document)}))", "the document to close")
+    ctx.expect(document.read_text() == "original\n", "Don't Save wrote the file")
+    ctx.expect(instance.alive(), "Closing the document quit Glassmacs")
+    instance.kill_quietly()
+
+
+@scenario("quit-with-unsaved-document-asks", ["CLOSE-002"], macos_only=True)
+def quit_with_unsaved_document_asks(ctx):
+    """Command-Q with an unsaved document asks before quitting; declining
+    keeps Glassmacs and the edits."""
+    harness = ctx.harness
+    document = harness.document("unsaved.txt", "keep\n")
+    instance = harness.launch(harness.new_home("quit"), files=[document])
+    ctx.ready(instance)
+    emacs = instance.emacs
+    emacs.wait(f"(glassmacs-acceptance-file-shown-p {el(document)})", "the document", timeout=30)
+    emacs.eval(f"(with-current-buffer (find-buffer-visiting {el(document)}) (insert \"edit \"))")
+    ctx.type(instance, "s-q", system_events='keystroke "q" using command down')
+    emacs.wait("(glassmacs-acceptance-prompt-matches-p \"[Ss]ave\")",
+               "a question about the unsaved document", timeout=15)
+    ctx.type(instance, "C-g", system_events="key code 53")
+    time.sleep(1.5)
+    ctx.expect(instance.alive(), "Glassmacs quit with an unsaved document")
+    ctx.expect(emacs.eval(f"(buffer-modified-p (find-buffer-visiting {el(document)}))"),
+               "The edits were lost")
+    ctx.expect(document.read_text() == "keep\n", "The file was written without asking")
+    instance.kill_quietly()
+
+
+@scenario("fullscreen-close-and-reopen", ["FULL-001", "UPSTREAM-002"], macos_only=True)
+def fullscreen_close_and_reopen(ctx):
+    """Closing a full-screen window, both as the last window and with a
+    second window open, neither quits nor crashes Glassmacs, and the app
+    reopens normally."""
+    harness = ctx.harness
+    instance = harness.launch(harness.new_home("fullscreen"))
+    ctx.ready(instance)
+    emacs = instance.emacs
+    emacs.eval("(toggle-frame-fullscreen)")
+    emacs.wait("(eq (frame-parameter nil 'fullscreen) 'fullboth)", "full screen")
+    time.sleep(2)
+    ctx.close_last_window(instance)
+    time.sleep(1.5)
+    ctx.expect(instance.alive(), "Closing the full-screen last window quit Glassmacs")
+    harness.wait_for_reopen(ctx, instance, "the window to return", timeout=30)
+    emacs.eval("(set-frame-parameter nil 'fullscreen nil)")
+    time.sleep(2)
+    emacs.eval("(select-frame (make-frame))")
+    emacs.wait("(= (glassmacs-acceptance-visible-frames) 2)", "a second window")
+    emacs.eval("(toggle-frame-fullscreen)")
+    time.sleep(2)
+    emacs.eval("(glassmacs-acceptance-close-selected-window-like-cocoa)")
+    emacs.wait("(= (glassmacs-acceptance-visible-frames) 1)",
+               "only the full-screen window to close")
+    ctx.expect(instance.alive(), "Closing a full-screen window quit Glassmacs")
+    instance.quit()
+
+
+@scenario("menus-in-key-modes", ["MENU-001", "MODE-001"])
+def menus_in_key_modes(ctx):
+    """Every menu item's enable, visibility, button and filter forms evaluate
+    without error in the running app for text, R, R Markdown, Quarto,
+    Sweave, LaTeX, Lisp, Dired and the scratch buffer."""
+    harness = ctx.harness
+    names = {"notes.txt": "Prose.\n", "menus.R": "x <- 1\n",
+             "menus.Rmd": "```{r}\nx\n```\n", "menus.qmd": "```{r}\nx\n```\n",
+             "menus.Rnw": "<<a>>=\nx\n@\n", "menus.tex": "\\documentclass{article}\n",
+             "menus.el": "(setq x 1)\n"}
+    paths = [harness.document(name, text) for name, text in names.items()]
+    instance = harness.launch(harness.new_home("menus"))
+    ctx.ready(instance)
+    emacs = instance.emacs
+    problems = {}
+    for path in paths:
+        found = emacs.eval(f"""(let ((buffer (find-file-noselect {el(path)})))
+                                 (glassmacs-diagnostics-menu-problems buffer))""")
+        if found:
+            problems[path.name] = found
+    for buffer in ["*scratch*", f"(dired-noselect {el(harness.documents)})"]:
+        form = (f"(glassmacs-diagnostics-menu-problems {buffer})" if buffer.startswith("(")
+                else f"(glassmacs-diagnostics-menu-problems (get-buffer-create {el(buffer)}))")
+        found = emacs.eval(form)
+        if found:
+            problems[buffer] = found
+    ctx.expect(not problems, f"Menu problems: {problems}")
+    instance.kill_quietly()
+
+
+@scenario("clipboard-round-trip", ["CLIP-001"], macos_only=True)
+def clipboard_round_trip(ctx):
+    """Text copied in Glassmacs is what other apps paste (pbpaste), and text
+    copied elsewhere (pbcopy) is what Glassmacs yanks, including quotes,
+    dashes and non-ASCII characters, unchanged."""
+    harness = ctx.harness
+    instance = harness.launch(harness.new_home("clipboard"))
+    ctx.ready(instance)
+    emacs = instance.emacs
+    environment = dict(os.environ, LANG="en_US.UTF-8")
+    out = "Glassmacs \"quoted\" -- it's ✓ é"
+    emacs.eval(f"(gui-set-selection 'CLIPBOARD {el(out)})")
+    pasted = run(["pbpaste"], timeout=15, env=environment).stdout
+    ctx.expect(pasted == out, f"pbpaste gave {pasted!r}, expected {out!r}")
+    into = "from macOS 'single' — ü"
+    run(["pbcopy"], timeout=15, input=into, env=environment)
+    yanked = emacs.eval("(with-temp-buffer (yank) (buffer-string))")
+    ctx.expect(yanked == into, f"Glassmacs yanked {yanked!r}, expected {into!r}")
+    instance.kill_quietly()
+
+
+@scenario("external-file-changes", ["REVERT-001"])
+def external_file_changes(ctx):
+    """A file changed by another program, in place or replaced by rename,
+    shows its new contents without any action; a buffer with unsaved edits
+    is never reverted, and saving it asks before overwriting the other
+    program's file."""
+    harness = ctx.harness
+    document = harness.document("changed elsewhere.R", "a <- 1\n")
+    instance = harness.launch(harness.new_home("revert"))
+    ctx.ready(instance)
+    emacs = instance.emacs
+    emacs.eval(f"(find-file {el(document)})")
+    mode = emacs.eval("(list :notify auto-revert-use-notify :interval auto-revert-interval "
+                      ":library (bound-and-true-p file-notify--library))")
+    ctx.note(f"file following: {mode}")
+    time.sleep(1.5)
+    document.write_text("a <- 2\n")
+    emacs.wait(f"(equal (glassmacs-acceptance-buffer-text (find-buffer-visiting {el(document)})) "
+               f"\"a <- 2\\n\")", "the buffer to show the file's new contents", timeout=20)
+    # Git and many programs write a new file and rename it over the old one.
+    replacement = document.with_name("changed elsewhere.R.new")
+    replacement.write_text("a <- 2.5\n")
+    os.replace(replacement, document)
+    emacs.wait(f"(equal (glassmacs-acceptance-buffer-text (find-buffer-visiting {el(document)})) "
+               f"\"a <- 2.5\\n\")", "the buffer to follow a file replaced by rename", timeout=20)
+    emacs.eval(f"(with-current-buffer (find-buffer-visiting {el(document)}) "
+               f"(goto-char (point-max)) (insert \"# mine\\n\"))")
+    time.sleep(1.5)
+    document.write_text("a <- 3\n")
+    time.sleep(8)
+    text = emacs.eval(f"(glassmacs-acceptance-buffer-text (find-buffer-visiting {el(document)}))")
+    ctx.expect(text == "a <- 2.5\n# mine\n", f"Unsaved edits were replaced: {text!r}")
+    declined = emacs.eval(f"""(with-current-buffer (find-buffer-visiting {el(document)})
+                                (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
+                                          ((symbol-function 'ask-user-about-supersession-threat)
+                                           (lambda (&rest _) (signal 'file-supersession nil))))
+                                  (condition-case nil (progn (save-buffer) nil) (error t))))""")
+    ctx.expect(declined, "Saving over the changed file did not ask first")
+    ctx.expect(document.read_text() == "a <- 3\n", "The other program's file was overwritten")
+    emacs.eval(f"(with-current-buffer (find-buffer-visiting {el(document)}) (set-buffer-modified-p nil))")
+    instance.kill_quietly()
+
+
+@scenario("package-offer-declined-installs-nothing", ["PKG-001"])
+def package_offer_declined(ctx):
+    """Opening an R file without ESS offers the optional packages once,
+    after the document is visible; declining installs nothing and starts no
+    network access."""
+    harness = ctx.harness
+    document = harness.document("offer.R", "x <- 1\n")
+    home = harness.new_home("offer")
+    instance = harness.launch(home)
+    emacs = instance.emacs
+    if harness.tty:
+        emacs.wait("(frame-live-p (selected-frame))", "a frame")
+    else:
+        emacs.wait("(> (glassmacs-acceptance-visible-frames) 0)", "a window", timeout=30)
+    if emacs.eval("(and (locate-library \"ess-site\") t)"):
+        instance.kill_quietly()
+        raise NotRun("ESS is installed, so no package offer is made")
+    emacs.eval(f"(glassmacs-acceptance-run-later (lambda () (find-file {el(document)})))")
+    emacs.wait("(glassmacs-acceptance-prompt-matches-p \"Install Glassmacs's optional packages\")",
+               "the optional package offer", timeout=20)
+    emacs.eval(f"(glassmacs-acceptance-type \"n\")")
+    time.sleep(1.5)
+    ctx.expect(not emacs.eval("(get-buffer \"*Glassmacs Packages*\")"),
+               "Declining still started an installation")
+    elpa = home / "elpa"
+    installed = [p.name for p in elpa.iterdir()] if elpa.is_dir() else []
+    ctx.expect(not [p for p in installed if p not in ("archives", "gnupg")],
+               f"Packages were installed: {installed}")
+    instance.kill_quietly()
+
+
+@scenario("preferences-persist-across-relaunch", ["PREF-001", "PREF-003"], macos_only=True)
+def preferences_persist(ctx):
+    """Preferences chosen from Glassmacs's own commands are saved in the
+    Glassmacs home and in effect after quitting and relaunching."""
+    harness = ctx.harness
+    home = harness.new_home("preferences")
+    instance = harness.launch(home)
+    ctx.ready(instance)
+    emacs = instance.emacs
+    emacs.eval("(glassmacs-select-opening-new-tab)")
+    emacs.eval("(glassmacs-toggle-right-option-types-characters)")
+    expected_option = emacs.eval("glassmacs-right-option-types-characters")
+    instance.quit()
+    custom = home / "custom.el"
+    ctx.expect(custom.is_file(), "No custom.el was written in the Glassmacs home")
+    second = harness.launch(home)
+    ctx.ready(second)
+    ctx.expect(second.emacs.eval("glassmacs-document-opening-policy") == "new-tab",
+               "The document-opening preference was not restored")
+    ctx.expect(second.emacs.eval("glassmacs-right-option-types-characters") == expected_option,
+               "The right Option key preference was not restored")
+    second.quit()
+
+
+@scenario("crash-restore-recovery-and-finder-open",
+          ["RESTORE-001", "FINDER-003", "RECOVER-001"], macos_only=True)
+def crash_restore_and_recovery(ctx):
+    """After an abnormal exit with workspace restoration on: the next launch
+    reopens each saved file once, shows a document opened from Finder during
+    startup in front, offers crash recovery for the unsaved edits without
+    overwriting them, and starts no R console."""
+    harness = ctx.harness
+    home = harness.new_home("crash")
+    first_file = harness.document("restored one.R", "one <- 1\n")
+    second_file = harness.document("restored two.Rmd", "Two.\n")
+    incoming = harness.document("incoming from Finder.R", "incoming <- TRUE\n")
+    instance = harness.launch(home)
+    ctx.ready(instance)
+    emacs = instance.emacs
+    emacs.eval("(glassmacs-toggle-restore-workspace)")
+    ctx.expect(emacs.eval("glassmacs-restore-workspace"), "Workspace restoration did not turn on")
+    emacs.eval(f"(find-file {el(first_file)})")
+    emacs.eval(f"(find-file-other-frame {el(second_file)})")
+    emacs.eval("(with-current-buffer (find-buffer-visiting %s) (insert \"unsaved edit \"))"
+               % el(second_file))
+    emacs.eval("(desktop-save desktop-dirname)")
+    emacs.eval("(glassmacs-recovery--periodic-snapshot)")
+    recovery = Path(emacs.eval("glassmacs-recovery-directory"))
+    snapshot_files = sorted(p.name for p in recovery.iterdir())
+    ctx.expect(snapshot_files, "No crash-recovery snapshot was written")
+    crashed_pid = instance.pid
+    instance.crash()
+    ctx.note(f"killed pid {crashed_pid} with SIGKILL; it exited; "
+             f"app processes before relaunch: {harness.app_processes()}")
+    second = harness.launch(home, files=[incoming])
+    emacs = second.emacs
+    emacs.wait("(glassmacs-acceptance-prompt-matches-p \"crash-recovery\")",
+               "the crash-recovery offer", timeout=60)
+    ctx.expect(sorted(p.name for p in recovery.iterdir()) == snapshot_files
+               or set(snapshot_files) <= {p.name for p in recovery.iterdir()},
+               "Recovery data changed before the user answered")
+    emacs.eval("(glassmacs-acceptance-type \"n\")")
+    emacs.wait(f"(glassmacs-acceptance-file-buffers {el(incoming)})",
+               "the document opened from Finder", timeout=30)
+    emacs.wait(f"(glassmacs-acceptance-file-shown-p {el(incoming)})",
+               "the Finder document in the front window", timeout=30)
+    for path in (first_file, second_file):
+        count = len(emacs.eval(f"(glassmacs-acceptance-file-buffers {el(path)})"))
+        ctx.expect(count == 1, f"{path.name} restored {count} times")
+    consoles = emacs.eval("(cl-count-if (lambda (b) (with-current-buffer b (derived-mode-p 'comint-mode))) (buffer-list))")
+    ctx.expect(consoles == 0, "A console or process buffer was started at restore")
+    ctx.expect(set(snapshot_files) <= {p.name for p in recovery.iterdir()},
+               "Declining recovery deleted the snapshots")
+    second.kill_quietly()
+
+
+@scenario("windowless-menu-and-shortcuts", ["LIFE-002"], macos_only=True)
+def windowless_menu_and_shortcuts(ctx):
+    """With every window closed, Command-N still creates a document in a
+    visible window (the lifecycle bridge routes windowless key events)."""
+    harness = ctx.harness
+    instance = harness.launch(harness.new_home("windowless-keys"))
+    ctx.ready(instance)
+    ctx.close_last_window(instance)
+    if not harness.system_events_available():
+        instance.kill_quietly()
+        raise NotRun("needs System Events (Accessibility) to send a real Command-N "
+                     "to an app without windows")
+    harness.system_events_keys(instance.pid, 'keystroke "n" using command down')
+    ctx.method("keyboard: System Events (macOS input)")
+    instance.emacs.wait("(> (glassmacs-acceptance-visible-frames) 0)",
+                        "a window after Command-N", timeout=15)
+    ctx.expect(instance.emacs.eval("(string-prefix-p \"Untitled\" (buffer-name))"),
+               "Command-N did not create an Untitled document")
+    instance.kill_quietly()
+
+
+# Running
+
+
+def run_scenario(harness, entry):
+    ctx = Context(harness, entry["name"])
+    started = time.monotonic()
+    result = {"name": entry["name"], "checks": entry["checks"], "description": entry["doc"]}
+    if entry["macos_only"] and not harness.macos:
+        result.update(status="not-run", detail="needs the packaged app on macOS")
+    else:
+        try:
+            entry["function"](ctx)
+            result.update(status="pass", detail="")
+        except NotRun as error:
+            result.update(status="not-run", detail=str(error))
+        except Exception as error:  # noqa: BLE001 - every failure is reported
+            result.update(status="fail", detail=f"{error}",
+                          traceback=traceback.format_exc())
+            artifacts = []
+            shot = harness.screenshot(entry["name"])
+            if shot:
+                artifacts.append(shot)
+            for instance in harness.instances:
+                if instance.alive():
+                    try:
+                        state = instance.emacs.eval("(glassmacs-acceptance-diagnostics)", timeout=10)
+                        name = f"{entry['name']}-pid{instance.pid}-state.json"
+                        (harness.output / name).write_text(json.dumps(state, indent=2))
+                        artifacts.append(name)
+                        # Also in the job log, since artifacts are not always at hand.
+                        brief = {key: state.get(key) for key in
+                                 ("frames", "current-message", "prompt", "buffers")}
+                        print(f"   state: {json.dumps(brief)[:2000]}", flush=True)
+                        warnings = state.get("warnings")
+                        if warnings:
+                            print(f"   warnings: {warnings[-800:]!r}", flush=True)
+                    except Exception:  # noqa: BLE001
+                        pass
+                print(f"   app output: {harness.log_tail(instance.log, 800)!r}", flush=True)
+            result["artifacts"] = artifacts
+    for instance in harness.instances:
+        instance.kill_quietly()
+    harness.instances.clear()
+    harness.reap()
+    if harness.macos:
+        leftovers = harness.kill_leftovers()
+        if leftovers:
+            print(f"   killed leftover app processes {leftovers}", flush=True)
+    result.update(notes=ctx.notes, methods=sorted(ctx.methods),
+                  seconds=round(time.monotonic() - started, 1))
+    return result
+
+
+def summary_markdown(results, environment):
+    icons = {"pass": "PASS", "fail": "FAIL", "not-run": "NOT RUN"}
+    lines = ["# Glassmacs GUI acceptance (Layer C)", "",
+             f"Environment: {environment}", "",
+             "| Scenario | Checks | Result | How | Detail |", "| --- | --- | --- | --- | --- |"]
+    for result in results:
+        detail = result.get("detail", "").replace("|", "\\|").replace("\n", " ")[:300]
+        lines.append(f"| {result['name']} | {', '.join(result['checks'])} | "
+                     f"{icons[result['status']]} | {'; '.join(result['methods'])} | {detail} |")
+    lines += ["", "Batch tests and this run do not replace the manual checks in "
+              "docs/macos-acceptance-checklist.md."]
+    return "\n".join(lines) + "\n"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("app", nargs="?", help="Glassmacs.app to test")
+    parser.add_argument("output", nargs="?", help="directory for results and artifacts")
+    parser.add_argument("--tty", metavar="OUTPUT", help="self-test with terminal Emacs")
+    parser.add_argument("--only", action="append", default=[], help="run only this scenario")
+    parser.add_argument("--list", action="store_true", help="list scenarios and exit")
+    arguments = parser.parse_args()
+    if arguments.list:
+        for entry in SCENARIOS:
+            print(f"{entry['name']}: {', '.join(entry['checks'])}"
+                  f"{' (macOS)' if entry['macos_only'] else ''}")
+        return 0
+    if arguments.tty:
+        output, app, tty = Path(arguments.tty), None, True
+    else:
+        if not arguments.app or not arguments.output:
+            parser.error("APP and OUTPUT-DIR are required (or use --tty)")
+        if sys.platform != "darwin":
+            parser.error("the packaged app can only be tested on macOS")
+        output, app, tty = Path(arguments.output), Path(arguments.app).resolve(), False
+    output.mkdir(parents=True, exist_ok=True)
+    selected = [s for s in SCENARIOS if not arguments.only or s["name"] in arguments.only]
+    unknown = set(arguments.only) - {s["name"] for s in SCENARIOS}
+    if unknown:
+        parser.error(f"unknown scenarios: {sorted(unknown)}")
+    harness = Harness(output.resolve(), app=app, tty=tty)
+    harness.output = output.resolve()
+
+    def give_up(*_):
+        raise SystemExit(f"Acceptance run exceeded {RUN_TIMEOUT}s")
+
+    signal.signal(signal.SIGALRM, give_up)
+    signal.alarm(RUN_TIMEOUT)
+    results = []
+    try:
+        for entry in selected:
+            print(f"== {entry['name']}", flush=True)
+            result = run_scenario(harness, entry)
+            print(f"   {result['status']}: {result.get('detail', '')}"[:500], flush=True)
+            results.append(result)
+    finally:
+        signal.alarm(0)
+        harness.cleanup()
+    crashes = harness.crash_reports()
+    for report in crashes:
+        shutil.copy(report, output / report.name)
+    environment = {"platform": sys.platform, "mode": "tty self-test" if tty else "packaged app",
+                   "app": str(app) if app else None,
+                   "accessibility": harness.accessibility,
+                   "crash_reports": [report.name for report in crashes]}
+    if tty:
+        environment["emacs"] = os.environ.get("GLASSMACS_EMACS", "emacs")
+    else:
+        environment["macos"] = run(["sw_vers", "-productVersion"], timeout=15).stdout.strip()
+        environment["arch"] = os.uname().machine
+    (output / "results.json").write_text(json.dumps(
+        {"environment": environment, "scenarios": results}, indent=2, ensure_ascii=False))
+    summary = summary_markdown(results, environment)
+    (output / "summary.md").write_text(summary)
+    print(summary)
+    failed = [r for r in results if r["status"] == "fail"]
+    if crashes:
+        print(f"Crash reports were written: {[report.name for report in crashes]}")
+    return 1 if failed or crashes else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

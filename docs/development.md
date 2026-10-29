@@ -12,7 +12,7 @@ Outstanding: real macOS testing for reopening, document safety, keyboard/menu di
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-28
+> **Last reviewed:** 2026-10-29
 > **Coverage:** Contributor setup, testing and verification workflow  
 > **Supersedes:** None
 
@@ -55,6 +55,44 @@ same suite against real R/ESS processes and a base-graphics PNG smoke test.
 Neither job verifies a native macOS graphics device; the real ESS/R check only
 establishes Linux process/evaluation behavior. Quarto and TeX remain optional
 and are skipped unless available.
+
+### Acceptance layers
+
+[The acceptance matrix](acceptance-matrix.md) lists every acceptance risk
+(issue #34) with its evidence and tests. Its source is
+`acceptance/matrix.toml`; after editing it, run
+`./scripts/acceptance-matrix render` to regenerate the matrix and the
+[manual checklist](macos-acceptance-checklist.md).
+`./scripts/acceptance-matrix check`, run in CI, fails when a referenced test,
+GUI scenario or CI step does not exist, when a scenario and the matrix
+disagree about which checks it covers, when an Aquamacs report from issue #34
+is not covered, or when the generated documents are stale.
+
+- **A, batch:** `./scripts/test` and the mocked release-script tests.
+- **B, packaged app (static):** `scripts/validate-macos-app` checks document
+  types, architectures, dependency closure, build-machine references,
+  permissions and the code signature. It reads Mach-O headers itself, so its
+  tests run with mocked Apple tools on Linux.
+- **C, GUI in CI:** `scripts/macos-gui-acceptance APP OUTPUT-DIR` launches the
+  packaged app through LaunchServices, once per scenario with a fresh
+  Glassmacs home, and drives it through
+  `tests/acceptance/glassmacs-acceptance-driver.el` (a listener on 127.0.0.1
+  that needs a per-launch token, loaded only by the harness). `--list` shows
+  the scenarios and `--only NAME` runs one. Results, screenshots, app state,
+  logs and crash reports go to OUTPUT-DIR; every wait has a deadline. Keys are
+  queued as Emacs events unless the runner grants Accessibility, in which case
+  System Events types them; each result records which. Scenarios that cannot
+  run are reported NOT RUN.
+  `./scripts/macos-gui-acceptance --tty OUTPUT-DIR` runs the
+  platform-independent scenarios against terminal Emacs in a pseudo-terminal;
+  CI does this on Linux to test the harness itself.
+- **D, manual:** [the checklist](macos-acceptance-checklist.md). Record a
+  dated result in the matrix's `clean_machine` field.
+
+Running the GUI harness on your own Mac is safe: it uses temporary homes,
+quits the instances it starts, and skips the user-init scenario when
+`~/.emacs.d` already has init files. It does open windows and, in the
+clipboard scenario, replaces the clipboard's contents.
 
 Run `./scripts/benchmark-r-output` for deterministic output-filter stress
 measurements. It prints host/CPU, OS, Emacs, optional ESS/R versions; elapsed
@@ -209,8 +247,9 @@ maps to restoring the retained final frame or creating one. Reopen is handled
 through that event rather than a competing focus hook, so Cocoa session
 restoration of already-visible windows does not create an extra frame. The Lisp
 lifecycle tests cover these command decisions; they do not validate runtime
-Objective-C method installation or Dock delivery. Build and sign the standalone
-bundle before the required interactive lifecycle check.
+Objective-C method installation or Dock delivery. The GUI acceptance harness
+does, on the packaged app: set `GLASSMACS_LIFECYCLE_TRACE` to a file and the
+module records whether it installed the callback and each reopen it receives.
 
 Run `M-x glassmacs-diagnostics` for a local report of Emacs/OS/window-system,
 Glassmacs home, ESS/R/Rscript availability and graphics guidance. It does not

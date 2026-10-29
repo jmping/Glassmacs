@@ -643,8 +643,12 @@
           (let ((buffer
                  (glassmacs--ns-find-file
                   (lambda (&rest _) (ert-fail "Cocoa file event was not intercepted")))))
-            (should (buffer-live-p buffer))
-            (should (equal (buffer-file-name buffer) (file-truename file))))
+            (unwind-protect
+                (progn
+                  (should (buffer-live-p buffer))
+                  (should (equal (buffer-file-name buffer) (file-truename file))))
+              ;; Do not leave a buffer visiting the deleted file behind.
+              (kill-buffer buffer)))
           (should (= 1 (length shown)))
           (should (eq (cdar shown) 'new-tab))
           (should-not ns-input-file))
@@ -719,6 +723,110 @@
         (should (search-forward "R: not found" nil t))
         (should-not (search-forward "SSH_AUTH_SOCK" nil t)))
       (kill-buffer buffer))))
+
+(defvar glassmacs-test--menu-mode-map (make-sparse-keymap))
+(define-minor-mode glassmacs-test--menu-mode
+  "Minor mode with deliberately broken menu items."
+  :keymap glassmacs-test--menu-mode-map)
+(easy-menu-define glassmacs-test--broken-menu glassmacs-test--menu-mode-map
+  "Broken test menu."
+  '("Broken"
+    ["Bad enable" ignore :enable (car 1)]
+    ["Missing command" glassmacs-test--no-such-command]
+    ["Disabled missing command" glassmacs-test--no-such-command-2 :enable nil]
+    ("Hidden" :visible nil ["Broken but hidden" ignore :enable (car 1)])
+    ["Fine" ignore]))
+(define-key glassmacs-test--menu-mode-map [menu-bar broken filtered]
+  '(menu-item "Filtered" ignore :filter (lambda (_) (error "Filter broke"))))
+
+(ert-deftest glassmacs-menu-check-reports-broken-items ()
+  "Menu forms that signal errors, failing filters and missing commands are
+reported (Aquamacs #180, #256: menus that crashed in some modes)."
+  (with-temp-buffer
+    (glassmacs-test--menu-mode 1)
+    (let ((problems (glassmacs-diagnostics-menu-problems)))
+      (should (cl-some (lambda (p) (string-match-p "Bad enable: :enable signals" p)) problems))
+      (should (cl-some (lambda (p) (string-match-p "glassmacs-test--no-such-command does not exist" p))
+                       problems))
+      (should (cl-some (lambda (p) (string-match-p "Filtered: :filter signals Filter broke" p))
+                       problems))
+      (should-not (cl-some (lambda (p) (string-match-p "Fine\\|Disabled\\|hidden" p))
+                           problems)))))
+
+(defun glassmacs-test--menu-problems-in-file (name contents)
+  "Return the menu problems for a visited file NAME holding CONTENTS."
+  (let* ((directory (make-temp-file "glassmacs-menus-" t))
+         (file (expand-file-name name directory))
+         (glassmacs-offer-package-installation nil))
+    (write-region contents nil file)
+    (let ((buffer (find-file-noselect file)))
+      (unwind-protect
+          (with-current-buffer buffer
+            (list major-mode (glassmacs-diagnostics-menu-problems)))
+        (kill-buffer buffer)
+        (delete-directory directory t)))))
+
+(ert-deftest glassmacs-macos-menu-buttons-evaluate-and-show-state ()
+  "The Glassmacs menu's radio and toggle items evaluate, so macOS shows
+their check marks.  :button takes (TYPE . FORM); writing (TYPE FORM)
+makes Emacs evaluate ((eq ...)), which fails, so no mark ever showed.
+These menus exist only in graphical macOS sessions, which batch tests
+otherwise never build."
+  (let ((global-map (copy-keymap global-map))
+        (system-type 'darwin)
+        (glassmacs-document-opening-policy 'new-tab))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t)))
+      (glassmacs--install-macos-menus)
+      (with-temp-buffer
+        ;; Only the Glassmacs menu: with graphics faked, this terminal
+        ;; Emacs shows upstream GUI-only items it cannot evaluate.
+        (should-not (cl-remove-if-not (lambda (problem)
+                                        (string-match-p "> glassmacs >" problem))
+                                      (glassmacs-diagnostics-menu-problems))))
+      (let* ((menu (lookup-key global-map [menu-bar glassmacs document-opening]))
+             (button (lambda (key)
+                       ;; The raw (menu-item NAME COMMAND . PROPERTIES) binding.
+                       (plist-get (nthcdr 3 (cdr (assq key menu))) :button))))
+        (should (eq (car (funcall button 'new-tab)) :radio))
+        (should (eval (cdr (funcall button 'new-tab)) t))
+        (should-not (eval (cdr (funcall button 'new-frame)) t))))))
+
+(ert-deftest glassmacs-menus-evaluate-cleanly-in-key-modes ()
+  "Every menu item evaluates in the modes Glassmacs users work in."
+  (dolist (document '(("notes.txt" "Prose.\n")
+                      ("analysis.R" "x <- 1\n")
+                      ("report.Rmd" "Prose.\n\n```{r}\nx <- 1\n```\n")
+                      ("slides.qmd" "Prose.\n\n```{r}\nx <- 1\n```\n")
+                      ("paper.Rnw" "\\documentclass{article}\n<<a>>=\nx <- 1\n@\n")
+                      ("paper.tex" "\\documentclass{article}\n")
+                      ("init.el" "(setq x 1)\n")))
+    (pcase-let ((`(,mode ,problems) (apply #'glassmacs-test--menu-problems-in-file document)))
+      (should (equal (list (car document) mode nil)
+                     (list (car document) mode problems)))))
+  (dolist (buffer (list (get-buffer-create "*scratch*")
+                        (dired-noselect temporary-file-directory)
+                        (with-current-buffer (get-buffer-create " *glassmacs-comint*")
+                          (comint-mode)
+                          (current-buffer))))
+    (should (equal (list (buffer-name buffer) nil)
+                   (list (buffer-name buffer)
+                         (glassmacs-diagnostics-menu-problems buffer))))))
+
+(ert-deftest glassmacs-self-check-passes-and-has-no-side-effects ()
+  (cl-letf (((symbol-function 'call-process)
+             (lambda (&rest _) (ert-fail "Self-check must not run programs")))
+            ((symbol-function 'make-process)
+             (lambda (&rest _) (ert-fail "Self-check must not run programs")))
+            ((symbol-function 'gui-set-selection)
+             (lambda (&rest _) (ert-fail "Self-check must not touch the clipboard")))
+            ((symbol-function 'display-buffer) #'ignore))
+    (let ((results (let ((native-comp-eln-load-path nil))
+                     (with-temp-buffer (text-mode) (glassmacs-self-check)))))
+      (should (>= (length results) 6))
+      (should-not (cl-remove-if-not (lambda (result) (eq (nth 1 result) 'fail)) results))
+      (with-current-buffer "*Glassmacs Self-Check*"
+        (should (string-match-p "PASS +Literal text entry" (buffer-string))))
+      (kill-buffer "*Glassmacs Self-Check*"))))
 
 (ert-deftest glassmacs-interactive-find-file-uses-configured-policy ()
   (let* ((file (make-temp-file "glassmacs-open-policy-"))
@@ -849,15 +957,21 @@
          (let ((process-environment (copy-sequence process-environment)))
            (setenv "GLASSMACS_EMACS" fake-emacs)
            (setenv "GLASSMACS_TEST_ARGS" arguments-file)
+           (setenv "GLASSMACS_HOME" (expand-file-name "home" directory))
            (setq status (apply #'call-process launcher nil nil nil arguments)))
          (should (zerop status))
+         ;; The Glassmacs home is Emacs's user directory from the start, so
+         ;; interactive startup does not create ~/.emacs.d.
+         (should (file-directory-p (expand-file-name "home" directory)))
          (should
           (equal
            (with-temp-buffer
              (insert-file-contents arguments-file)
              (split-string (buffer-string) "\n" t))
-           (append '("-Q" "--load")
-                   (list (expand-file-name "init.el" glassmacs-root))
+           (append (list "-Q"
+                         (concat "--init-directory=" (expand-file-name "home" directory))
+                         "--load"
+                         (expand-file-name "init.el" glassmacs-root))
                    arguments))))
       (delete-directory directory t))))
 
@@ -1478,6 +1592,85 @@
       (should (equal native-comp-eln-load-path
                      '("/usr/lib/emacs/native-lisp/"))))))
 
+(ert-deftest glassmacs-empty-home-variable-means-the-default-home ()
+  "Like the macOS launcher, an empty GLASSMACS_HOME is unset, so state is
+not written into the directory Emacs started in."
+  (let ((process-environment (cons "GLASSMACS_HOME=" process-environment))
+        (default-directory "/tmp/project/"))
+    (should (equal (glassmacs--default-home)
+                   (file-name-as-directory (expand-file-name "~/.config/glassmacs")))))
+  (let ((process-environment (cons "GLASSMACS_HOME=/tmp/glassmacs-home" process-environment)))
+    (should (equal (glassmacs--default-home) "/tmp/glassmacs-home/"))))
+
+(ert-deftest glassmacs-preference-toggles-are-saved-in-glassmacs-home ()
+  "Glassmacs starts with -Q; its preference commands must still save.
+Emacs refuses to save customizations when it thinks no init file was
+read, so without Glassmacs recording its init.el, toggles changed only
+the session."
+  (should (equal user-init-file (expand-file-name "init.el" glassmacs-root)))
+  (should (equal (custom-file t) custom-file))
+  (let* ((home (file-name-as-directory (make-temp-file "glassmacs-toggles-" t)))
+         (custom-file (expand-file-name "custom.el" home))
+         (original glassmacs-right-option-types-characters))
+    (unwind-protect
+        (progn
+          (glassmacs-toggle-right-option-types-characters)
+          (should (string-match-p "glassmacs-right-option-types-characters"
+                                  (with-temp-buffer
+                                    (insert-file-contents custom-file)
+                                    (buffer-string)))))
+      (customize-set-variable 'glassmacs-right-option-types-characters original)
+      (put 'glassmacs-right-option-types-characters 'saved-value nil)
+      (delete-directory home t))))
+
+(ert-deftest glassmacs-safe-local-variables-are-saved-in-glassmacs-home ()
+  "Answering \"!\" to a file's local variables saves them in the Glassmacs
+custom file, so the choice survives relaunch without touching ~/.emacs.d
+(Aquamacs #251)."
+  (let* ((home (file-name-as-directory (make-temp-file "glassmacs-safe-locals-" t)))
+         (custom-file (expand-file-name "custom.el" home))
+         (safe-local-variable-values nil))
+    (unwind-protect
+        (progn
+          (customize-push-and-save 'safe-local-variable-values '((fill-column . 72)))
+          (should (file-readable-p custom-file))
+          (should (string-match-p "(fill-column \\. 72)"
+                                  (with-temp-buffer
+                                    (insert-file-contents custom-file)
+                                    (buffer-string)))))
+      (put 'safe-local-variable-values 'saved-value nil)
+      (delete-directory home t))))
+
+(ert-deftest glassmacs-files-round-trip-encodings-and-line-endings ()
+  "Opening and saving a file after an edit keeps its encoding, byte-order
+mark and line endings."
+  (let ((directory (make-temp-file "glassmacs-encodings-" t))
+        (glassmacs-offer-package-installation nil))
+    (unwind-protect
+        (dolist (case `(("utf8-bom.txt" ,(encode-coding-string "\ufeffré\n" 'utf-8))
+                        ("latin1.txt" ,(encode-coding-string "café\n" 'latin-1))
+                        ("crlf.R" "x <- 1\r\ny <- 2\r\n")
+                        ("utf8.R" ,(encode-coding-string "# naïve ✓\nx <- 1\n" 'utf-8))))
+          (let ((file (expand-file-name (car case) directory))
+                (original (cadr case)))
+            (let ((coding-system-for-write 'binary))
+              (write-region original nil file))
+            (with-current-buffer (find-file-noselect file)
+              (goto-char (point-max))
+              (insert "z")
+              (delete-char -1)
+              (set-buffer-modified-p t)
+              (save-buffer)
+              (kill-buffer))
+            (should (equal (list (car case)
+                                 (with-temp-buffer
+                                   (set-buffer-multibyte nil)
+                                   (let ((coding-system-for-read 'binary))
+                                     (insert-file-contents file))
+                                   (buffer-string)))
+                           (list (car case) original)))))
+      (delete-directory directory t))))
+
 (ert-deftest glassmacs-home-is-created-when-missing ()
   (let* ((parent (make-temp-file "glassmacs-home-parent-" t))
          (glassmacs-home (file-name-as-directory
@@ -1489,11 +1682,16 @@
       (delete-directory parent t))))
 
 (defun glassmacs-test--wait-for-process (process)
-  "Wait until PROCESS and its sentinel have finished."
-  (while (process-live-p process)
-    (accept-process-output process 0.05))
-  ;; Let the sentinel run after the exit status is known.
-  (accept-process-output nil 0.05))
+  "Wait until PROCESS has exited and its sentinel has run.
+Call this before the process can have exited, so the sentinel is seen.
+A fixed short wait after exit is not enough: timers (auto-revert, for
+example) can run first and delay the sentinel."
+  (let ((sentinel-ran nil))
+    (add-function :after (process-sentinel process)
+                  (lambda (&rest _) (setq sentinel-ran t)))
+    (with-timeout (10 (error "Process %s did not finish" process))
+      (while (not sentinel-ran)
+        (accept-process-output process 0.05)))))
 
 (ert-deftest glassmacs-run-process-is-asynchronous-and-reports-status ()
   (let ((glassmacs--current-process nil)

@@ -120,6 +120,94 @@ punctuation, substitution or smart spacing by default."
     (glassmacs-editing-apply)
     (should (equal backup-directory-alist '(("." . "/my/backups"))))))
 
+;; Aquamacs issue #245: files changed by other programs must show their
+;; new contents, and unsaved edits must never be silently overwritten.
+(defmacro glassmacs-editing-test--following-changes (contents &rest body)
+  "Visit a temporary file holding CONTENTS with file following on; run BODY.
+Following is enabled as in an interactive session, polling rather than
+file notifications, since batch Emacs does not process notification
+events.  It is turned off again afterwards."
+  (declare (indent 1))
+  `(let ((file (make-temp-file "glassmacs-revert-" nil ".R" ,contents))
+         (auto-revert-use-notify nil))
+     (unwind-protect
+         (progn
+           (let ((noninteractive nil))
+             (glassmacs-editing-apply))
+           (should global-auto-revert-mode)
+           (with-current-buffer (find-file-noselect file)
+             (unwind-protect (progn ,@body)
+               (set-buffer-modified-p nil)
+               (kill-buffer))))
+       (glassmacs-editing-apply)
+       (delete-file file))))
+
+(defun glassmacs-editing-test--change-on-disk (file contents)
+  "Write CONTENTS to FILE as another program would, with a later mtime."
+  (with-temp-file file (insert contents))
+  (set-file-times file (time-add nil 5)))
+
+(ert-deftest glassmacs-editing-follows-external-file-changes ()
+  (glassmacs-editing-test--following-changes "x <- 1\n"
+    (should-not auto-revert-remote-files)
+    (glassmacs-editing-test--change-on-disk buffer-file-name "x <- 2\n")
+    (auto-revert-buffers)
+    (should (equal (buffer-string) "x <- 2\n"))
+    (should-not (buffer-modified-p))))
+
+(ert-deftest glassmacs-editing-external-change-never-discards-unsaved-edits ()
+  (glassmacs-editing-test--following-changes "x <- 1\n"
+    (goto-char (point-max))
+    (insert "y <- 3\n")
+    (glassmacs-editing-test--change-on-disk buffer-file-name "x <- 2\n")
+    (auto-revert-buffers)
+    (should (equal (buffer-string) "x <- 1\ny <- 3\n"))
+    (should (buffer-modified-p))
+    ;; Saving asks first; declining keeps the other program's file.
+    (let ((asked nil))
+      (cl-letf (((symbol-function 'yes-or-no-p)
+                 (lambda (prompt) (setq asked prompt) nil))
+                ((symbol-function 'ask-user-about-supersession-threat)
+                 (lambda (_) (setq asked t) (signal 'file-supersession nil))))
+        (should-error (save-buffer)))
+      (should asked))
+    (should (equal (let ((visited buffer-file-name))
+                     (with-temp-buffer
+                       (insert-file-contents visited)
+                       (buffer-string)))
+                   "x <- 2\n"))))
+
+(ert-deftest glassmacs-editing-file-following-polls-on-macos ()
+  "On macOS, files are polled rather than watched (Aquamacs #245), unless
+the user chose otherwise."
+  (let ((auto-revert-use-notify t))
+    (let ((system-type 'darwin))
+      (glassmacs-editing--apply-file-following))
+    (should-not auto-revert-use-notify))
+  (let ((auto-revert-use-notify t))
+    (let ((system-type 'gnu/linux))
+      (glassmacs-editing--apply-file-following))
+    (should auto-revert-use-notify))
+  (let ((auto-revert-use-notify t))
+    (put 'auto-revert-use-notify 'saved-value '(t))
+    (unwind-protect
+        (let ((system-type 'darwin))
+          (glassmacs-editing--apply-file-following)
+          (should auto-revert-use-notify))
+      (put 'auto-revert-use-notify 'saved-value nil))))
+
+(ert-deftest glassmacs-editing-file-following-is-interactive-and-optional ()
+  (unwind-protect
+      (progn
+        ;; Batch sessions (this one) never follow file changes.
+        (glassmacs-editing-apply)
+        (should-not global-auto-revert-mode)
+        (let ((noninteractive nil)
+              (glassmacs-follow-file-changes nil))
+          (glassmacs-editing-apply)
+          (should-not global-auto-revert-mode)))
+    (glassmacs-editing-apply)))
+
 (ert-deftest glassmacs-editing-command-delete-kills-to-line-start ()
   (with-temp-buffer
     (insert "first\nkeep this tail")

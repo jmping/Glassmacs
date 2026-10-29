@@ -67,6 +67,25 @@ def make_fat_macho(magic, slices):
     )
 
 
+CPU_ARM64 = 0x0100000C
+CPU_X86_64 = 0x01000007
+
+
+def make_universal_macho(filetype, cputypes=(CPU_ARM64, CPU_X86_64)):
+    """Return a universal Mach-O with one thin 64-bit slice per CPU type."""
+    def thin(cputype):
+        return (b"\xcf\xfa\xed\xfe" + cputype.to_bytes(4, "little") + bytes(4)
+                + filetype.to_bytes(4, "little") + bytes(16))
+    slices = [thin(cputype) for cputype in cputypes]
+    offset = 8 + 20 * len(slices)
+    records = b""
+    for cputype, data in zip(cputypes, slices):
+        records += (cputype.to_bytes(4, "big") + bytes(4) + offset.to_bytes(4, "big")
+                    + len(data).to_bytes(4, "big") + bytes(4))
+        offset += len(data)
+    return b"\xca\xfe\xba\xbe" + len(slices).to_bytes(4, "big") + records + b"".join(slices)
+
+
 class MacOSReleaseScriptTests(unittest.TestCase):
     def test_macho_magic_detection_covers_endian_and_fat_variants(self):
         self.assertEqual(len(MACHO_MAGICS), 8)
@@ -446,10 +465,10 @@ open(binary, "wb").write(data[:32] + text.encode())
                 (ROOT / "macos/Info.plist").read_bytes()
             )
             bootstrap = contents / "MacOS/GlassmacsBootstrap"
-            bootstrap.write_text("#!/bin/sh\nexit 0\n")
+            bootstrap.write_bytes(make_universal_macho(2))
             bootstrap.chmod(0o755)
             emacs = contents / "MacOS/Emacs"
-            emacs.write_bytes(make_thin_macho(b"\xcf\xfa\xed\xfe", 2))
+            emacs.write_bytes(make_universal_macho(2))
             emacs.chmod(0o755)
             resources = contents / "Resources/Glassmacs"
             (resources / "init.el").write_bytes((ROOT / "init.el").read_bytes())
@@ -461,7 +480,7 @@ open(binary, "wb").write(data[:32] + text.encode())
                 contents / "Resources/Glassmacs/macos/libglassmacs-lifecycle.dylib"
             )
             lifecycle_module.parent.mkdir()
-            lifecycle_module.write_bytes(b"fixture lifecycle module")
+            lifecycle_module.write_bytes(make_universal_macho(6))
             archive = contents / "MacOS/lib-x86_64-11/libgccjit/sdk-libs/libkmod.a"
             archive.parent.mkdir(parents=True)
             archive.write_bytes(make_fat_macho(
@@ -505,20 +524,64 @@ if sys.argv[1] == "-L" and os.environ.get("OTool_BAD_DEP") == "1":
     print("    /nix/store/missing/libbad.dylib (compatibility version 1.0.0, current version 1.0.0)")
 """)
             otool.chmod(0o755)
+            codesign = root / "codesign"
+            codesign.write_text("#!/bin/sh\nexit ${CODESIGN_STATUS:-0}\n")
+            codesign.chmod(0o755)
             environment = os.environ.copy()
+            environment.pop("RUNNER_TEMP", None)
             environment.update({
                 "GLASSMACS_PLUTIL": str(plutil),
                 "GLASSMACS_PLISTBUDDY": str(plist_buddy),
                 "GLASSMACS_OTOOL": str(otool),
+                "GLASSMACS_CODESIGN": str(codesign),
                 "GLASSMACS_SKIP_EMACS_STARTUP": "1",
             })
-            result = subprocess.run(
-                ["bash", str(ROOT / "scripts/validate-macos-app"), str(app)],
-                text=True,
-                capture_output=True,
-                check=False,
-                env=environment,
-            )
+
+            def validate(extra=None):
+                return subprocess.run(
+                    ["bash", str(ROOT / "scripts/validate-macos-app"), str(app)],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    env={**environment, **(extra or {})},
+                )
+
+            def failure_after(change, undo, extra=None):
+                change()
+                try:
+                    return validate(extra)
+                finally:
+                    undo()
+
+            result = validate()
+            plist_bytes = (contents / "Info.plist").read_bytes()
+            without_rd = plistlib.loads(plist_bytes)
+            without_rd["CFBundleDocumentTypes"][0]["CFBundleTypeExtensions"].remove("Rd")
+            failures = {
+                "document type": failure_after(
+                    lambda: (contents / "Info.plist").write_bytes(plistlib.dumps(without_rd)),
+                    lambda: (contents / "Info.plist").write_bytes(plist_bytes)),
+                "architecture": failure_after(
+                    lambda: bootstrap.write_bytes(make_universal_macho(2, (CPU_X86_64,))),
+                    lambda: bootstrap.write_bytes(make_universal_macho(2))),
+                "own location": failure_after(
+                    lambda: emacs.write_bytes(make_universal_macho(2) + str(app).encode()),
+                    lambda: emacs.write_bytes(make_universal_macho(2))),
+                "build path": failure_after(
+                    lambda: lifecycle_module.write_bytes(
+                        make_universal_macho(6) + str(ROOT).encode()),
+                    lambda: lifecycle_module.write_bytes(make_universal_macho(6))),
+                "world-writable": failure_after(
+                    lambda: (resources / "init.el").chmod(0o666),
+                    lambda: (resources / "init.el").chmod(0o644)),
+                "signature": validate({"CODESIGN_STATUS": "1"}),
+            }
+            # Upstream binaries may mention Nix, Homebrew or the checkout
+            # path in strings; that is reported, not a failure.
+            emacs.write_bytes(make_universal_macho(2) + b"/opt/homebrew/lib /nix/store/x-gcc"
+                              + str(ROOT).encode())
+            upstream_strings = validate()
+            emacs.write_bytes(make_universal_macho(2))
             archive_exists = archive.is_file()
             bad_environment = environment.copy()
             bad_environment["OTool_BAD_DEP"] = "1"
@@ -531,6 +594,22 @@ if sys.argv[1] == "-L" and os.environ.get("OTool_BAD_DEP") == "1":
             )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Mach-O architectures: arm64 x86_64: 3", result.stdout)
+        self.assertEqual(upstream_strings.returncode, 0,
+                         upstream_strings.stdout + upstream_strings.stderr)
+        self.assertIn("/nix/store/ 1, /opt/homebrew/ 1", upstream_strings.stdout)
+        expected_messages = {
+            "document type": "document types missing from Info.plist: ['Rd']",
+            "architecture": "MacOS/GlassmacsBootstrap lacks ['arm64']",
+            "own location": "refers to the app's own location",
+            "build path": "refers to the build machine path",
+            "world-writable": "world-writable: Contents/Resources/Glassmacs/init.el",
+            "signature": "the code signature does not verify",
+        }
+        for name, message in expected_messages.items():
+            with self.subTest(check=name):
+                self.assertNotEqual(failures[name].returncode, 0, name)
+                self.assertIn(message, failures[name].stderr)
         self.assertNotEqual(unresolved.returncode, 0)
         self.assertIn("Unresolved or non-relocatable dependency", unresolved.stderr)
         self.assertIn("Validated Glassmacs.app structure", result.stdout)

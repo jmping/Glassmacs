@@ -266,8 +266,8 @@ forwards a Dock reopen with no visible windows through Emacs's existing native
 `newFrame:` event path; Emacs Lisp then restores the retained final frame or
 creates one. It does not replace Emacs's application delegate, own documents,
 or launch a second application process. The callback is installed at runtime
-on Emacs's existing `EmacsApp` class and remains subject to GUI verification
-on the packaged, signed application.
+on Emacs's existing `EmacsApp` class, after which the delegate is set again so
+AppKit sees it. The packaged-app GUI acceptance run checks a Dock reopen.
 
 For Cocoa open-file events, Emacs 31.1 binds the `[ns-open-file]` event to
 `ns-find-file`, which consumes the NS port's `ns-input-file` queue. Glassmacs

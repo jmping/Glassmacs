@@ -14,7 +14,7 @@ Implemented capabilities include native application/menu/window infrastructure; 
 > **Status:** Informational<br>
 > **Owner:** Glassmacs maintainers<br>
 > **Effective date:** 2026-10-20<br>
-> **Last reviewed:** 2026-10-28<br>
+> **Last reviewed:** 2026-10-29<br>
 > **Coverage:** Building and operating the standalone Cocoa application<br>
 > **Supersedes:** Optional Swift launcher guide
 
@@ -66,7 +66,9 @@ buffer changes. The retained frame is restored by the native Cocoa
 Dock-reopen callback. That callback is a small Emacs dynamic module,
 compiled from `macos/GlassmacsLifecycle.m` against the bundled Emacs 31 module
 header and AppKit. It adds `applicationShouldHandleReopen:hasVisibleWindows:`
-to Emacs's existing `EmacsApp` delegate and asks Emacs's existing `newFrame:`
+to Emacs's existing `EmacsApp` delegate class, then sets the delegate again,
+because AppKit only notices a delegate's optional methods when the delegate is
+set, which Emacs did before the module loaded. It asks Emacs's existing `newFrame:`
 event path to reopen only when Cocoa reports no visible windows. Emacs Lisp
 maps that native event to `glassmacs-reopen`, which restores the retained frame
 or creates a frame when none was retained. For the no-window case, the
@@ -99,10 +101,11 @@ for example because `Glassmacs.icns` is not in the main bundle) is also only a
 warning: startup continues, so later modules, `custom.el` and the keyboard
 profile still load. `scripts/validate-macos-app` rejects a
 bundle missing the module.
-Native callback registration, Dock activation, final-window close, and state
-restoration still require interactive verification in the signed Glassmacs
-application on macOS; ERT and bundle structure checks alone do not prove these
-behaviors.
+ERT and bundle structure checks alone do not prove these behaviors. The
+`macos-gui-acceptance` CI job checks the packaged app: it closes the final
+window, clicks the Dock icon through System Events, and checks that the
+retained frame returns, also from full screen. Real clicks on a clean machine
+remain the manual checks in the [macOS checklist](macos-acceptance-checklist.md).
 
 This decision is informed by GNU Emacs's Cocoa bundle structure and
 self-contained installation instructions: the app bundle includes the
@@ -346,7 +349,10 @@ diagnostics, the bundle bootstrap forwards its command-line arguments:
   --batch --eval '(princ emacs-version)'
 ```
 
-Once Emacs starts, use `M-x glassmacs-diagnostics`, inspect `*Messages*` and
+Once Emacs starts, use `M-x glassmacs-diagnostics` and `M-x glassmacs-self-check`
+(the in-app acceptance checks: native-code policy, literal text entry, file
+following, environment import, spell checker, startup warnings and the menus
+of the current buffer; it runs no programs and changes nothing), inspect `*Messages*` and
 `*Warnings*`, and check package initialization errors. Bootstrap failures are
 written to standard error; when launched from Finder, inspect them in Console
 if available. To debug a build, run
@@ -398,7 +404,20 @@ test pass.
 
 ## Verification and limitations
 
-The macOS CI job validates build inputs, bundle structure and metadata, direct
+**2026-10-29:** CI now also runs static checks of the packaged app
+(architectures, build-machine references, permissions, code signature,
+document types), checks that the app does not load the user's own
+`~/.emacs.d` init files, and runs GUI scenarios against the packaged app
+through LaunchServices (`macos-gui-acceptance` job). What each check covers,
+how it is exercised, and what still needs a person is in the
+[acceptance matrix](acceptance-matrix.md) and the
+[manual checklist](macos-acceptance-checklist.md); the GUI job's summary and
+artifact have the latest results. Building these checks found that the
+bootstrap passed `-Q` as `argv[0]`, so builds before this fix
+ignored `-Q` and loaded the user's `~/.emacs.d` init files and packages; the
+bootstrap now passes the Emacs path as `argv[0]`.
+
+Earlier, the macOS CI job validated build inputs, bundle structure and metadata, direct
 Mach-O dependencies, Swift tests, batch startup, existing ERT tests, and app
 relocation. These are **build and batch checks, not interactive GUI tests**.
 The signed app was launched through LaunchServices during Milestone 5, but no

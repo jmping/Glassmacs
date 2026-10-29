@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""Validate the acceptance matrix and generate its documents.
+
+  scripts/acceptance-matrix check    validate acceptance/matrix.toml and
+                                     confirm the generated documents are current
+  scripts/acceptance-matrix render   regenerate docs/acceptance-matrix.md and
+                                     docs/macos-acceptance-checklist.md
+  scripts/acceptance-matrix outcomes RESULTS.json
+                                     print each matrix check's GUI outcome from
+                                     a scripts/macos-gui-acceptance run
+
+`check` fails when an entry lacks a field or has an unknown value, when a
+referenced ERT, Python or Swift test, GUI scenario or CI step does not
+exist, when a GUI scenario names a check that is not in the matrix, or
+when an Aquamacs report listed in issue #34 is not covered.
+"""
+
+import json
+import re
+import sys
+import tomllib
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+MATRIX = ROOT / "acceptance/matrix.toml"
+MATRIX_DOC = ROOT / "docs/acceptance-matrix.md"
+CHECKLIST_DOC = ROOT / "docs/macos-acceptance-checklist.md"
+
+# The Aquamacs 4 reports in issue #34's evidence table.
+ISSUE_34_REPORTS = {264, 268, 258, 266, 243, 270, 247, 249, 256, 248, 246, 251,
+                    265, 235, 245, 253, 255, 241, 218, 160, 180}
+REQUIRED = ["id", "title", "severity", "evidence", "exposure", "layers", "tests",
+            "implemented", "automated", "packaged_app", "clean_machine"]
+VALUES = {
+    "severity": {"P0", "P1", "P2"},
+    "implemented": {"yes", "partial", "no"},
+    "automated": {"yes", "partial", "no"},
+    "packaged_app": {"ci", "NOT RUN"},
+}
+LAYERS = {"A", "B", "C", "D"}
+LAYER_NAMES = {"A": "batch", "B": "packaged app, static", "C": "GUI in CI",
+               "D": "manual"}
+
+
+def load():
+    with MATRIX.open("rb") as handle:
+        data = tomllib.load(handle)
+    return data, data.get("check", [])
+
+
+def known_references():
+    """Return the sets of test names each reference kind may name."""
+    ert = set()
+    for path in (ROOT / "tests").rglob("*.el"):
+        ert |= set(re.findall(r"^\(ert-deftest ([^\s()]+)", path.read_text(), re.M))
+    python = set()
+    for path in (ROOT / "tests").glob("*.py"):
+        python |= set(re.findall(r"^\s+def (test_\w+)", path.read_text(), re.M))
+    swift = set()
+    for path in (ROOT / "macos/Tests").rglob("*.swift"):
+        swift |= set(re.findall(r"func (test\w+)", path.read_text()))
+    harness = (ROOT / "scripts/macos-gui-acceptance").read_text()
+    gui = dict(re.findall(r'^@scenario\("([^"]+)",\s*\[([^\]]*)\]', harness, re.M))
+    gui = {name: re.findall(r'"([^"]+)"', ids) for name, ids in gui.items()}
+    steps = set(re.findall(r"^\s*- name: (.+?)\s*$",
+                           (ROOT / ".github/workflows/ci.yml").read_text(), re.M))
+    return {"ert": ert, "py": python, "swift": swift, "gui": set(gui), "ci": steps}, gui
+
+
+def validate(data, checks):
+    problems = []
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(data.get("reviewed", ""))):
+        problems.append("matrix needs reviewed = \"YYYY-MM-DD\"")
+    references, scenarios = known_references()
+    ids = [entry.get("id") for entry in checks]
+    for duplicate in {i for i in ids if ids.count(i) > 1}:
+        problems.append(f"duplicate id {duplicate}")
+    covered = set()
+    for entry in checks:
+        name = entry.get("id", "?")
+        for field in REQUIRED:
+            if field not in entry:
+                problems.append(f"{name}: missing {field}")
+        for field, allowed in VALUES.items():
+            if field in entry and entry[field] not in allowed:
+                problems.append(f"{name}: {field} {entry[field]!r} is not one of {sorted(allowed)}")
+        if not set(entry.get("layers", [])) <= LAYERS or not entry.get("layers"):
+            problems.append(f"{name}: layers must be a non-empty subset of {sorted(LAYERS)}")
+        clean = entry.get("clean_machine", "")
+        if clean != "NOT RUN" and not re.match(r"\d{4}-\d{2}-\d{2} ", clean):
+            problems.append(f"{name}: clean_machine must be NOT RUN or start with a date")
+        if "D" in entry.get("layers", []) and not entry.get("manual"):
+            problems.append(f"{name}: layer D needs manual steps")
+        if entry.get("packaged_app") == "ci" and not set(entry.get("layers", [])) & {"B", "C"}:
+            problems.append(f"{name}: packaged_app = ci needs a layer B or C check")
+        if entry.get("automated") in ("yes", "partial") and not entry.get("tests"):
+            problems.append(f"{name}: automated entries need tests")
+        if entry.get("automated") == "partial" and not (entry.get("manual") or entry.get("rationale")):
+            problems.append(f"{name}: partial automation needs manual steps or a rationale")
+        for reference in entry.get("tests", []):
+            kind, _, target = reference.partition(":")
+            if kind not in references:
+                problems.append(f"{name}: unknown reference kind in {reference}")
+            elif target not in references[kind]:
+                problems.append(f"{name}: {reference} does not exist")
+            if kind == "gui" and target in scenarios and name not in scenarios[target]:
+                problems.append(f"{name}: scenario {target} does not list {name}")
+        for evidence in entry.get("evidence", []):
+            match = re.fullmatch(r"aquamacs#(\d+)", evidence)
+            if match:
+                covered.add(int(match.group(1)))
+            elif not re.fullmatch(r"(glassmacs|policy):[\w-]+", evidence):
+                problems.append(f"{name}: evidence {evidence!r} is not aquamacs#N, "
+                                f"glassmacs:NAME or policy:NAME")
+    for scenario, scenario_ids in scenarios.items():
+        for check_id in scenario_ids:
+            if check_id not in ids:
+                problems.append(f"scenario {scenario} names unknown check {check_id}")
+    for report in sorted(ISSUE_34_REPORTS - covered):
+        problems.append(f"Aquamacs #{report} from issue #34 is not covered")
+    return problems
+
+
+def escape(text):
+    return str(text).replace("|", "\\|").replace("\n", " ")
+
+
+def link(evidence):
+    match = re.fullmatch(r"aquamacs#(\d+)", evidence)
+    if match:
+        number = match.group(1)
+        return f"[Aquamacs #{number}](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/{number})"
+    return f"`{evidence}`"
+
+
+def header(document_id, title, coverage, reviewed):
+    return (f"# {title}\n\n"
+            f"> **Document ID:** {document_id}  \n"
+            f"> **Status:** Canonical  \n"
+            f"> **Owner:** Glassmacs maintainers  \n"
+            f"> **Effective date:** 2026-10-29  \n"
+            f"> **Last reviewed:** {reviewed}  \n"
+            f"> **Coverage:** {coverage}  \n"
+            f"> **Supersedes:** None\n\n"
+            f"<!-- Generated from acceptance/matrix.toml by scripts/acceptance-matrix render; "
+            f"edit the matrix, not this file. -->\n\n")
+
+
+def render_matrix(data, checks):
+    lines = [header("DOC-ACCEPT", "Glassmacs acceptance matrix",
+                    "Every acceptance risk with its evidence, tests, automation and verification status",
+                    data["reviewed"])]
+    lines.append(
+        "Statuses are kept apart on purpose. **Implemented** means the behavior exists; "
+        "**automated** means tests check it; **packaged app** says whether those checks run "
+        "against the built Glassmacs.app in CI (`ci`) or not at all (`NOT RUN`); **clean "
+        "machine** records a dated manual run on a fresh Mac, and is `NOT RUN` until someone "
+        "records one. A green batch run is never GUI acceptance.\n\n"
+        "Layers: **A** batch tests (`./scripts/test`), **B** static checks of the packaged app "
+        "(`scripts/validate-macos-app`), **C** GUI scenarios on the packaged app in CI "
+        "(`scripts/macos-gui-acceptance`), **D** manual "
+        "([checklist](macos-acceptance-checklist.md)). In a running Glassmacs, "
+        "`M-x glassmacs-self-check` runs the in-app subset.\n\n"
+        "The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its "
+        "`Glassmacs-GUI-acceptance` artifact; `scripts/acceptance-matrix outcomes "
+        "results.json` maps them onto these IDs.\n")
+    lines.append("| ID | Check | Sev. | Evidence | Layers | Implemented | Automated | "
+                 "Packaged app | Clean machine |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    for entry in checks:
+        lines.append(
+            f"| [{entry['id']}](#{entry['id'].lower()}) | {escape(entry['title'])} | "
+            f"{entry['severity']} | {', '.join(link(e) for e in entry['evidence'])} | "
+            f"{' '.join(entry['layers'])} | {entry['implemented']} | {entry['automated']} | "
+            f"{entry['packaged_app']} | {entry['clean_machine']} |")
+    lines.append("")
+    for entry in checks:
+        lines.append(f"## {entry['id']}\n")
+        lines.append(f"**{escape(entry['title'])}** ({entry['severity']}). "
+                     f"{escape(entry['exposure'])}\n")
+        lines.append("- Evidence: " + ", ".join(link(e) for e in entry["evidence"]))
+        lines.append("- Layers: " + ", ".join(f"{layer} ({LAYER_NAMES[layer]})"
+                                               for layer in entry["layers"]))
+        if entry["tests"]:
+            lines.append("- Tests: " + ", ".join(f"`{t}`" for t in entry["tests"]))
+        if entry.get("rationale"):
+            lines.append(f"- Not fully automated because: {escape(entry['rationale'])}")
+        if entry.get("manual"):
+            lines.append(f"- Manual: see [checklist](macos-acceptance-checklist.md#{entry['id'].lower()})")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def render_checklist(data, checks):
+    lines = [header("DOC-MAC-CHECKLIST", "macOS manual acceptance checklist",
+                    "Layer D checks that need a person, a physical Mac or a clean machine",
+                    data["reviewed"])]
+    lines.append(
+        "Run these on the build being released, not on an earlier one. Record each result as "
+        "a dated line in the `clean_machine` field of the check in `acceptance/matrix.toml` "
+        "(for example `2026-11-02 pass, macOS 15.1 arm64, build 1a2b3c4`), then run "
+        "`scripts/acceptance-matrix render`. Until then every check here is **NOT RUN**.\n\n"
+        "Before starting: install the app in /Applications on the Mac under test, and run "
+        "`M-x glassmacs-self-check` there; it should report no FAIL lines.\n")
+    for entry in checks:
+        if not entry.get("manual"):
+            continue
+        lines.append(f"## {entry['id']}\n")
+        lines.append(f"**{escape(entry['title'])}** ({entry['severity']}). "
+                     f"Result: **{entry['clean_machine']}**\n")
+        for step in entry["manual"]:
+            lines.append(f"- [ ] {step}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def outcomes(results_path):
+    data, checks = load()
+    results = json.loads(Path(results_path).read_text())
+    by_check = {}
+    for scenario in results["scenarios"]:
+        for check_id in scenario["checks"]:
+            by_check.setdefault(check_id, []).append(f"{scenario['name']}: {scenario['status']}")
+    for entry in checks:
+        if "C" in entry["layers"]:
+            print(f"{entry['id']}: {'; '.join(by_check.get(entry['id'], ['no scenario ran']))}")
+
+
+def main():
+    command = sys.argv[1] if len(sys.argv) > 1 else "check"
+    if command == "outcomes" and len(sys.argv) == 3:
+        outcomes(sys.argv[2])
+        return 0
+    data, checks = load()
+    problems = validate(data, checks)
+    if problems:
+        print("Acceptance matrix problems:\n  " + "\n  ".join(problems), file=sys.stderr)
+        return 1
+    rendered = {MATRIX_DOC: render_matrix(data, checks),
+                CHECKLIST_DOC: render_checklist(data, checks)}
+    if command == "render":
+        for path, text in rendered.items():
+            path.write_text(text)
+        print(f"Wrote {', '.join(str(p.relative_to(ROOT)) for p in rendered)}")
+        return 0
+    if command == "check":
+        stale = [str(p.relative_to(ROOT)) for p, text in rendered.items()
+                 if not p.exists() or p.read_text() != text]
+        if stale:
+            print(f"Out of date (run scripts/acceptance-matrix render): {', '.join(stale)}",
+                  file=sys.stderr)
+            return 1
+        print(f"Acceptance matrix: {len(checks)} checks valid; documents current")
+        return 0
+    print(__doc__, file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
