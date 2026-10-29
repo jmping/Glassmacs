@@ -398,8 +398,10 @@ class Harness:
                 text = sample.read_text(errors="replace") if sample.exists() else ""
                 # The main thread's stack shows where startup is blocked.
                 main = text.split("Thread_", 2)
-                lines.append(f"sample {pid} (main thread excerpt): "
-                             f"{(main[1] if len(main) > 1 else text)[:2500]!r}")
+                stack = (main[1] if len(main) > 1 else text).splitlines()
+                # The deepest frames say what startup is waiting in.
+                lines.append(f"sample {pid} (main thread, deepest frames): "
+                             f"{chr(10).join(stack[:4] + ['...'] + stack[-40:])!r}")
             except Failure as error:
                 lines.append(f"sample {pid}: {error}")
         shot = self.screenshot(name)

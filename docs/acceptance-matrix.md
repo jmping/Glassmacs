@@ -407,11 +407,11 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 
 ## PKG-001
 
-**Optional packages are offered once; declining installs nothing** (P1). Startup must not reach the network; the offer comes after the document is visible.
+**Optional packages are offered once; declining installs nothing** (P1). Startup must not reach the network; the offer comes after the document is visible. Found by the GUI crash scenario: a file reopened by workspace restore asked during startup, holding up the Finder document and the recovery offer; it now waits until startup is over and no other question is open.
 
 - Evidence: `glassmacs:issue-34-other-risks`
 - Layers: A (batch), C (GUI in CI)
-- Tests: `ert:glassmacs-packages-decline-installs-nothing`, `ert:glassmacs-packages-offer-is-asked-once-per-session`, `gui:package-offer-declined-installs-nothing`
+- Tests: `ert:glassmacs-packages-decline-installs-nothing`, `ert:glassmacs-packages-offer-is-asked-once-per-session`, `ert:glassmacs-packages-offer-waits-for-startup-and-other-questions`, `gui:package-offer-declined-installs-nothing`
 
 ## MIX-001
 

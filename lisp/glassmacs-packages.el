@@ -100,12 +100,36 @@ exits with a nonzero status."
                  (mapconcat #'identity failed "; ")))))
     (list :installed installed :failed failed)))
 
+(defvar glassmacs-packages--startup-finished nil
+  "Non-nil once Emacs startup, including `emacs-startup-hook', is over.")
+
+;; Last on the hook, so questions that startup asks (crash recovery) come
+;; first.
+(add-hook 'emacs-startup-hook
+          (lambda () (setq glassmacs-packages--startup-finished t)) 90)
+
+(defun glassmacs-packages--ask-when-idle (ask)
+  "Call ASK once Emacs is idle after startup and no other question is open.
+A file opened during startup (a restored workspace) must not ask while
+Glassmacs is still starting: the question would hold up the rest of
+startup, including documents opened from Finder and the crash-recovery
+offer.  It must not interrupt another question either."
+  (run-with-idle-timer
+   0.5 nil
+   (lambda ()
+     (if (or (not glassmacs-packages--startup-finished)
+             (active-minibuffer-window))
+         (glassmacs-packages--ask-when-idle ask)
+       (funcall ask)))))
+
 (defun glassmacs-packages-offer-installation (feature)
   "Offer once per session to install optional packages, for FEATURE.
 FEATURE is a short description such as \"R editing (ESS)\".  The question
-is asked after the current command finishes, so the document is already
-visible.  Nothing happens in batch sessions, when the offer is disabled
-by `glassmacs-offer-package-installation', or when nothing is missing.
+is asked once Emacs is idle after startup, so the document is already
+visible and startup is never held up (see
+`glassmacs-packages--ask-when-idle').  Nothing happens in batch
+sessions, when the offer is disabled by
+`glassmacs-offer-package-installation', or when nothing is missing.
 The current buffer is marked so that it switches to the proper mode once
 the packages are installed."
   (setq glassmacs-packages--fallback-mode t)
@@ -114,8 +138,7 @@ the packages are installed."
              (not glassmacs-packages--offered)
              (glassmacs-missing-optional-packages))
     (setq glassmacs-packages--offered t)
-    (run-at-time
-     0 nil
+    (glassmacs-packages--ask-when-idle
      (lambda ()
        (when (y-or-n-p
               (format "%s is not installed. Install Glassmacs's optional packages now (requires network)? "

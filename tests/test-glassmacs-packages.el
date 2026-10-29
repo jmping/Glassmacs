@@ -71,8 +71,9 @@ Inside BODY, `installed' holds the packages installed so far."
 
 (ert-deftest glassmacs-packages-offer-is-asked-once-per-session ()
   (glassmacs-packages-test--with-archive nil
-    (let ((noninteractive nil) (asked 0))
-      (cl-letf (((symbol-function 'run-at-time)
+    (let ((noninteractive nil) (asked 0)
+          (glassmacs-packages--startup-finished t))
+      (cl-letf (((symbol-function 'run-with-idle-timer)
                  (lambda (_time _repeat function &rest args)
                    (apply function args)))
                 ((symbol-function 'y-or-n-p)
@@ -84,12 +85,46 @@ Inside BODY, `installed' holds the packages installed so far."
 
 (ert-deftest glassmacs-packages-offer-is-silent-in-batch-and-when-disabled ()
   (glassmacs-packages-test--with-archive nil
-    (cl-letf (((symbol-function 'run-at-time)
+    (cl-letf (((symbol-function 'run-with-idle-timer)
                (lambda (&rest _) (ert-fail "must not schedule an offer"))))
       (glassmacs-packages-offer-installation "R editing (ESS)")
       (let ((noninteractive nil)
             (glassmacs-offer-package-installation nil))
         (glassmacs-packages-offer-installation "R editing (ESS)")))))
+
+(ert-deftest glassmacs-packages-offer-waits-for-startup-and-other-questions ()
+  "A document restored at startup must not ask while Glassmacs is still
+starting (it held up the Finder document and the crash-recovery offer),
+nor while another question is open."
+  (glassmacs-packages-test--with-archive nil
+    (let ((noninteractive nil) (asked 0) (timers nil)
+          (glassmacs-packages--startup-finished nil)
+          (minibuffer-open nil))
+      (cl-letf (((symbol-function 'run-with-idle-timer)
+                 (lambda (_time _repeat function &rest args)
+                   (push (lambda () (apply function args)) timers)))
+                ((symbol-function 'active-minibuffer-window)
+                 (lambda () minibuffer-open))
+                ((symbol-function 'y-or-n-p)
+                 (lambda (_prompt) (cl-incf asked) nil)))
+        (let ((run-idle-timers (lambda ()
+                                 (let ((due (nreverse timers)))
+                                   (setq timers nil)
+                                   (mapc #'funcall due)))))
+          (glassmacs-packages-offer-installation "R Markdown editing (poly-R)")
+          ;; Still starting: Emacs idles (for example in a prompt), no question.
+          (funcall run-idle-timers)
+          (should (= asked 0))
+          (should timers)
+          ;; Started, but another question is open.
+          (setq glassmacs-packages--startup-finished t minibuffer-open t)
+          (funcall run-idle-timers)
+          (should (= asked 0))
+          ;; Idle with nothing else asking: now it asks, once.
+          (setq minibuffer-open nil)
+          (funcall run-idle-timers)
+          (should (= asked 1))
+          (should-not timers))))))
 
 (ert-deftest glassmacs-r-mode-without-ess-offers-installation ()
   (when (or (fboundp 'ess-r-mode) (fboundp 'R-mode))
