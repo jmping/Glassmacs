@@ -418,7 +418,7 @@ class Context:
 # Scenarios.  Each docstring says what it establishes.
 
 
-@scenario("launch-clean-home", ["LAUNCH-001", "NATIVE-001", "PATH-001", "PREF-002"],
+@scenario("launch-clean-home", ["LAUNCH-001", "NATIVE-001", "PATH-001", "PREF-002", "SPELL-001"],
           macos_only=True)
 def launch_clean_home(ctx):
     """Launches from LaunchServices with an empty home and the launchd
@@ -525,7 +525,7 @@ def last_window_close_and_reopen(ctx):
     instance.quit()
 
 
-@scenario("finder-open-while-windowless", ["FINDER-001", "ASSOC-002"], macos_only=True)
+@scenario("finder-open-while-windowless", ["FINDER-001", "FINDER-002", "ASSOC-002"], macos_only=True)
 def finder_open_while_windowless(ctx):
     """With no window open, opening a file from Finder (`open -a`) shows it in
     a visible window of the running app, for a path with spaces and
@@ -806,7 +806,7 @@ def package_offer_declined(ctx):
     instance.kill_quietly()
 
 
-@scenario("preferences-persist-across-relaunch", ["PREF-001"], macos_only=True)
+@scenario("preferences-persist-across-relaunch", ["PREF-001", "PREF-003"], macos_only=True)
 def preferences_persist(ctx):
     """Preferences chosen from Glassmacs's own commands are saved in the
     Glassmacs home and in effect after quitting and relaunching."""
