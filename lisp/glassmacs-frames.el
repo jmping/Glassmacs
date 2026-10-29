@@ -243,7 +243,8 @@ An untitled buffer receives a file name only through the successful save."
   "Keymap for Glassmacs' unsaved-document review.")
 
 (define-derived-mode glassmacs-unsaved-review-mode special-mode "Unsaved Review"
-  "Review modified documents. Press RET to open the document at point.")
+  "Review modified documents. Press RET to open the document at point."
+  (use-local-map glassmacs-unsaved-review-mode-map))
 
 (defun glassmacs-review-visit-document ()
   "Open the unsaved document at point in its own visible window."
@@ -269,11 +270,11 @@ An untitled buffer receives a file name only through the successful save."
         (let ((inhibit-read-only t))
           (erase-buffer)
           (glassmacs-unsaved-review-mode)
-          (insert (format "%d modified document(s). Select a line and press RET to open.\\n\\n"
+          (insert (format "%d modified document(s). Select a line and press RET to open.\n\n"
                           (length buffers)))
           (dolist (buffer buffers)
             (let ((begin (point)))
-              (insert (format "%s%s\\n"
+              (insert (format "%s%s\n"
                               (buffer-name buffer)
                               (with-current-buffer buffer
                                 (if buffer-file-name
@@ -371,8 +372,9 @@ An untitled buffer receives a file name only through the successful save."
             (mode (cdr entry)))
         (define-key map (vector mode)
           `(menu-item ,label
-                      ,(lambda () (interactive)
-                         (glassmacs-new-buffer-in-mode mode))
+                      ,(let ((selected-mode ',mode))
+                         (lambda () (interactive)
+                           (glassmacs-new-buffer-in-mode selected-mode)))
                       :enable (assoc ,label (glassmacs--available-major-modes))))))
     map)
   "Selectable major modes for File → New Buffer in Mode.")
