@@ -24,7 +24,7 @@
     (define-key menu [help]
       '(menu-item "R Help…" glassmacs-r-ui-help))
     (define-key menu [console]
-      '(menu-item "Show R Console" glassmacs-r-inspect-session
+      '(menu-item "Switch to R Console" glassmacs-r-inspect-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [interrupt]
       '(menu-item "Interrupt R" glassmacs-r-interrupt
@@ -33,7 +33,7 @@
       '(menu-item "Choose R Session…" glassmacs-r-select-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [start]
-      '(menu-item "Start R and Target This Buffer" glassmacs-r-start-and-target-session))
+      '(menu-item "Start R Console" glassmacs-r-start-or-switch-console))
     (define-key menu [start-unbound]
       '(menu-item "Start Another R Session" glassmacs-r-start-session))
     (define-key menu [show-target]
@@ -103,7 +103,7 @@
     (glassmacs-run-selection "Run Selection" glassmacs-r-send-region "copy")
     (glassmacs-run-function "Run Function" glassmacs-r-send-function "jump-to")
     (glassmacs-run-buffer "Run Buffer" glassmacs-r-send-buffer "next-page")
-    (glassmacs-show-console "R Console" glassmacs-r-inspect-session "open")
+    (glassmacs-show-console "R Console" glassmacs-r-start-or-switch-console "open")
     (glassmacs-help "R Help" glassmacs-r-ui-help "help"))
   "R source toolbar entries: (KEY LABEL COMMAND ICON).
 ICON is the base name of an image shipped with GNU Emacs.")
