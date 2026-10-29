@@ -41,7 +41,8 @@ enum GlassmacsBootstrap {
             }
 
             let arguments = configuration.processArguments(
-                forwarding: Array(CommandLine.arguments.dropFirst())
+                forwarding: Array(CommandLine.arguments.dropFirst()),
+                initDirectory: home
             )
             let cArguments: [UnsafeMutablePointer<CChar>?] =
                 arguments.map { strdup($0) } + [nil]

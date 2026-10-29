@@ -47,6 +47,22 @@ final class LaunchConfigurationTests: XCTestCase {
         )
     }
 
+    func testInitDirectoryIsTheGlassmacsHomeSoEmacsCreatesNoDotEmacsD() {
+        let configuration = LaunchConfiguration(
+            bundleURL: URL(fileURLWithPath: "/Applications/Glassmacs.app")
+        )
+        let home = URL(fileURLWithPath: "/Users/test/Library/Application Support/Glassmacs",
+                       isDirectory: true)
+        let arguments = configuration.processArguments(forwarding: [], initDirectory: home)
+
+        XCTAssertEqual(arguments[1], "-Q")
+        XCTAssertEqual(
+            arguments[2],
+            "--init-directory=/Users/test/Library/Application Support/Glassmacs"
+        )
+        XCTAssertEqual(arguments[3], "--eval")
+    }
+
     func testApplicationSupportIsDefaultAndEnvironmentCanOverrideIt() throws {
         let configuration = LaunchConfiguration(
             bundleURL: URL(fileURLWithPath: "/Applications/Glassmacs.app")

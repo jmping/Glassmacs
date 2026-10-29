@@ -225,11 +225,11 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 
 ## PREF-002
 
-**State stays in the Glassmacs home** (P1). Glassmacs must not read or write ~/.emacs.d or its eln-cache, or the directory it started in.
+**State stays in the Glassmacs home** (P1). Glassmacs must not read or write ~/.emacs.d or its eln-cache, or the directory it started in. Found by the GUI clean-home scenario: Emacs's own interactive startup created an empty ~/.emacs.d (locate-user-emacs-file) before Glassmacs's configuration ran; the launchers now pass --init-directory with the Glassmacs home.
 
 - Evidence: [Aquamacs #251](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/251)
 - Layers: A (batch), C (GUI in CI)
-- Tests: `ert:glassmacs-startup-does-not-touch-ordinary-emacs-home`, `ert:glassmacs-package-state-is-isolated`, `ert:glassmacs-empty-home-variable-means-the-default-home`, `ert:glassmacs-native-compilation-does-not-use-user-cache`, `gui:launch-clean-home`
+- Tests: `ert:glassmacs-startup-does-not-touch-ordinary-emacs-home`, `ert:glassmacs-package-state-is-isolated`, `ert:glassmacs-empty-home-variable-means-the-default-home`, `ert:glassmacs-native-compilation-does-not-use-user-cache`, `ert:glassmacs-launcher-forwards-emacs-arguments`, `swift:testInitDirectoryIsTheGlassmacsHomeSoEmacsCreatesNoDotEmacsD`, `gui:launch-clean-home`
 
 ## PREF-003
 

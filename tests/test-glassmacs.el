@@ -957,15 +957,21 @@ otherwise never build."
          (let ((process-environment (copy-sequence process-environment)))
            (setenv "GLASSMACS_EMACS" fake-emacs)
            (setenv "GLASSMACS_TEST_ARGS" arguments-file)
+           (setenv "GLASSMACS_HOME" (expand-file-name "home" directory))
            (setq status (apply #'call-process launcher nil nil nil arguments)))
          (should (zerop status))
+         ;; The Glassmacs home is Emacs's user directory from the start, so
+         ;; interactive startup does not create ~/.emacs.d.
+         (should (file-directory-p (expand-file-name "home" directory)))
          (should
           (equal
            (with-temp-buffer
              (insert-file-contents arguments-file)
              (split-string (buffer-string) "\n" t))
-           (append '("-Q" "--load")
-                   (list (expand-file-name "init.el" glassmacs-root))
+           (append (list "-Q"
+                         (concat "--init-directory=" (expand-file-name "home" directory))
+                         "--load"
+                         (expand-file-name "init.el" glassmacs-root))
                    arguments))))
       (delete-directory directory t))))
 
