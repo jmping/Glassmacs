@@ -204,26 +204,30 @@ Use it for commands that prompt, so the request can return first."
                       (not (frame-parent frame))))
                (frame-list)))
 
+(defun glassmacs-acceptance--same-file-p (visited file)
+  "Return non-nil when VISITED and FILE name the same file.
+File names that come from Finder and LaunchServices are often in
+decomposed Unicode (NFD) while the test writes precomposed names, so
+compare the files themselves, as Emacs does to avoid duplicate buffers."
+  (and visited (or (equal visited file) (file-equal-p visited file))))
+
 (defun glassmacs-acceptance-file-buffers (file)
   "Return the names of buffers visiting FILE (normally zero or one)."
-  (let ((true (file-truename file)))
-    (cl-loop for buffer in (buffer-list)
-             for visited = (buffer-file-name buffer)
-             when (and visited (equal (file-truename visited) true))
-             collect (buffer-name buffer))))
+  (cl-loop for buffer in (buffer-list)
+           when (glassmacs-acceptance--same-file-p (buffer-file-name buffer) file)
+           collect (buffer-name buffer)))
 
 (defun glassmacs-acceptance-file-shown-p (file)
   "Return non-nil when FILE is shown in a window of a visible frame.
 Documents may open in a new frame (the default opening policy), which
 need not be the selected one."
-  (let ((true (file-truename file)))
-    (cl-some (lambda (frame)
-               (and (eq (frame-visible-p frame) t)
-                    (cl-some (lambda (window)
-                               (let ((visited (buffer-file-name (window-buffer window))))
-                                 (and visited (equal (file-truename visited) true))))
-                             (window-list frame 'never))))
-             (frame-list))))
+  (cl-some (lambda (frame)
+             (and (eq (frame-visible-p frame) t)
+                  (cl-some (lambda (window)
+                             (glassmacs-acceptance--same-file-p
+                              (buffer-file-name (window-buffer window)) file))
+                           (window-list frame 'never))))
+           (frame-list)))
 
 (defun glassmacs-acceptance-close-selected-window-like-cocoa ()
   "Close the selected frame as its window close button does.

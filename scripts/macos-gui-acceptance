@@ -184,6 +184,8 @@ class Instance:
         self.emacs.close()
         os.kill(self.pid, signal.SIGKILL)
         self.wait_exit()
+        # Let LaunchServices notice the app is gone before it is relaunched.
+        time.sleep(3)
 
     def kill_quietly(self):
         self.emacs.close()
@@ -256,6 +258,9 @@ class Harness:
         while not port_file.exists():
             if time.monotonic() > deadline:
                 leftovers = self.app_processes()
+                for pid in leftovers:
+                    print(f"   windows of {pid}: {self.front_window_text(pid)!r}", flush=True)
+                self.screenshot(f"launch-{self.launch_count}-timeout")
                 self.kill_leftovers()
                 raise Failure(f"Glassmacs did not start its acceptance driver within "
                               f"{LAUNCH_TIMEOUT}s (app processes then: {leftovers}); "
@@ -304,10 +309,62 @@ class Harness:
                 self.tty_children.remove(pid)
 
     def open_documents(self, *files):
-        """Open FILES in the running app as Finder does, or reopen it."""
+        """Open FILES in the running app as Finder does."""
         if self.tty:
             raise NotRun("Finder document opening needs macOS")
+        if not files:
+            raise ValueError("use reopen() to reopen the app")
         run(["open", "-a", str(self.app)] + [str(path) for path in files], timeout=60)
+
+    def reopen(self, ctx):
+        """Reopen the running app as a Dock click does.  `open -a' on a
+        running app does not send the reopen event, so click the app's Dock
+        icon through System Events when Accessibility allows, else send the
+        same reopen Apple Event with AppleScript."""
+        if self.tty:
+            raise NotRun("reopening from the Dock needs macOS")
+        name = self.bundle_name()
+        if self.system_events_available():
+            run(["osascript", "-e",
+                 f'tell application "System Events" to tell process "Dock" to '
+                 f'click (first UI element of list 1 whose name is "{name}")'], timeout=30)
+            ctx.method("reopen: Dock icon click (System Events)")
+        else:
+            run(["osascript", "-e", f'tell application id "{self.bundle_id()}" to reopen'],
+                timeout=30)
+            ctx.method("reopen: reopen Apple Event (AppleScript)")
+
+    def _info(self, key):
+        import plistlib
+        with open(Path(self.app) / "Contents/Info.plist", "rb") as handle:
+            return plistlib.load(handle)[key]
+
+    def bundle_name(self):
+        return self._info("CFBundleName")
+
+    def bundle_id(self):
+        return self._info("CFBundleIdentifier")
+
+    def front_window_text(self, pid):
+        """Return the text of the app's windows and dialogs (Accessibility)."""
+        if not self.macos or not self.system_events_available():
+            return None
+        script = (f'tell application "System Events" to tell (first process whose unix id is {pid})\n'
+                  f'  set out to ""\n'
+                  f'  repeat with w in windows\n'
+                  f'    set out to out & "[" & (name of w as text) & "] "\n'
+                  f'    try\n'
+                  f'      repeat with t in (static texts of w)\n'
+                  f'        set out to out & (value of t as text) & " | "\n'
+                  f'      end repeat\n'
+                  f'    end try\n'
+                  f'  end repeat\n'
+                  f'  return out\n'
+                  f'end tell')
+        try:
+            return run(["osascript", "-e", script], timeout=20, check=False).stdout.strip()
+        except Failure:
+            return None
 
     def app_processes(self):
         """Return the pids of processes running from the app's Contents/MacOS.
@@ -433,6 +490,9 @@ class Context:
             instance.emacs.wait("(> (glassmacs-acceptance-visible-frames) 0)",
                                 "a visible window", timeout=30)
         instance.emacs.eval("(setq glassmacs-offer-package-installation nil)")
+        # A document opened at launch may already have asked; decline it.
+        if instance.emacs.eval("(glassmacs-acceptance-prompt-matches-p \"optional packages\")"):
+            instance.emacs.eval("(glassmacs-acceptance-type \"n\")")
 
     def close_last_window(self, instance):
         """Close the frame's window as the close button does."""
@@ -485,14 +545,21 @@ def launch_clean_home(ctx):
     native = emacs.eval("""(list :available (and (fboundp 'native-comp-available-p)
                                                  (native-comp-available-p))
                                  :path native-comp-eln-load-path
-                                 :pp-native (progn (require 'pp)
-                                                   (and (fboundp 'subr-native-elisp-p)
-                                                        (subr-native-elisp-p (symbol-function 'pp)))))""")
+                                 :pp-native
+                                 (cl-some (lambda (function)
+                                            (let ((definition (symbol-function function)))
+                                              (or (and (fboundp 'native-comp-function-p)
+                                                       (native-comp-function-p definition))
+                                                  (and (fboundp 'subr-native-elisp-p)
+                                                       (subr-native-elisp-p definition)))))
+                                          '(find-file window-normalize-buffer
+                                            buffer-file-name-with-version)))""")
     if native["available"]:
         bundle = str(Path(harness.app).resolve())
         ctx.expect(all(str(Path(p).resolve()).startswith(bundle) for p in native["path"]),
                    f"Native code loads from outside the bundle: {native['path']}")
-        ctx.expect(native["pp-native"], "Bundled native code did not load (pp is not native)")
+        ctx.expect(native["pp-native"],
+                   "Bundled native code did not load (preloaded find-file is not native)")
     login_shell = os.environ.get("SHELL", "/bin/zsh")
     login_path = run([login_shell, "-l", "-c", 'printf %s "$PATH"'], timeout=30).stdout
     emacs_path = emacs.eval('(getenv "PATH")').split(":")
@@ -558,7 +625,7 @@ def last_window_close_and_reopen(ctx):
     ctx.close_last_window(instance)
     time.sleep(1)
     ctx.expect(instance.alive(), "Closing the last window quit Glassmacs")
-    harness.open_documents()
+    harness.reopen(ctx)
     emacs.wait("(> (glassmacs-acceptance-visible-frames) 0)",
                "the window to come back after reopening the app")
     ctx.expect(emacs.eval("(glassmacs-acceptance-visible-frames)") == 1,
@@ -719,7 +786,7 @@ def fullscreen_close_and_reopen(ctx):
     ctx.close_last_window(instance)
     time.sleep(1.5)
     ctx.expect(instance.alive(), "Closing the full-screen last window quit Glassmacs")
-    harness.open_documents()
+    harness.reopen(ctx)
     emacs.wait("(> (glassmacs-acceptance-visible-frames) 0)", "the window to return", timeout=30)
     emacs.eval("(set-frame-parameter nil 'fullscreen nil)")
     time.sleep(2)
