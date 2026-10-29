@@ -326,13 +326,14 @@ An untitled buffer receives a file name only through the successful save."
     (or (cdr (assoc selection choices))
         (user-error "No major mode selected"))))
 
-(defun glassmacs-new-buffer-in-mode (mode)
-  "Create an untitled buffer using major MODE and the document-opening policy."
+(defun glassmacs-new-buffer-in-mode (mode &optional from-menu)
+  "Create an untitled buffer using major MODE and the document-opening policy.
+FROM-MENU applies the graphical document-opening policy for menu selection."
   (interactive (list (glassmacs--read-major-mode)))
   (unless (memq mode (mapcar #'cdr (glassmacs--available-major-modes)))
     (user-error "Unavailable major mode: %s" mode))
   (let ((buffer (generate-new-buffer "Untitled"))
-        (interactive-call (called-interactively-p 'interactive)))
+        (interactive-call (or from-menu (called-interactively-p 'interactive))))
     (condition-case error-data
         (progn
           (with-current-buffer buffer
@@ -372,7 +373,7 @@ An untitled buffer receives a file name only through the successful save."
              (mode (cdr entry))
              (command (lambda ()
                         (interactive)
-                        (glassmacs-new-buffer-in-mode mode))))
+                        (glassmacs-new-buffer-in-mode mode t))))
         (define-key map (vector mode)
           `(menu-item ,label ,command
                       :enable (assoc ,label (glassmacs--available-major-modes))))))
