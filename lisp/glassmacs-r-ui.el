@@ -24,7 +24,7 @@
     (define-key menu [help]
       '(menu-item "R Help…" glassmacs-r-ui-help))
     (define-key menu [console]
-      '(menu-item "Show R Console" glassmacs-r-inspect-session
+      '(menu-item "Switch to R Console" glassmacs-r-inspect-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [interrupt]
       '(menu-item "Interrupt R" glassmacs-r-interrupt
@@ -33,7 +33,7 @@
       '(menu-item "Choose R Session…" glassmacs-r-select-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [start]
-      '(menu-item "Start R and Target This Buffer" glassmacs-r-start-and-target-session))
+      '(menu-item "Start R Console" glassmacs-r-start-or-switch-console))
     (define-key menu [start-unbound]
       '(menu-item "Start Another R Session" glassmacs-r-start-session))
     (define-key menu [show-target]
@@ -87,12 +87,29 @@
     menu)
   "Console-specific R actions.")
 
+(defun glassmacs-r-ui--help-display-buffer (buffer _alist)
+  "Display R help BUFFER in its own frame without replacing source."
+  (let ((existing (get-buffer-window buffer t)))
+    (cond
+     (existing
+      (select-frame-set-input-focus (window-frame existing))
+      existing)
+     (t
+      (let* ((frame (make-frame))
+             (window (frame-selected-window frame)))
+        (set-window-buffer window buffer)
+        (select-frame-set-input-focus frame)
+        window)))))
+
 (defun glassmacs-r-ui-help ()
-  "Prompt for R documentation using ESS, if available."
+  "Prompt for R documentation without replacing the edited source window."
   (interactive)
-  (if (fboundp 'ess-display-help-on-object)
-      (call-interactively #'ess-display-help-on-object)
-    (user-error "R help requires ESS")))
+  (unless (fboundp 'ess-display-help-on-object)
+    (user-error "R help requires ESS"))
+  (let ((display-buffer-overriding-action
+         (when (display-graphic-p)
+           '(glassmacs-r-ui--help-display-buffer))))
+    (call-interactively #'ess-display-help-on-object)))
 
 ;; ICON names must be images that GNU Emacs itself ships in `etc/images'
 ;; (for example right-arrow, jump-to, next-page, cancel); `find-image'
@@ -103,7 +120,7 @@
     (glassmacs-run-selection "Run Selection" glassmacs-r-send-region "copy")
     (glassmacs-run-function "Run Function" glassmacs-r-send-function "jump-to")
     (glassmacs-run-buffer "Run Buffer" glassmacs-r-send-buffer "next-page")
-    (glassmacs-show-console "R Console" glassmacs-r-inspect-session "open")
+    (glassmacs-show-console "R Console" glassmacs-r-start-or-switch-console "open")
     (glassmacs-help "R Help" glassmacs-r-ui-help "help"))
   "R source toolbar entries: (KEY LABEL COMMAND ICON).
 ICON is the base name of an image shipped with GNU Emacs.")

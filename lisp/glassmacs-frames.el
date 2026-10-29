@@ -45,7 +45,8 @@ POLICY must be `new-frame', `new-tab', or `reuse-current'."
          (and (not (derived-mode-p 'special-mode 'dired-mode 'comint-mode))
               (not (get-buffer-process buffer))
               (or buffer-file-name
-                  (not (string-match-p "\\`\\*" (buffer-name))))))))
+                  (not (string-match-p "\\`\\*" (buffer-name)))
+                  (equal (buffer-name) "*scratch*"))))))
 
 (defun glassmacs--document-opening-action (buffer)
   "Return the configured opening action for ordinary BUFFER, if applicable."
@@ -154,6 +155,18 @@ the user cancels or the save does not complete."
           t)
       (_ nil))))
 
+(defun glassmacs--confirm-console-window-close (buffer)
+  "Confirm hiding the last visible window of an active R console BUFFER.
+Closing a console view does not terminate its R subprocess."
+  (let ((process (and (buffer-live-p buffer)
+                      (get-buffer-process buffer))))
+    (or (not (and process (process-live-p process)
+                  (with-current-buffer buffer
+                    (derived-mode-p 'inferior-ess-r-mode))))
+        (yes-or-no-p
+         (format "Hide R console %s? The R session will keep running. "
+                 (buffer-name buffer))))))
+
 (defun glassmacs--close-documents-in-windows (windows)
   "Close the documents shown only in WINDOWS, asking about unsaved changes.
 Only ordinary documents are closed (see
@@ -163,11 +176,14 @@ session.  A document also visible in another window stays open.  Return
 nil, closing nothing further, as soon as the user cancels."
   (catch 'canceled
     (dolist (buffer (delete-dups (mapcar #'window-buffer windows)) t)
-      (when (and (glassmacs--ordinary-document-buffer-p buffer)
-                 (not (glassmacs--buffer-shown-elsewhere-p buffer windows)))
-        (unless (and (glassmacs--resolve-unsaved-changes buffer)
-                     (kill-buffer buffer))
-          (throw 'canceled nil))))))
+      (unless (glassmacs--buffer-shown-elsewhere-p buffer windows)
+        (cond
+         ((glassmacs--ordinary-document-buffer-p buffer)
+          (unless (and (glassmacs--resolve-unsaved-changes buffer)
+                       (kill-buffer buffer))
+            (throw 'canceled nil)))
+         ((not (glassmacs--confirm-console-window-close buffer))
+          (throw 'canceled nil)))))))
 
 (defun glassmacs--close-view (window)
   "Close WINDOW: the window itself, its tab, or its frame.
@@ -230,9 +246,37 @@ An untitled buffer receives a file name only through the successful save."
   (cl-remove-if-not #'glassmacs--document-buffer-needs-saving-p
                     (buffer-list)))
 
+(defvar-local glassmacs--review-targets nil
+  "Buffers presented in this unsaved-document review.")
+
+(defvar glassmacs-unsaved-review-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'glassmacs-review-visit-document)
+    (define-key map (kbd "o") #'glassmacs-review-visit-document)
+    (define-key map (kbd "g") #'glassmacs-review-unsaved-documents)
+    map)
+  "Keymap for Glassmacs' unsaved-document review.")
+
+(define-derived-mode glassmacs-unsaved-review-mode special-mode "Unsaved Review"
+  "Review modified documents. Press RET to open the document at point."
+  (use-local-map glassmacs-unsaved-review-mode-map))
+
+(defun glassmacs-review-visit-document ()
+  "Open the unsaved document at point in its own visible window."
+  (interactive)
+  (let ((buffer (get-text-property (point) 'glassmacs-review-buffer)))
+    (unless (buffer-live-p buffer)
+      (user-error "No live document at point"))
+    (glassmacs--show-document-buffer buffer 'new-frame)))
+
+(defun glassmacs--show-review-buffer (buffer)
+  "Present unsaved-document review BUFFER without replacing a document."
+  (if (display-graphic-p)
+      (glassmacs--show-document-buffer buffer 'new-frame)
+    (pop-to-buffer buffer)))
+
 (defun glassmacs-review-unsaved-documents ()
-  "Show modified user documents using Emacs' native buffer list.
-This command never saves or discards any contents."
+  "List modified documents; RET opens the document at point."
   (interactive)
   (let ((buffers (glassmacs--modified-document-buffers)))
     (if (null buffers)
@@ -240,16 +284,21 @@ This command never saves or discards any contents."
       (with-current-buffer (get-buffer-create "*Glassmacs Unsaved Documents*")
         (let ((inhibit-read-only t))
           (erase-buffer)
-          (insert (format "%d modified document(s):\n\n" (length buffers)))
+          (glassmacs-unsaved-review-mode)
+          (insert (format "%d modified document(s). Select a line and press RET to open.\n\n"
+                          (length buffers)))
           (dolist (buffer buffers)
-            (insert (format "%s%s\n"
-                            (buffer-name buffer)
-                            (with-current-buffer buffer
-                              (if buffer-file-name
-                                  (format " — %s" buffer-file-name)
-                                " — untitled")))))
-          (special-mode))
-        (display-buffer (current-buffer))))))
+            (let ((begin (point)))
+              (insert (format "%s%s\n"
+                              (buffer-name buffer)
+                              (with-current-buffer buffer
+                                (if buffer-file-name
+                                    (format " — %s" buffer-file-name)
+                                  " — untitled"))))
+              (put-text-property begin (point) 'glassmacs-review-buffer buffer)))
+          (goto-char (point-min))
+          (forward-line 2))
+        (glassmacs--show-review-buffer (current-buffer))))))
 
 (defun glassmacs-new-document ()
   "Create an untitled document using the configured opening policy."
@@ -292,13 +341,14 @@ This command never saves or discards any contents."
     (or (cdr (assoc selection choices))
         (user-error "No major mode selected"))))
 
-(defun glassmacs-new-buffer-in-mode (mode)
-  "Create an untitled buffer using major MODE and the document-opening policy."
+(defun glassmacs-new-buffer-in-mode (mode &optional from-menu)
+  "Create an untitled buffer using major MODE and the document-opening policy.
+FROM-MENU applies the graphical document-opening policy for menu selection."
   (interactive (list (glassmacs--read-major-mode)))
   (unless (memq mode (mapcar #'cdr (glassmacs--available-major-modes)))
     (user-error "Unavailable major mode: %s" mode))
   (let ((buffer (generate-new-buffer "Untitled"))
-        (interactive-call (called-interactively-p 'interactive)))
+        (interactive-call (or from-menu (called-interactively-p 'interactive))))
     (condition-case error-data
         (progn
           (with-current-buffer buffer
@@ -331,6 +381,20 @@ This command never saves or discards any contents."
              (not (derived-mode-p 'ess-r-mode 'R-mode)))
     (user-error "ESS R mode is unavailable; install ESS first")))
 
+(defvar glassmacs-new-buffer-mode-menu
+  (let ((map (make-sparse-keymap "New Buffer in Mode")))
+    (dolist (entry (reverse glassmacs-common-major-modes))
+      (let* ((label (car entry))
+             (mode (cdr entry))
+             (command (lambda ()
+                        (interactive)
+                        (glassmacs-new-buffer-in-mode mode t))))
+        (define-key map (vector mode)
+          `(menu-item ,label ,command
+                      :enable (assoc ,label (glassmacs--available-major-modes))))))
+    map)
+  "Selectable major modes for File → New Buffer in Mode.")
+
 (defun glassmacs--install-document-menu ()
   "Route macOS File menu open commands through Glassmacs' document policy."
   (when (and (eq system-type 'darwin) (display-graphic-p))
@@ -340,8 +404,7 @@ This command never saves or discards any contents."
     (define-key global-map [menu-bar file glassmacs-review-unsaved]
       '(menu-item "Review Unsaved Documents…" glassmacs-review-unsaved-documents))
     (define-key global-map [menu-bar file glassmacs-new-in-mode]
-      '(menu-item "New Buffer in Mode…" glassmacs-new-buffer-in-mode
-                  :enable (menu-bar-non-minibuffer-window-p)))
+      (cons "New Buffer in Mode" glassmacs-new-buffer-mode-menu))
     (define-key global-map [menu-bar file glassmacs-change-mode]
       '(menu-item "Change Buffer Mode…" glassmacs-change-buffer-mode
                   :enable (menu-bar-non-minibuffer-window-p)))
