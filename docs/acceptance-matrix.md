@@ -67,6 +67,8 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 | [APPEAR-001](#appear-001) | Light and dark appearance changes | P2 | `glassmacs:issue-34-other-risks` | D | no | no | NOT RUN | NOT RUN |
 | [SEC-001](#sec-001) | Developer ID signing, notarization and Gatekeeper | P0 | [Aquamacs #264](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/264), `glassmacs:issue-34-other-risks` | A D | yes | partial | NOT RUN | NOT RUN |
 | [PERM-001](#perm-001) | No privacy permission prompts at launch | P2 | `glassmacs:issue-34-other-risks` | D | yes | no | NOT RUN | NOT RUN |
+| [UPSTREAM-001](#upstream-001) | NS scroll crash fixed after Emacs 31.1 (bug#81585) | P1 | `glassmacs:emacs-31-1-missing-ns-fixes` | D | no | no | NOT RUN | NOT RUN |
+| [UPSTREAM-002](#upstream-002) | NS freeze from events sent to a closed window, fixed after Emacs 31.1 (bug#72496) | P1 | `glassmacs:emacs-31-1-missing-ns-fixes` | C D | no | partial | ci | NOT RUN |
 
 ## DIST-001
 
@@ -489,3 +491,22 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 - Evidence: `glassmacs:issue-34-other-risks`
 - Layers: D (manual)
 - Manual: see [checklist](macos-acceptance-checklist.md#perm-001)
+
+## UPSTREAM-001
+
+**NS scroll crash fixed after Emacs 31.1 (bug#81585)** (P1). Upstream b59a6ea35 (master only) fixes negative destinations reaching ns_scroll_run; Aquamacs 4 carries it (b52cca9aa9), the bundled Emacs 31.1 does not.
+
+- Evidence: `glassmacs:emacs-31-1-missing-ns-fixes`
+- Layers: D (manual)
+- Not fully automated because: Glassmacs bundles the released Emacs binary and carries no C patches; the fix arrives with the pin.
+- Manual: see [checklist](macos-acceptance-checklist.md#upstream-001)
+
+## UPSTREAM-002
+
+**NS freeze from events sent to a closed window, fixed after Emacs 31.1 (bug#72496)** (P1). Upstream ef448d2ca (master only) addresses app-defined events to a window that exists; Glassmacs hides and restores frames, the path this concerns.
+
+- Evidence: `glassmacs:emacs-31-1-missing-ns-fixes`
+- Layers: C (GUI in CI), D (manual)
+- Tests: `gui:last-window-close-and-dock-reopen`, `gui:fullscreen-close-and-reopen`
+- Not fully automated because: The GUI scenarios close and reopen windows under deadlines, so a freeze fails them, but the race is not reliably reproducible.
+- Manual: see [checklist](macos-acceptance-checklist.md#upstream-002)

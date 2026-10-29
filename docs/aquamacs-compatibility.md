@@ -78,6 +78,9 @@ for what needs a person. Building the tests found and fixed:
   (on by default, interactive sessions) shows files changed by other
   programs; unsaved edits are never reverted, and saving over a changed file
   asks first.
+- **Upstream exposure:** two Cocoa fixes Aquamacs 4 carries (NS scroll crash
+  bug#81585, freeze bug#72496) are not in the bundled Emacs 31.1; see the
+  [Aquamacs 4 audit](aquamacs4-modern-macos-risk-audit.md) (UPSTREAM-001/002).
 - **poly-R's Templates menu failed without R** (MODE-001, Aquamacs #180): its
   filter called `process-get` on nil; Glassmacs lists no templates until an R
   session exists.

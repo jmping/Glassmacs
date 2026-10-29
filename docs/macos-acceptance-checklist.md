@@ -195,3 +195,17 @@ Before starting: install the app in /Applications on the Mac under test, and run
 **No privacy permission prompts at launch** (P2). Result: **NOT RUN**
 
 - [ ] On a fresh account, launch the app and open a file in Documents: only the standard folder-access prompt for Documents appears, once.
+
+## UPSTREAM-001
+
+**NS scroll crash fixed after Emacs 31.1 (bug#81585)** (P1). Result: **NOT RUN**
+
+- [ ] When updating the Emacs pin, confirm the new release contains upstream commit b59a6ea35 (git merge-base --is-ancestor b59a6ea35 TAG).
+- [ ] Until then, report any crash in ns_scroll_run or copyRect:to: from Console's crash reports against this check.
+
+## UPSTREAM-002
+
+**NS freeze from events sent to a closed window, fixed after Emacs 31.1 (bug#72496)** (P1). Result: **NOT RUN**
+
+- [ ] When updating the Emacs pin, confirm the new release contains upstream commit ef448d2ca.
+- [ ] Close and reopen windows repeatedly (Command-W, Dock click, full screen) for a few minutes: Glassmacs never stops responding.

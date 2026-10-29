@@ -502,7 +502,7 @@ def user_emacs_init_is_not_loaded(ctx):
             shutil.rmtree(directory, ignore_errors=True)
 
 
-@scenario("last-window-close-and-dock-reopen", ["LIFE-001"], macos_only=True)
+@scenario("last-window-close-and-dock-reopen", ["LIFE-001", "UPSTREAM-002"], macos_only=True)
 def last_window_close_and_reopen(ctx):
     """Closing the last window leaves Glassmacs running with no window;
     reopening the app (as a Dock click does) shows the window again without
@@ -659,7 +659,7 @@ def quit_with_unsaved_document_asks(ctx):
     instance.kill_quietly()
 
 
-@scenario("fullscreen-close-and-reopen", ["FULL-001"], macos_only=True)
+@scenario("fullscreen-close-and-reopen", ["FULL-001", "UPSTREAM-002"], macos_only=True)
 def fullscreen_close_and_reopen(ctx):
     """Closing a full-screen window, both as the last window and with a
     second window open, neither quits nor crashes Glassmacs, and the app

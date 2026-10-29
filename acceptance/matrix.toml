@@ -692,3 +692,33 @@ automated = "no"
 packaged_app = "NOT RUN"
 clean_machine = "NOT RUN"
 manual = ["On a fresh account, launch the app and open a file in Documents: only the standard folder-access prompt for Documents appears, once."]
+
+[[check]]
+id = "UPSTREAM-001"
+title = "NS scroll crash fixed after Emacs 31.1 (bug#81585)"
+severity = "P1"
+evidence = ["glassmacs:emacs-31-1-missing-ns-fixes"]
+exposure = "Upstream b59a6ea35 (master only) fixes negative destinations reaching ns_scroll_run; Aquamacs 4 carries it (b52cca9aa9), the bundled Emacs 31.1 does not."
+layers = ["D"]
+tests = []
+implemented = "no"
+automated = "no"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["When updating the Emacs pin, confirm the new release contains upstream commit b59a6ea35 (git merge-base --is-ancestor b59a6ea35 TAG).", "Until then, report any crash in ns_scroll_run or copyRect:to: from Console's crash reports against this check."]
+rationale = "Glassmacs bundles the released Emacs binary and carries no C patches; the fix arrives with the pin."
+
+[[check]]
+id = "UPSTREAM-002"
+title = "NS freeze from events sent to a closed window, fixed after Emacs 31.1 (bug#72496)"
+severity = "P1"
+evidence = ["glassmacs:emacs-31-1-missing-ns-fixes"]
+exposure = "Upstream ef448d2ca (master only) addresses app-defined events to a window that exists; Glassmacs hides and restores frames, the path this concerns."
+layers = ["C", "D"]
+tests = ["gui:last-window-close-and-dock-reopen", "gui:fullscreen-close-and-reopen"]
+implemented = "no"
+automated = "partial"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["When updating the Emacs pin, confirm the new release contains upstream commit ef448d2ca.", "Close and reopen windows repeatedly (Command-W, Dock click, full screen) for a few minutes: Glassmacs never stops responding."]
+rationale = "The GUI scenarios close and reopen windows under deadlines, so a freeze fails them, but the race is not reliably reproducible."

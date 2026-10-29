@@ -11,6 +11,7 @@
 ## 2026-10-29 — acceptance gates (issue #34)
 
 - **New DOC-ACCEPT** (`docs/acceptance-matrix.md`) and **DOC-MAC-CHECKLIST** (`docs/macos-acceptance-checklist.md`), both generated from `acceptance/matrix.toml` by `scripts/acceptance-matrix`; registered in the index. The matrix is the authority for acceptance status; other documents link to it rather than restate results.
+- **New DOC-AQUA4-AUDIT** (`docs/aquamacs4-modern-macos-risk-audit.md`, Informational): source-traced Aquamacs 4 audit; registered in the index.
 - **DOC-DEV:** acceptance layers, the GUI harness and its terminal self-test, the matrix check, and running the harness on a Mac.
 - **DOC-MAC-LAUNCHER:** what CI now verifies on the packaged app, the launcher `argv[0]` fix, and `M-x glassmacs-self-check`.
 - **DOC-AQUA-COMPAT:** dated acceptance pass with the defects it found.
