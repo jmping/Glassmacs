@@ -40,6 +40,24 @@ that is all there is.  Otherwise fall back to LaTeX mode."
           (t (latex-mode)))
     (glassmacs-packages-offer-installation "Sweave editing (poly-R)"))))
 
+;; poly-R's RMarkdown > Templates submenu asks the running R session for
+;; templates, but with no R session its menu filter calls `process-get' on
+;; nil and signals an error every time Emacs builds the menu bar (found by
+;; `glassmacs-polymode-menus-evaluate-in-prose-and-chunks').  With no
+;; session there are no templates to list, so offer none.
+(declare-function ess-get-next-available-process "ess-inf" (&optional dialect ignore-busy background))
+
+(defun glassmacs--poly-r-templates-need-r (original &rest arguments)
+  "Call ORIGINAL, poly-R's templates menu filter, with ARGUMENTS only
+when an R session is available; otherwise list no templates."
+  (when (ignore-errors (ess-get-next-available-process "R" t))
+    (apply original arguments)))
+
+(with-eval-after-load 'poly-R
+  (when (fboundp 'poly-r-rmarkdown-templates-menu)
+    (advice-add 'poly-r-rmarkdown-templates-menu :around
+                #'glassmacs--poly-r-templates-need-r)))
+
 (defun glassmacs-rd-mode ()
   "Use ESS's Rd mode for R documentation when available."
   (interactive)

@@ -129,6 +129,13 @@ document's R target must not be lost or diverge."
     (glassmacs-polymode-test--go-to "x <- ")
     (should-not (glassmacs-diagnostics-menu-problems))))
 
+(ert-deftest glassmacs-polymode-templates-menu-needs-no-r-session ()
+  "poly-R's Templates menu filter fails without an R session; Glassmacs
+makes it list no templates instead."
+  (glassmacs-polymode-test--require)
+  (cl-letf (((symbol-function 'ess-get-next-available-process) (lambda (&rest _) nil)))
+    (should-not (poly-r-rmarkdown-templates-menu))))
+
 (ert-deftest glassmacs-polymode-spelling-skips-chunk-code ()
   (glassmacs-polymode-test--require)
   (glassmacs-polymode-test--visiting "report.Rmd"

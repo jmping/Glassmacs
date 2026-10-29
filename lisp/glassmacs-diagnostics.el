@@ -51,10 +51,12 @@
 
 ;; Emacs evaluates each menu item's :enable, :visible and :button forms and
 ;; calls its :filter whenever it builds the menu bar, which on macOS happens
-;; when the Cocoa menu is updated.  An error there breaks the menu, and in
-;; Aquamacs some modes' menus crashed the app (Aquamacs issues #180, #256).
-;; This walks the menus active in a buffer the same way and reports errors
-;; and commands that do not exist, without running any command.
+;; when the Cocoa menu is updated.  GNU Emacs catches errors there, but the
+;; item then silently disappears or empties and the error is logged on
+;; every update; in Aquamacs, some modes' menus crashed the app (Aquamacs
+;; issues #180, #256).  This walks the menus active in a buffer the same
+;; way and reports errors and missing Glassmacs commands, without running
+;; any command.
 
 (defconst glassmacs-diagnostics--menu-depth-limit 8
   "Deepest submenu level checked.")
