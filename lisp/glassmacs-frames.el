@@ -155,6 +155,18 @@ the user cancels or the save does not complete."
           t)
       (_ nil))))
 
+(defun glassmacs--confirm-console-window-close (buffer)
+  "Confirm hiding the last visible window of an active R console BUFFER.
+Closing a console view does not terminate its R subprocess."
+  (let ((process (and (buffer-live-p buffer)
+                      (get-buffer-process buffer))))
+    (or (not (and process (process-live-p process)
+                  (with-current-buffer buffer
+                    (derived-mode-p 'inferior-ess-r-mode))))
+        (yes-or-no-p
+         (format "Hide R console %s? The R session will keep running. "
+                 (buffer-name buffer))))))
+
 (defun glassmacs--close-documents-in-windows (windows)
   "Close the documents shown only in WINDOWS, asking about unsaved changes.
 Only ordinary documents are closed (see
@@ -164,11 +176,14 @@ session.  A document also visible in another window stays open.  Return
 nil, closing nothing further, as soon as the user cancels."
   (catch 'canceled
     (dolist (buffer (delete-dups (mapcar #'window-buffer windows)) t)
-      (when (and (glassmacs--ordinary-document-buffer-p buffer)
-                 (not (glassmacs--buffer-shown-elsewhere-p buffer windows)))
-        (unless (and (glassmacs--resolve-unsaved-changes buffer)
-                     (kill-buffer buffer))
-          (throw 'canceled nil))))))
+      (unless (glassmacs--buffer-shown-elsewhere-p buffer windows)
+        (cond
+         ((glassmacs--ordinary-document-buffer-p buffer)
+          (unless (and (glassmacs--resolve-unsaved-changes buffer)
+                       (kill-buffer buffer))
+            (throw 'canceled nil)))
+         ((not (glassmacs--confirm-console-window-close buffer))
+          (throw 'canceled nil)))))))
 
 (defun glassmacs--close-view (window)
   "Close WINDOW: the window itself, its tab, or its frame.
