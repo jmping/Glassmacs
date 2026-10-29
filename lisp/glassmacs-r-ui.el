@@ -87,18 +87,19 @@
     menu)
   "Console-specific R actions.")
 
-(defun glassmacs-r-ui--help-display-buffer (buffer &optional _alist)
-  "Display R help BUFFER in a dedicated frame without displacing source."
+(defun glassmacs-r-ui--help-display-buffer (buffer _alist)
+  "Display R help BUFFER in its own frame without replacing source."
   (let ((existing (get-buffer-window buffer t)))
-    (if existing
-        (progn
-          (select-frame-set-input-focus (window-frame existing))
-          existing)
+    (cond
+     (existing
+      (select-frame-set-input-focus (window-frame existing))
+      existing)
+     (t
       (let* ((frame (make-frame))
              (window (frame-selected-window frame)))
         (set-window-buffer window buffer)
         (select-frame-set-input-focus frame)
-        window))))
+        window)))))
 
 (defun glassmacs-r-ui-help ()
   "Prompt for R documentation without replacing the edited source window."
