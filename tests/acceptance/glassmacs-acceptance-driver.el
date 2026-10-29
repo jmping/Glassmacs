@@ -118,6 +118,16 @@ windows and processes their names or printed forms."
           (glassmacs-acceptance--handle process line))))
     (process-put process 'pending pending)))
 
+(defvar glassmacs-acceptance-calls nil
+  "Recorded calls of the lifecycle commands, newest first.")
+
+(defun glassmacs-acceptance--record-call (name)
+  "Return advice recording a call of NAME."
+  (lambda (&rest _)
+    (push (list name (format-time-string "%T.%3N")
+                (glassmacs-acceptance-visible-frames))
+          glassmacs-acceptance-calls)))
+
 (defun glassmacs-acceptance-start (config-file)
   "Start the acceptance-test server described by CONFIG-FILE.
 CONFIG-FILE is JSON with \"token\", \"port_file\" and optionally
@@ -132,6 +142,13 @@ CONFIG-FILE is JSON with \"token\", \"port_file\" and optionally
     ;; questions are asked in the minibuffer during tests.  Dialogs
     ;; themselves are a manual check.
     (setq use-dialog-box nil)
+    ;; Record whether reopen events reach Lisp, to tell a lost event from
+    ;; one that arrives but does not show the window.
+    (dolist (command '(glassmacs-reopen glassmacs-new-window))
+      (when (fboundp command)
+        (advice-add command :before
+                    (glassmacs-acceptance--record-call (symbol-name command))
+                    '((name . glassmacs-acceptance)))))
     (setq glassmacs-acceptance--server
           (make-network-process
            :name "glassmacs-acceptance" :server t :noquery t

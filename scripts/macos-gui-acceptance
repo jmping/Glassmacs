@@ -247,6 +247,7 @@ class Harness:
         else:
             command = ["open", "-n", "-a", str(self.app),
                        "--env", f"GLASSMACS_HOME={home}",
+                       "--env", "GLASSMACS_LIFECYCLE_TRACE=1",
                        "--stdout", str(log), "--stderr", str(log)]
             for key, value in (env or {}).items():
                 command += ["--env", f"{key}={value}"]
@@ -331,6 +332,36 @@ class Harness:
             run(["osascript", "-e", f'tell application id "{self.bundle_id()}" to reopen'],
                 timeout=30)
             ctx.method("reopen: reopen Apple Event (AppleScript)")
+
+    def wait_for_reopen(self, ctx, instance, what, timeout=20):
+        """Reopen as the Dock does and wait for a visible window.  When none
+        appears, record the evidence: whether macOS called the lifecycle
+        reopen callback, whether the reopen command ran in Lisp, and whether
+        the reopen Apple Event sent by AppleScript does better."""
+        emacs = instance.emacs
+        emacs.eval("(setq glassmacs-acceptance-calls nil)")
+        self.reopen(ctx)
+        try:
+            emacs.wait("(> (glassmacs-acceptance-visible-frames) 0)", what, timeout=timeout)
+            return
+        except Failure as first:
+            evidence = {
+                "lifecycle trace": [line for line in self.log_tail(instance.log, 4000).splitlines()
+                                    if "Glassmacs lifecycle" in line],
+                "lisp calls after Dock click": emacs.eval("glassmacs-acceptance-calls"),
+                "frames": emacs.eval("(glassmacs-acceptance-frames)"),
+            }
+            emacs.eval("(setq glassmacs-acceptance-calls nil)")
+            run(["osascript", "-e", f'tell application id "{self.bundle_id()}" to reopen'],
+                timeout=30, check=False)
+            time.sleep(5)
+            evidence["visible after reopen Apple Event"] = emacs.eval(
+                "(glassmacs-acceptance-visible-frames)")
+            evidence["lisp calls after reopen Apple Event"] = emacs.eval("glassmacs-acceptance-calls")
+            evidence["lifecycle trace (all)"] = [
+                line for line in self.log_tail(instance.log, 4000).splitlines()
+                if "Glassmacs lifecycle" in line]
+            raise Failure(f"{first}; evidence: {json.dumps(evidence)}")
 
     def _info(self, key):
         import plistlib
@@ -605,7 +636,11 @@ def launch_clean_home(ctx):
     ctx.expect(str(Path(startup["program"]).resolve()).startswith(bundle_programs)
                and startup["name"].startswith("Emacs"),
                f"Emacs did not start as the bundled program (so -Q is ignored): {startup}")
-    ctx.expect(not startup["init"], f"A user init file was loaded: {startup['init']}")
+    # Glassmacs records its own bundled init.el as the init file (so that
+    # preferences can be saved under -Q); anything else is a user's file.
+    bundled_init = str(Path(harness.app).resolve() / "Contents/Resources/Glassmacs/init.el")
+    ctx.expect(not startup["init"] or str(Path(startup["init"]).resolve()) == bundled_init,
+               f"A user init file was loaded: {startup['init']}")
     custom = emacs.eval("custom-file")
     ctx.expect(str(Path(custom).resolve()).startswith(str(home.resolve())),
                f"custom-file is outside the Glassmacs home: {custom}")
@@ -658,9 +693,7 @@ def last_window_close_and_reopen(ctx):
     ctx.close_last_window(instance)
     time.sleep(1)
     ctx.expect(instance.alive(), "Closing the last window quit Glassmacs")
-    harness.reopen(ctx)
-    emacs.wait("(> (glassmacs-acceptance-visible-frames) 0)",
-               "the window to come back after reopening the app")
+    harness.wait_for_reopen(ctx, instance, "the window to come back after reopening the app")
     ctx.expect(emacs.eval("(glassmacs-acceptance-visible-frames)") == 1,
                "Reopening showed more than one window")
     after = set(emacs.eval("(mapcar #'buffer-name (buffer-list))"))
@@ -819,8 +852,7 @@ def fullscreen_close_and_reopen(ctx):
     ctx.close_last_window(instance)
     time.sleep(1.5)
     ctx.expect(instance.alive(), "Closing the full-screen last window quit Glassmacs")
-    harness.reopen(ctx)
-    emacs.wait("(> (glassmacs-acceptance-visible-frames) 0)", "the window to return", timeout=30)
+    harness.wait_for_reopen(ctx, instance, "the window to return", timeout=30)
     emacs.eval("(set-frame-parameter nil 'fullscreen nil)")
     time.sleep(2)
     emacs.eval("(select-frame (make-frame))")

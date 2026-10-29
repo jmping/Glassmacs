@@ -2,6 +2,7 @@
 #import <objc/runtime.h>
 #include <emacs-module.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 int plugin_is_GPL_compatible;
 
@@ -21,6 +22,12 @@ glassmacs_application_should_handle_reopen(id delegate, SEL selector,
                                            NSApplication *application,
                                            BOOL has_visible_windows)
 {
+  /* Opt-in trace for the acceptance tests: shows that macOS delivered the
+     reopen (a Dock click) and what it reported.  */
+  if (getenv ("GLASSMACS_LIFECYCLE_TRACE") != NULL)
+    fprintf (stderr, "Glassmacs lifecycle: reopen, visible windows: %d, "
+             "new frame: %d\n", (int) has_visible_windows,
+             (int) [delegate respondsToSelector:@selector(newFrame:)]);
   if (!has_visible_windows)
     {
       SEL new_frame = @selector(newFrame:);
