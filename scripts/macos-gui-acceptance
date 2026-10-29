@@ -247,7 +247,7 @@ class Harness:
         else:
             command = ["open", "-n", "-a", str(self.app),
                        "--env", f"GLASSMACS_HOME={home}",
-                       "--env", "GLASSMACS_LIFECYCLE_TRACE=1",
+                       "--env", f"GLASSMACS_LIFECYCLE_TRACE={self.trace_file()}",
                        "--stdout", str(log), "--stderr", str(log)]
             for key, value in (env or {}).items():
                 command += ["--env", f"{key}={value}"]
@@ -315,6 +315,16 @@ class Harness:
             raise ValueError("use reopen() to reopen the app")
         run(["open", "-a", str(self.app)] + [str(path) for path in files], timeout=60)
 
+    def trace_file(self):
+        """The lifecycle module's trace file for the current launch."""
+        return self.output / f"lifecycle-{self.launch_count}.log"
+
+    def lifecycle_trace(self):
+        try:
+            return self.trace_file().read_text(errors="replace").splitlines()
+        except OSError:
+            return []
+
     def reopen(self, ctx):
         """Reopen the running app as a Dock click does.  `open -a' on a
         running app does not send the reopen event, so click the app's Dock
@@ -324,10 +334,13 @@ class Harness:
             raise NotRun("reopening from the Dock needs macOS")
         name = self.bundle_name()
         if self.system_events_available():
-            run(["osascript", "-e",
-                 f'tell application "System Events" to tell process "Dock" to '
-                 f'click (first UI element of list 1 whose name is "{name}")'], timeout=30)
+            click = run(["osascript", "-e",
+                         f'tell application "System Events" to tell process "Dock" to '
+                         f'click (first UI element of list 1 whose name is "{name}")'],
+                        timeout=30, check=False)
             ctx.method("reopen: Dock icon click (System Events)")
+            ctx.note(f"Dock click: status {click.returncode}, "
+                     f"output {(click.stdout + click.stderr).strip()!r}")
         else:
             run(["osascript", "-e", f'tell application id "{self.bundle_id()}" to reopen'],
                 timeout=30)
@@ -346,21 +359,22 @@ class Harness:
             return
         except Failure as first:
             evidence = {
-                "lifecycle trace": [line for line in self.log_tail(instance.log, 4000).splitlines()
-                                    if "Glassmacs lifecycle" in line],
+                "lifecycle trace": self.lifecycle_trace(),
                 "lisp calls after Dock click": emacs.eval("glassmacs-acceptance-calls"),
                 "frames": emacs.eval("(glassmacs-acceptance-frames)"),
             }
             emacs.eval("(setq glassmacs-acceptance-calls nil)")
-            run(["osascript", "-e", f'tell application id "{self.bundle_id()}" to reopen'],
-                timeout=30, check=False)
+            apple_event = run(["osascript", "-e",
+                               f'tell application id "{self.bundle_id()}" to reopen'],
+                              timeout=30, check=False)
+            evidence["reopen Apple Event osascript"] = {
+                "status": apple_event.returncode,
+                "output": (apple_event.stdout + apple_event.stderr).strip()}
             time.sleep(5)
             evidence["visible after reopen Apple Event"] = emacs.eval(
                 "(glassmacs-acceptance-visible-frames)")
             evidence["lisp calls after reopen Apple Event"] = emacs.eval("glassmacs-acceptance-calls")
-            evidence["lifecycle trace (all)"] = [
-                line for line in self.log_tail(instance.log, 4000).splitlines()
-                if "Glassmacs lifecycle" in line]
+            evidence["lifecycle trace (all)"] = self.lifecycle_trace()
             raise Failure(f"{first}; evidence: {json.dumps(evidence)}")
 
     def _info(self, key):

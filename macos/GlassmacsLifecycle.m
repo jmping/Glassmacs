@@ -2,6 +2,7 @@
 #import <objc/runtime.h>
 #include <emacs-module.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 
 int plugin_is_GPL_compatible;
@@ -17,17 +18,35 @@ int plugin_is_GPL_compatible;
                     hasVisibleWindows:(BOOL)visible;
 @end
 
+/* Opt-in trace for the acceptance tests: when GLASSMACS_LIFECYCLE_TRACE
+   names a file, append a line to it.  Shows whether the callbacks were
+   installed and whether macOS delivered a reopen (a Dock click).  */
+static void
+glassmacs_trace (const char *format, ...)
+{
+  const char *path = getenv ("GLASSMACS_LIFECYCLE_TRACE");
+  if (path == NULL || *path == '\0')
+    return;
+  FILE *file = fopen (path, "a");
+  if (file == NULL)
+    return;
+  va_list arguments;
+  va_start (arguments, format);
+  fputs ("Glassmacs lifecycle: ", file);
+  vfprintf (file, format, arguments);
+  fputc ('\n', file);
+  va_end (arguments);
+  fclose (file);
+}
+
 static BOOL
 glassmacs_application_should_handle_reopen(id delegate, SEL selector,
                                            NSApplication *application,
                                            BOOL has_visible_windows)
 {
-  /* Opt-in trace for the acceptance tests: shows that macOS delivered the
-     reopen (a Dock click) and what it reported.  */
-  if (getenv ("GLASSMACS_LIFECYCLE_TRACE") != NULL)
-    fprintf (stderr, "Glassmacs lifecycle: reopen, visible windows: %d, "
-             "new frame: %d\n", (int) has_visible_windows,
-             (int) [delegate respondsToSelector:@selector(newFrame:)]);
+  glassmacs_trace ("reopen, visible windows: %d, delegate has newFrame: %d",
+                   (int) has_visible_windows,
+                   (int) [delegate respondsToSelector:@selector(newFrame:)]);
   if (!has_visible_windows)
     {
       SEL new_frame = @selector(newFrame:);
@@ -139,10 +158,12 @@ emacs_module_init(struct emacs_runtime *runtime)
       return 1;
     }
 
-  if (!class_addMethod(object_getClass(delegate), selector,
-                       (IMP) glassmacs_application_should_handle_reopen,
-                       description.types)
-      && ![delegate respondsToSelector:selector])
+  BOOL added = class_addMethod(object_getClass(delegate), selector,
+                               (IMP) glassmacs_application_should_handle_reopen,
+                               description.types);
+  glassmacs_trace ("installed; delegate %s, reopen callback added: %d",
+                   class_getName(object_getClass(delegate)), (int) added);
+  if (!added && ![delegate respondsToSelector:selector])
     {
       fputs("Glassmacs lifecycle bridge: could not install Cocoa reopen callback\n",
             stderr);
