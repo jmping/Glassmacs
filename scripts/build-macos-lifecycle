@@ -12,6 +12,8 @@ if [ ! -f "$header" ]; then
 fi
 
 mkdir -p "$(dirname -- "$output")"
+# Without -install_name the module's own ID would be its absolute build
+# location, which is not relocatable (validate-macos-app rejects it).
 /usr/bin/clang \
   -dynamiclib \
   -fobjc-arc \
@@ -21,6 +23,7 @@ mkdir -p "$(dirname -- "$output")"
   -I "$upstream_app/Contents/Resources/include" \
   "$root/macos/GlassmacsLifecycle.m" \
   -framework AppKit \
+  -install_name "@loader_path/$(basename -- "$output")" \
   -o "$output"
 
 printf 'Built universal Cocoa lifecycle bridge: %s\n' "$output"
