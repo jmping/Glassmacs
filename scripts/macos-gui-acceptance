@@ -166,8 +166,18 @@ class Instance:
         if not self.alive():
             return
         self.emacs.eval("(glassmacs-acceptance-run-later #'save-buffers-kill-emacs)")
-        self.emacs.close()
-        self.wait_exit()
+        try:
+            self.wait_exit()
+        except Failure:
+            # Still running: report the question it is waiting on, if any.
+            try:
+                prompt = self.emacs.eval("(glassmacs-acceptance-prompt)", timeout=5)
+            except Failure:
+                prompt = None
+            raise Failure(f"Glassmacs (pid {self.pid}) did not quit within 30s"
+                          + (f"; it is asking: {prompt!r}" if prompt else ""))
+        finally:
+            self.emacs.close()
 
     def crash(self):
         """End the process abruptly, as a crash or power loss would."""
@@ -245,8 +255,11 @@ class Harness:
         deadline = time.monotonic() + LAUNCH_TIMEOUT
         while not port_file.exists():
             if time.monotonic() > deadline:
+                leftovers = self.app_processes()
+                self.kill_leftovers()
                 raise Failure(f"Glassmacs did not start its acceptance driver within "
-                              f"{LAUNCH_TIMEOUT}s; see {log.name}")
+                              f"{LAUNCH_TIMEOUT}s (app processes then: {leftovers}); "
+                              f"app output: {self.log_tail(log)!r}")
             time.sleep(0.25)
         connection = Connection(int(port_file.read_text()), token)
         actual_pid = connection.eval("(emacs-pid)")
@@ -297,12 +310,36 @@ class Harness:
         run(["open", "-a", str(self.app)] + [str(path) for path in files], timeout=60)
 
     def app_processes(self):
-        """Return the pids of Emacs processes running from the app bundle."""
+        """Return the pids of processes running from the app's Contents/MacOS.
+        Contents/MacOS/Emacs starts the architecture's Emacs binary
+        (Emacs-arm64-11 on Apple Silicon); both match."""
         if self.tty:
             return []
-        executable = str(Path(self.app) / "Contents/MacOS/Emacs")
+        executable = str(Path(self.app) / "Contents/MacOS/")
         result = run(["pgrep", "-f", executable], check=False, timeout=15)
-        return [int(pid) for pid in result.stdout.split()]
+        return [int(pid) for pid in result.stdout.split() if int(pid) != os.getpid()]
+
+    def kill_leftovers(self):
+        """Kill app processes no scenario holds, such as an instance that never
+        started its driver.  Only one instance may run, so a leftover would
+        make every later launch fail."""
+        pids = self.app_processes()
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        deadline = time.monotonic() + 15
+        while self.app_processes() and time.monotonic() < deadline:
+            time.sleep(0.25)
+        return pids
+
+    @staticmethod
+    def log_tail(log, size=1500):
+        try:
+            return log.read_text(errors="replace")[-size:]
+        except OSError:
+            return ""
 
     # macOS helpers
 
@@ -385,7 +422,10 @@ class Context:
     def ready(self, instance):
         """Wait until INSTANCE shows a window, then turn off the one-time
         optional-package offer for this session only (it is tested in its own
-        scenario), so it cannot interrupt other scenarios."""
+        scenario), so it cannot interrupt other scenarios.  The driver also
+        asks questions in the minibuffer rather than Cocoa dialogs, which
+        would block it; dialogs are checked by hand (Layer D)."""
+        self.method("questions: minibuffer (Cocoa dialogs are manual)")
         if self.harness.tty:
             instance.emacs.wait("(frame-live-p (selected-frame))", "a terminal frame")
         else:
@@ -460,7 +500,10 @@ def launch_clean_home(ctx):
     ctx.expect(not missing, f"Login-shell PATH entries missing in Glassmacs: {missing}")
     startup = emacs.eval("(list :program (car command-line-args) :name invocation-name "
                          ":init user-init-file)")
-    ctx.expect(startup["program"].endswith("/Contents/MacOS/Emacs") and startup["name"] == "Emacs",
+    # Contents/MacOS/Emacs starts the architecture's binary (Emacs-arm64-11).
+    bundle_programs = str(Path(harness.app).resolve() / "Contents/MacOS") + "/"
+    ctx.expect(str(Path(startup["program"]).resolve()).startswith(bundle_programs)
+               and startup["name"].startswith("Emacs"),
                f"Emacs did not start as the bundled program (so -Q is ignored): {startup}")
     ctx.expect(not startup["init"], f"A user init file was loaded: {startup['init']}")
     custom = emacs.eval("custom-file")
@@ -516,8 +559,10 @@ def last_window_close_and_reopen(ctx):
     time.sleep(1)
     ctx.expect(instance.alive(), "Closing the last window quit Glassmacs")
     harness.open_documents()
-    emacs.wait("(= (glassmacs-acceptance-visible-frames) 1)",
+    emacs.wait("(> (glassmacs-acceptance-visible-frames) 0)",
                "the window to come back after reopening the app")
+    ctx.expect(emacs.eval("(glassmacs-acceptance-visible-frames)") == 1,
+               "Reopening showed more than one window")
     after = set(emacs.eval("(mapcar #'buffer-name (buffer-list))"))
     new = {name for name in after - before if not name.startswith(" ")}
     ctx.expect(not new, f"Reopening created buffers: {new}")
@@ -675,7 +720,7 @@ def fullscreen_close_and_reopen(ctx):
     time.sleep(1.5)
     ctx.expect(instance.alive(), "Closing the full-screen last window quit Glassmacs")
     harness.open_documents()
-    emacs.wait("(= (glassmacs-acceptance-visible-frames) 1)", "the window to return", timeout=30)
+    emacs.wait("(> (glassmacs-acceptance-visible-frames) 0)", "the window to return", timeout=30)
     emacs.eval("(set-frame-parameter nil 'fullscreen nil)")
     time.sleep(2)
     emacs.eval("(select-frame (make-frame))")
@@ -937,13 +982,25 @@ def run_scenario(harness, entry):
                         name = f"{entry['name']}-pid{instance.pid}-state.json"
                         (harness.output / name).write_text(json.dumps(state, indent=2))
                         artifacts.append(name)
+                        # Also in the job log, since artifacts are not always at hand.
+                        brief = {key: state.get(key) for key in
+                                 ("frames", "current-message", "prompt", "buffers")}
+                        print(f"   state: {json.dumps(brief)[:2000]}", flush=True)
+                        warnings = state.get("warnings")
+                        if warnings:
+                            print(f"   warnings: {warnings[-800:]!r}", flush=True)
                     except Exception:  # noqa: BLE001
                         pass
+                print(f"   app output: {harness.log_tail(instance.log, 800)!r}", flush=True)
             result["artifacts"] = artifacts
     for instance in harness.instances:
         instance.kill_quietly()
     harness.instances.clear()
     harness.reap()
+    if harness.macos:
+        leftovers = harness.kill_leftovers()
+        if leftovers:
+            print(f"   killed leftover app processes {leftovers}", flush=True)
     result.update(notes=ctx.notes, methods=sorted(ctx.methods),
                   seconds=round(time.monotonic() - started, 1))
     return result

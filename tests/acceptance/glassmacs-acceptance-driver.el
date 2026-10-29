@@ -108,6 +108,8 @@ windows and processes their names or printed forms."
 
 (defun glassmacs-acceptance--filter (process output)
   "Collect OUTPUT from PROCESS and handle each complete request line."
+  ;; Connections must never make quitting ask about running processes.
+  (set-process-query-on-exit-flag process nil)
   (let ((pending (concat (or (process-get process 'pending) "") output)))
     (while (string-match "\n" pending)
       (let ((line (substring pending 0 (match-beginning 0))))
@@ -126,11 +128,17 @@ CONFIG-FILE is JSON with \"token\", \"port_file\" and optionally
          (port-file (plist-get config :port_file)))
     (setq glassmacs-acceptance--token (plist-get config :token)
           glassmacs-acceptance--log-file (plist-get config :log_file))
+    ;; A Cocoa modal dialog stops the run loop, and with it this driver, so
+    ;; questions are asked in the minibuffer during tests.  Dialogs
+    ;; themselves are a manual check.
+    (setq use-dialog-box nil)
     (setq glassmacs-acceptance--server
           (make-network-process
            :name "glassmacs-acceptance" :server t :noquery t
            :host "127.0.0.1" :service t :family 'ipv4
-           :coding 'utf-8 :filter #'glassmacs-acceptance--filter))
+           :coding 'utf-8 :filter #'glassmacs-acceptance--filter
+           :log (lambda (_server connection _message)
+                  (set-process-query-on-exit-flag connection nil))))
     (let ((port (process-contact glassmacs-acceptance--server :service))
           (temporary (concat port-file ".tmp")))
       ;; Written then renamed, so the harness never reads half a file.
@@ -205,14 +213,17 @@ Use it for commands that prompt, so the request can return first."
              collect (buffer-name buffer))))
 
 (defun glassmacs-acceptance-file-shown-p (file)
-  "Return non-nil when FILE is shown in a visible, selected frame's window."
-  (let ((frame (selected-frame)))
-    (and (eq (frame-visible-p frame) t)
-         (cl-some (lambda (window)
-                    (let ((visited (buffer-file-name (window-buffer window))))
-                      (and visited (equal (file-truename visited)
-                                          (file-truename file)))))
-                  (window-list frame 'never)))))
+  "Return non-nil when FILE is shown in a window of a visible frame.
+Documents may open in a new frame (the default opening policy), which
+need not be the selected one."
+  (let ((true (file-truename file)))
+    (cl-some (lambda (frame)
+               (and (eq (frame-visible-p frame) t)
+                    (cl-some (lambda (window)
+                               (let ((visited (buffer-file-name (window-buffer window))))
+                                 (and visited (equal (file-truename visited) true))))
+                             (window-list frame 'never))))
+             (frame-list))))
 
 (defun glassmacs-acceptance-close-selected-window-like-cocoa ()
   "Close the selected frame as its window close button does.
@@ -235,6 +246,7 @@ Cocoa delivers the close button as a delete-frame event, handled by
         :frames (glassmacs-acceptance-frames)
         :buffers (mapcar #'buffer-name (buffer-list))
         :current-message (current-message)
+        :prompt (glassmacs-acceptance-prompt)
         :messages (glassmacs-acceptance-buffer-text "*Messages*")
         :warnings (glassmacs-acceptance-buffer-text "*Warnings*")))
 
