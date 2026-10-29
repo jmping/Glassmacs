@@ -87,12 +87,28 @@
     menu)
   "Console-specific R actions.")
 
+(defun glassmacs-r-ui--help-display-buffer (buffer &optional _alist)
+  "Display R help BUFFER in a dedicated frame without displacing source."
+  (let ((existing (get-buffer-window buffer t)))
+    (if existing
+        (progn
+          (select-frame-set-input-focus (window-frame existing))
+          existing)
+      (let* ((frame (make-frame))
+             (window (frame-selected-window frame)))
+        (set-window-buffer window buffer)
+        (select-frame-set-input-focus frame)
+        window))))
+
 (defun glassmacs-r-ui-help ()
-  "Prompt for R documentation using ESS, if available."
+  "Prompt for R documentation without replacing the edited source window."
   (interactive)
-  (if (fboundp 'ess-display-help-on-object)
-      (call-interactively #'ess-display-help-on-object)
-    (user-error "R help requires ESS")))
+  (unless (fboundp 'ess-display-help-on-object)
+    (user-error "R help requires ESS"))
+  (let ((display-buffer-overriding-action
+         (when (display-graphic-p)
+           '(glassmacs-r-ui--help-display-buffer))))
+    (call-interactively #'ess-display-help-on-object)))
 
 ;; ICON names must be images that GNU Emacs itself ships in `etc/images'
 ;; (for example right-arrow, jump-to, next-page, cancel); `find-image'
