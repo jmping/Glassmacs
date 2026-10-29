@@ -766,6 +766,31 @@ reported (Aquamacs #180, #256: menus that crashed in some modes)."
         (kill-buffer buffer)
         (delete-directory directory t)))))
 
+(ert-deftest glassmacs-macos-menu-buttons-evaluate-and-show-state ()
+  "The Glassmacs menu's radio and toggle items evaluate, so macOS shows
+their check marks.  :button takes (TYPE . FORM); writing (TYPE FORM)
+makes Emacs evaluate ((eq ...)), which fails, so no mark ever showed.
+These menus exist only in graphical macOS sessions, which batch tests
+otherwise never build."
+  (let ((global-map (copy-keymap global-map))
+        (system-type 'darwin)
+        (glassmacs-document-opening-policy 'new-tab))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t)))
+      (glassmacs--install-macos-menus)
+      (with-temp-buffer
+        ;; Only the Glassmacs menu: with graphics faked, this terminal
+        ;; Emacs shows upstream GUI-only items it cannot evaluate.
+        (should-not (cl-remove-if-not (lambda (problem)
+                                        (string-match-p "> glassmacs >" problem))
+                                      (glassmacs-diagnostics-menu-problems))))
+      (let* ((menu (lookup-key global-map [menu-bar glassmacs document-opening]))
+             (button (lambda (key)
+                       ;; The raw (menu-item NAME COMMAND . PROPERTIES) binding.
+                       (plist-get (nthcdr 3 (cdr (assq key menu))) :button))))
+        (should (eq (car (funcall button 'new-tab)) :radio))
+        (should (eval (cdr (funcall button 'new-tab)) t))
+        (should-not (eval (cdr (funcall button 'new-frame)) t))))))
+
 (ert-deftest glassmacs-menus-evaluate-cleanly-in-key-modes ()
   "Every menu item evaluates in the modes Glassmacs users work in."
   (dolist (document '(("notes.txt" "Prose.\n")

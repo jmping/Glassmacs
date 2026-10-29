@@ -171,13 +171,24 @@ bar update hook runs first, as when Emacs updates the menu bar."
   "Return (STATUS . DETAIL) for the native-code policy."
   (if (not (and (fboundp 'native-comp-available-p) (native-comp-available-p)))
       '(info . "this Emacs has no native compilation")
-    (let ((jit (bound-and-true-p native-comp-jit-compilation))
-          (writable (cl-remove-if-not #'file-writable-p
-                                      (bound-and-true-p native-comp-eln-load-path))))
+    (let* ((jit (bound-and-true-p native-comp-jit-compilation))
+           ;; Inside the app bundle, the bundle's own signed native-lisp
+           ;; directory is the policy (init.el); its files are writable by
+           ;; whoever installed the app, which is expected.
+           (contents (file-name-as-directory
+                      (file-truename (expand-file-name "../../" data-directory))))
+           (bundle (and (file-readable-p (expand-file-name "Info.plist" contents))
+                        contents))
+           (writable (cl-remove-if
+                      (lambda (directory)
+                        (or (not (file-writable-p directory))
+                            (and bundle (string-prefix-p
+                                         bundle (file-truename directory)))))
+                      (bound-and-true-p native-comp-eln-load-path))))
       (cond (jit '(fail . "just-in-time native compilation is on"))
             (writable (cons 'fail (format "user-writable native code directories: %s"
                                           (string-join writable ", "))))
-            (t '(pass . "compilation off; only read-only native code directories"))))))
+            (t '(pass . "compilation off; only bundled or read-only native code"))))))
 
 (defun glassmacs-diagnostics--literal-text-check ()
   "Return (STATUS . DETAIL) for the literal text entry policy."
