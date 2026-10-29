@@ -10,6 +10,7 @@ permissions:
 jobs:
   emacs-batch:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Install Emacs
@@ -21,6 +22,10 @@ jobs:
         run: ./scripts/test
       - name: Test macOS release scripts with mocked Apple tools
         run: python3 -m unittest discover -s tests -p 'test_macos_release_scripts.py'
+      - name: Self-test the GUI acceptance harness with terminal Emacs
+        # Runs the platform-independent scenarios against a live Emacs in a
+        # pseudo-terminal, which checks the driver and harness themselves.
+        run: ./scripts/macos-gui-acceptance --tty "$RUNNER_TEMP/tty-acceptance"
       - name: Byte-compile Lisp modules
         run: |
           emacs -Q --batch -l init.el \
@@ -33,6 +38,8 @@ jobs:
 
   ess-r-integration:
     runs-on: ubuntu-24.04
+    # A stuck package installation must fail the job, not hang it.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Install Emacs, R, ESS, AUCTeX, Hunspell, Shiny and R Markdown
@@ -93,6 +100,24 @@ jobs:
           mkdir -p "$RUNNER_TEMP/relocated"
           ditto "$RUNNER_TEMP/Glassmacs.app" "$RUNNER_TEMP/relocated/Glassmacs.app"
           ./scripts/validate-macos-app "$RUNNER_TEMP/relocated/Glassmacs.app"
+      - name: Verify the app does not load the user's Emacs init files
+        # An interactive start, so -Q matters (--batch implies -q).  The
+        # trap init files record that they ran; they must not.
+        run: |
+          trap_home="$RUNNER_TEMP/trap-home"
+          mkdir -p "$trap_home/.emacs.d"
+          for name in early-init.el init.el; do
+            printf '(write-region "%s" nil "%s/loaded" t)\n' "$name" "$trap_home" \
+              > "$trap_home/.emacs.d/$name"
+          done
+          HOME="$trap_home" GLASSMACS_HOME="$RUNNER_TEMP/trap-glassmacs-home" TERM=xterm \
+            perl -e 'alarm 120; exec @ARGV' \
+            script -q /dev/null "$RUNNER_TEMP/Glassmacs.app/Contents/MacOS/GlassmacsBootstrap" \
+            -nw --eval '(kill-emacs 0)' < /dev/null
+          if [ -e "$trap_home/loaded" ]; then
+            printf 'The packaged app loaded user init files: %s\n' "$(cat "$trap_home/loaded")" >&2
+            exit 1
+          fi
       - name: Archive app
         run: |
           ditto -c -k --sequesterRsrc --keepParent \
@@ -103,3 +128,36 @@ jobs:
           name: Glassmacs-macOS-app
           path: ${{ runner.temp }}/Glassmacs-macOS.zip
           if-no-files-found: error
+
+  macos-gui-acceptance:
+    # Layer C: drives the packaged app built above through LaunchServices.
+    # See scripts/macos-gui-acceptance and docs/acceptance-matrix.md.
+    needs: macos-launcher
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download app archive
+        uses: actions/download-artifact@v4
+        with:
+          name: Glassmacs-macOS-app
+          path: ${{ runner.temp }}/app
+      - name: Unpack app
+        run: ditto -x -k "$RUNNER_TEMP/app/Glassmacs-macOS.zip" "$RUNNER_TEMP/app"
+      - name: Run GUI acceptance scenarios
+        run: |
+          ./scripts/macos-gui-acceptance "$RUNNER_TEMP/app/Glassmacs.app" \
+            "$RUNNER_TEMP/gui-acceptance"
+      - name: Publish summary
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/gui-acceptance/summary.md" ]; then
+            cat "$RUNNER_TEMP/gui-acceptance/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload results, screenshots, logs and crash reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Glassmacs-GUI-acceptance
+          path: ${{ runner.temp }}/gui-acceptance
+          if-no-files-found: warn
