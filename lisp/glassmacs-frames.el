@@ -368,13 +368,13 @@ An untitled buffer receives a file name only through the successful save."
 (defvar glassmacs-new-buffer-mode-menu
   (let ((map (make-sparse-keymap "New Buffer in Mode")))
     (dolist (entry (reverse glassmacs-common-major-modes))
-      (let ((label (car entry))
-            (mode (cdr entry)))
+      (let* ((label (car entry))
+             (mode (cdr entry))
+             (command (lambda ()
+                        (interactive)
+                        (glassmacs-new-buffer-in-mode mode))))
         (define-key map (vector mode)
-          `(menu-item ,label
-                      ,(let ((selected-mode ',mode))
-                         (lambda () (interactive)
-                           (glassmacs-new-buffer-in-mode selected-mode)))
+          `(menu-item ,label ,command
                       :enable (assoc ,label (glassmacs--available-major-modes))))))
     map)
   "Selectable major modes for File → New Buffer in Mode.")
