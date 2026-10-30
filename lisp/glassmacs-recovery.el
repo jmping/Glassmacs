@@ -16,7 +16,11 @@
 Use the same application-home policy as packages, preferences and workspace
 state.  In particular, GLASSMACS_HOME must take precedence over XDG_DATA_HOME
 so isolated test launches never inspect another application's snapshots."
-  (expand-file-name "Recovery/" (glassmacs--default-home)))
+  (expand-file-name
+   "Recovery/"
+   (if (boundp 'glassmacs-home)
+       glassmacs-home
+     (glassmacs--default-home))))
 
 (defcustom glassmacs-recovery-directory
   (glassmacs-recovery--default-directory)
