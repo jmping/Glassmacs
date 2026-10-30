@@ -247,6 +247,7 @@ class Harness:
         else:
             command = ["open", "-n", "-a", str(self.app),
                        "--env", f"GLASSMACS_HOME={home}",
+                       "--env", f"XDG_DATA_HOME={home}/data",
                        "--env", f"GLASSMACS_LIFECYCLE_TRACE={self.trace_file()}",
                        "--stdout", str(log), "--stderr", str(log)]
             for key, value in (env or {}).items():
@@ -274,7 +275,8 @@ class Harness:
         return instance
 
     def _launch_tty(self, home, files, eval_form, log, env):
-        environment = dict(os.environ, GLASSMACS_HOME=str(home), TERM="xterm-256color")
+        environment = dict(os.environ, GLASSMACS_HOME=str(home), XDG_DATA_HOME=f"{home}/data",
+                           TERM="xterm-256color")
         environment.update(env or {})
         emacs = os.environ.get("GLASSMACS_EMACS", "emacs")
         arguments = [emacs, "-nw", "-Q", "-l", str(ROOT / "init.el"),
@@ -429,7 +431,11 @@ class Harness:
         """Return the text of the app's windows and dialogs (Accessibility)."""
         if not self.macos or not self.system_events_available():
             return None
-        script = (f'tell application "System Events" to tell (first process whose unix id is {pid})\n'
+        process_name = self.system_events_process_name(pid)
+        if not process_name:
+            return None
+        process_selector = f'first process whose name is "{process_name}"'
+        script = (f'tell application "System Events" to tell ({process_selector})\n'
                   f'  set out to ""\n'
                   f'  repeat with w in windows\n'
                   f'    set out to out & "[" & (name of w as text) & "] "\n'
@@ -504,10 +510,28 @@ class Harness:
                     self.accessibility = False
         return self.accessibility
 
+    @staticmethod
+    def system_events_process_name(pid):
+        """Return the process name used by System Events for PID.
+
+        System Events may expose a running GUI process by name while its
+        `unix id` selector fails to resolve that same process.
+        """
+        try:
+            result = run(["ps", "-p", str(pid), "-o", "comm="],
+                         timeout=10, check=False)
+        except Failure:
+            return None
+        command = result.stdout.strip()
+        return Path(command).name if command else None
+
     def system_events_keys(self, pid, script_body):
         """Bring process PID to the front and run System Events SCRIPT_BODY."""
+        process_name = self.system_events_process_name(pid)
+        if not process_name:
+            raise Failure(f"Could not resolve application process name for PID {pid}")
         script = (f'tell application "System Events"\n'
-                  f'  set frontmost of (first process whose unix id is {pid}) to true\n'
+                  f'  set frontmost of (first process whose name is "{process_name}") to true\n'
                   f'  delay 0.5\n'
                   f'  {script_body}\n'
                   f'end tell')
