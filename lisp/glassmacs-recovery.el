@@ -11,11 +11,22 @@
   "When non-nil, offer prompt-free quit after preserving document buffers."
   :type 'boolean :group 'glassmacs-recovery)
 
+(defun glassmacs-recovery--default-directory ()
+  "Return the recovery directory inside the configured Glassmacs home.
+Use the same application-home policy as packages, preferences and workspace
+state.  In particular, GLASSMACS_HOME must take precedence over XDG_DATA_HOME
+so isolated test launches never inspect another application's snapshots."
+  (expand-file-name
+   "Recovery/"
+   (if (boundp 'glassmacs-home)
+       glassmacs-home
+     (glassmacs--default-home))))
+
 (defcustom glassmacs-recovery-directory
-  (expand-file-name "Glassmacs/Recovery/"
-                    (or (getenv "XDG_DATA_HOME")
-                        (expand-file-name "~/Library/Application Support/")))
-  "Directory for private recovery snapshots."
+  (glassmacs-recovery--default-directory)
+  "Directory for private recovery snapshots.
+Defaults to Recovery/ within GLASSMACS_HOME (or the Glassmacs default
+home).  Existing recovery directories are not moved or deleted."
   :type 'directory :group 'glassmacs-recovery)
 
 (defcustom glassmacs-recovery-interval 60
