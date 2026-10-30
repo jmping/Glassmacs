@@ -159,5 +159,38 @@ The extra window means closing deletes a window rather than the frame."
   (should (memq 'glassmacs-close-document
                 glassmacs--commands-that-stay-windowless)))
 
+(ert-deftest glassmacs-close-button-save-writes-then-closes-document ()
+  "Native close-button handler saves edits before proceeding to frame close."
+  (let* ((file (make-temp-file "glassmacs-button-save-" nil ".txt" "original"))
+         (buffer (find-file-noselect file))
+         (original-called nil))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (set-window-buffer (selected-window) buffer)
+          (with-current-buffer buffer
+            (goto-char (point-max))
+            (insert " saved"))
+          (cl-letf (((symbol-function 'event-start) #'identity)
+                    ((symbol-function 'posn-window) #'identity)
+                    ((symbol-function 'make-frame-invisible)
+                     (lambda (&rest _) (setq original-called t))))
+            (glassmacs-close-test--answering ?s
+              (glassmacs--handle-delete-frame-preserving-app
+               (lambda (_event) (setq original-called t))
+               (selected-frame))
+              (should (= prompts 1))))
+          (should original-called)
+          (should-not (buffer-live-p buffer))
+          (should (string-prefix-p
+                   "original saved"
+                   (with-temp-buffer
+                     (insert-file-contents file)
+                     (buffer-string)))))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer))
+      (delete-file file))))
+
 (provide 'test-glassmacs-close)
 ;;; test-glassmacs-close.el ends here
