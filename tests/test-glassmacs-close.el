@@ -194,8 +194,8 @@ The extra window means closing deletes a window rather than the frame."
                                   [text-mode])))
     ;; Emacs lookup-key resolves a menu-item to its executable command.
     (should (commandp text-command))
-    (should (equal (cadr (assq 'text-mode
-                               (cdr glassmacs-new-buffer-mode-menu)))
+    (should (equal (nth 2 (assq 'text-mode
+                                (cdr glassmacs-new-buffer-mode-menu)))
                    "Text"))))
 
 (provide 'test-glassmacs-close)
