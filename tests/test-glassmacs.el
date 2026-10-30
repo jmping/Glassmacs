@@ -87,7 +87,7 @@
         (should (eq (lookup-key map [glassmacs-run-buffer])
                     'glassmacs-r-send-buffer))
         (should (eq (lookup-key map [glassmacs-show-console])
-                    'glassmacs-r-inspect-session))))))
+                    'glassmacs-r-start-or-switch-console))))))
 
 (ert-deftest glassmacs-r-console-toolbar-has-console-only-actions ()
   (with-temp-buffer
@@ -136,7 +136,7 @@
 
 (ert-deftest glassmacs-r-source-menu-offers-session-workflows ()
   (should (eq (lookup-key glassmacs-r-ui-source-menu [start])
-              'glassmacs-r-start-and-target-session))
+              'glassmacs-r-start-or-switch-console))
   (should (eq (lookup-key glassmacs-r-ui-source-menu [show-target])
               'glassmacs-r-show-target-session))
   (should (eq (lookup-key glassmacs-r-ui-source-menu [clear-target])
