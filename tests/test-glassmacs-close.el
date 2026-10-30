@@ -190,11 +190,13 @@ The extra window means closing deletes a window rather than the frame."
         (set-buffer-modified-p nil)))))
 
 (ert-deftest glassmacs-mode-menu-has-selectable-commands ()
-  (let ((text-item (lookup-key glassmacs-new-buffer-mode-menu
-                               [text-mode])))
-    (should (eq (car text-item) 'menu-item))
-    (should (equal (cadr text-item) "Text"))
-    (should (functionp (caddr text-item)))))
+  (let ((text-command (lookup-key glassmacs-new-buffer-mode-menu
+                                  [text-mode])))
+    ;; Emacs lookup-key resolves a menu-item to its executable command.
+    (should (commandp text-command))
+    (should (equal (cadr (assq 'text-mode
+                               (cdr glassmacs-new-buffer-mode-menu)))
+                   "Text"))))
 
 (provide 'test-glassmacs-close)
 ;;; test-glassmacs-close.el ends here
