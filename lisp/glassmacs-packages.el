@@ -33,8 +33,15 @@ missing, Glassmacs asks once per session whether to install
   "Non-nil once installation has been offered in this session.")
 
 (defun glassmacs-missing-optional-packages ()
-  "Return the optional packages that are not installed."
-  (cl-remove-if #'package-installed-p glassmacs-optional-packages))
+  "Return optional packages unavailable to this Emacs.
+ESS may be bundled on `load-path' without registration in package.el;
+do not offer a network installation when its entry point is available."
+  (cl-remove-if
+   (lambda (package)
+     (or (package-installed-p package)
+         (and (eq package 'ess)
+              (locate-library "ess-site"))))
+   glassmacs-optional-packages))
 
 (defvar-local glassmacs-packages--fallback-mode nil
   "Non-nil when this buffer fell back to a basic mode for lack of a package.")
