@@ -179,7 +179,7 @@
         (should (eq (lookup-key map [glassmacs-run-buffer])
                     'glassmacs-r-send-buffer))
         (should (eq (lookup-key map [glassmacs-show-console])
-                    'glassmacs-r-inspect-session))))))
+                    'glassmacs-r-start-or-switch-console))))))
 
 (ert-deftest glassmacs-r-console-toolbar-has-console-only-actions ()
   (with-temp-buffer
@@ -228,7 +228,7 @@
 
 (ert-deftest glassmacs-r-source-menu-offers-session-workflows ()
   (should (eq (lookup-key glassmacs-r-ui-source-menu [start])
-              'glassmacs-r-start-and-target-session))
+              'glassmacs-r-start-or-switch-console))
   (should (eq (lookup-key glassmacs-r-ui-source-menu [show-target])
               'glassmacs-r-show-target-session))
   (should (eq (lookup-key glassmacs-r-ui-source-menu [clear-target])
@@ -1381,6 +1381,22 @@ otherwise never build."
     (cl-letf (((symbol-function 'ess-eval-line) (lambda () t)))
       (glassmacs-r-send-line)
       (should (= (line-number-at-pos) 1)))))
+
+(ert-deftest glassmacs-new-buffer-mode-menu-has-selectable-commands ()
+  (should (commandp (lookup-key glassmacs-new-buffer-mode-menu [text-mode])))
+  (should (commandp (lookup-key glassmacs-new-buffer-mode-menu [other]))))
+
+(ert-deftest glassmacs-new-buffer-mode-menu-creates-untitled-text-buffer ()
+  (let ((command (lookup-key glassmacs-new-buffer-mode-menu [text-mode]))
+        created)
+    (save-window-excursion
+      (unwind-protect
+          (progn
+            (funcall command)
+            (setq created (current-buffer))
+            (should (eq major-mode 'text-mode))
+            (should-not buffer-file-name))
+        (when (buffer-live-p created) (kill-buffer created))))))
 
 (provide 'test-glassmacs)
 ;;; test-glassmacs.el ends here
