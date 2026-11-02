@@ -117,6 +117,16 @@ redistributed.  A missing icon leaves the toolbar command available."
     ('redo '(and (not buffer-read-only) (fboundp 'undo-redo)))
     (_ t)))
 
+(defun glassmacs-aquamacs-toolbar--item (key label command stem)
+  "Return a toolbar menu item for KEY with LABEL, COMMAND and image STEM."
+  (let ((image (glassmacs-aquamacs-toolbar--image stem)))
+    (append
+     (list 'menu-item label command)
+     (when image (list :image image))
+     (list :visible (glassmacs-aquamacs-toolbar--visible key)
+           :enable (glassmacs-aquamacs-toolbar--enabled key)
+           :help label))))
+
 (defun glassmacs-aquamacs-toolbar-map ()
   "Build an Aquamacs-ordered toolbar with GNU Emacs-provided icons.
 No original Aquamacs PNG/TIFF artwork is needed or loaded."
@@ -128,11 +138,7 @@ No original Aquamacs PNG/TIFF artwork is needed or loaded."
         (`(,key ,label ,command ,stem)
          (define-key-after
            map (vector key)
-           `(menu-item ,label ,command
-                       :image (glassmacs-aquamacs-toolbar--image ,stem)
-                       :visible ,(glassmacs-aquamacs-toolbar--visible key)
-                       :enable ,(glassmacs-aquamacs-toolbar--enabled key)
-                       :help ,label)))))
+           (glassmacs-aquamacs-toolbar--item key label command stem)))))
     map))
 
 (defun glassmacs-aquamacs-toolbar-install ()
