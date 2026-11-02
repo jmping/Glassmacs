@@ -145,7 +145,7 @@
               'glassmacs-r-list-sessions)))
 
 (ert-deftest glassmacs-r-start-or-switch-reuses-existing-session ()
-  (let ((session (make-glassmacs-session :id "R-test" :buffer (current-buffer)))
+  (let ((session (glassmacs-session--make :id "R-test" :buffer (current-buffer)))
         displayed started)
     (cl-letf (((symbol-function 'glassmacs-sessions-resolve)
                (lambda () session))
