@@ -10,11 +10,25 @@
   :group 'glassmacs-frames)
 
 (defun glassmacs-buffer-placement--frame-label (frame)
-  "Return a descriptive label for FRAME."
+  "Return a document-aware label for FRAME.
+Use the visible buffer's directory, never the invoking document's
+directory, and identify registered R consoles by session and directory."
   (let* ((window (frame-selected-window frame))
-         (buffer (and (window-live-p window) (window-buffer window))))
-    (format "%s — %s" (or (frame-parameter frame 'name) "Window")
-            (if (buffer-live-p buffer) (buffer-name buffer) "Empty"))))
+         (buffer (and (window-live-p window) (window-buffer window)))
+         (session (and (buffer-live-p buffer)
+                       (fboundp 'glassmacs-sessions-find)
+                       (get-buffer-process buffer)
+                       (glassmacs-sessions-find (get-buffer-process buffer))))
+         (directory (and (buffer-live-p buffer)
+                         (buffer-local-value 'default-directory buffer))))
+    (format "%s — %s%s"
+            (or (frame-parameter frame 'name) "Window")
+            (if session
+                (glassmacs-sessions--describe session)
+              (if (buffer-live-p buffer) (buffer-name buffer) "Empty"))
+            (if (and directory (not session))
+                (format " — %s" (abbreviate-file-name directory))
+              ""))))
 
 (defun glassmacs-buffer-placement--choose-frame ()
   "Select an existing live frame by its displayed document."
