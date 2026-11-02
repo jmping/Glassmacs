@@ -4,7 +4,6 @@
 options(warn = 2)
 stopifnot(capabilities("png"))
 path <- tempfile("glassmacs-r-graphics-", fileext = ".png")
-on.exit <- NULL
 tryCatch({
   grDevices::png(filename = path, width = 480L, height = 320L)
   stopifnot(grDevices::dev.cur() > 1L)
