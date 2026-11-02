@@ -2207,3 +2207,35 @@ example) can run first and delay the sentinel."
         (when (process-live-p process) (delete-process process))
         (kill-buffer buffer)))))
 
+
+(ert-deftest glassmacs-session-label-uses-current-console-directory ()
+  (let ((buffer (generate-new-buffer " *glassmacs-dir-console*")))
+    (unwind-protect
+        (let ((session (glassmacs-session--make
+                        :id "R-99" :name "R-test" :buffer buffer
+                        :directory "/old-registration-directory/")))
+          (with-current-buffer buffer
+            (setq default-directory temporary-file-directory))
+          (let ((label (glassmacs-sessions--describe session)))
+            (should (string-match-p "R-99" label))
+            (should (string-match-p
+                     (regexp-quote
+                      (abbreviate-file-name temporary-file-directory))
+                     label))
+            (should-not (string-match-p "old-registration-directory" label))))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-buffer-move-preserves-document-directory ()
+  (save-window-excursion
+    (delete-other-windows)
+    (let ((buffer (generate-new-buffer " *glassmacs-document-directory*"))
+          (directory temporary-file-directory))
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer (setq default-directory directory))
+            (switch-to-buffer buffer)
+            (glassmacs-move-buffer-to 'split-right (selected-frame) (selected-window))
+            (should (equal (buffer-local-value 'default-directory buffer)
+                           directory)))
+        (kill-buffer buffer)))))
+
