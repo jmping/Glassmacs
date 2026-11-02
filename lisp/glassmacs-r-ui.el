@@ -77,6 +77,8 @@
     (define-key menu [separator] menu-bar-separator)
     (define-key menu [buffer]
       '(menu-item "Run Buffer" glassmacs-r-send-buffer))
+    (define-key menu [paragraph]
+      '(menu-item "Run Paragraph" glassmacs-r-send-paragraph))
     (define-key menu [function]
       '(menu-item "Run Function" glassmacs-r-send-function))
     (define-key menu [selection]
