@@ -21,6 +21,31 @@
 Names must match their archive entries exactly: for example the MELPA
 package is `quarto-mode', not `quarto'.")
 
+(defconst glassmacs-bundled-ess-directory
+  (let ((directory (expand-file-name
+                    "../site-lisp/ess/"
+                    (file-name-directory (or load-file-name buffer-file-name
+                                             default-directory)))))
+    (and (file-readable-p (expand-file-name "ess-r-mode.el" directory))
+         directory))
+  "Directory of the ESS release bundled with Glassmacs, or nil.
+The macOS app build installs ESS under Resources/Glassmacs/site-lisp/ess.")
+
+(defun glassmacs-packages--user-ess-installed-p ()
+  "Return non-nil when an ESS package is installed in `package-user-dir'."
+  (and (boundp 'package-alist) (assq 'ess package-alist) t))
+
+(defun glassmacs-packages--use-bundled-ess ()
+  "Make the bundled ESS available unless the user installed their own.
+The bundled directory goes at the end of `load-path', so an ESS installed
+with package.el (which `package-initialize' places earlier), or one the
+user put on `load-path' themselves, takes precedence."
+  (when (and glassmacs-bundled-ess-directory
+             (not (glassmacs-packages--user-ess-installed-p)))
+    (add-to-list 'load-path (directory-file-name glassmacs-bundled-ess-directory) t)))
+
+(glassmacs-packages--use-bundled-ess)
+
 (defcustom glassmacs-offer-package-installation t
   "Whether to offer installing optional packages when they are needed.
 When non-nil and an R or research document opens while its mode is
@@ -33,8 +58,12 @@ missing, Glassmacs asks once per session whether to install
   "Non-nil once installation has been offered in this session.")
 
 (defun glassmacs-missing-optional-packages ()
-  "Return the optional packages that are not installed."
-  (cl-remove-if #'package-installed-p glassmacs-optional-packages))
+  "Return the optional packages that are not installed.
+ESS counts as present when it is bundled with the application."
+  (cl-remove-if (lambda (package)
+                  (or (package-installed-p package)
+                      (and (eq package 'ess) glassmacs-bundled-ess-directory)))
+                glassmacs-optional-packages))
 
 (defvar-local glassmacs-packages--fallback-mode nil
   "Non-nil when this buffer fell back to a basic mode for lack of a package.")

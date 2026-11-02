@@ -1,0 +1,138 @@
+#!/bin/bash
+# Pull Glassmacs from GitHub, then build, test, sign and package a self-contained Alpha app.
+#
+# Usage: scripts/update-build-sign [--ref COMMIT_OR_TAG | --branch NAME] [--no-pull]
+#                                  [--skip-tests] [--install]
+#   --ref REF      build exactly this commit or tag (detached HEAD)
+#   --branch NAME  fast-forward to origin/NAME and build it (default: main)
+#   --no-pull      build the current checkout without fetching
+#   --skip-tests   skip ERT, Python and Swift tests (validation always runs)
+#   --install      replace /Applications/Glassmacs.app (old copy kept as a timestamped backup)
+#
+# Signing uses GLASSMACS_SIGN_IDENTITY (certificate SHA-1) or else the first
+# "Developer ID Application" identity in the Keychain.  The result is Developer
+# ID signed with the hardened runtime but NOT notarized.
+# ESS is pinned in macos/bundled-ess.env and bundled by scripts/build-macos-app;
+# nothing is installed or downloaded on first launch.
+#
+# Output (build/artifacts/):  Glassmacs-<describe>-<UTC date>.zip, .sha256, .info.txt and .log
+set -euo pipefail
+
+ref=
+branch=main
+pull=1
+tests=1
+install=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --ref) ref=${2:?--ref needs a commit or tag}; shift 2 ;;
+    --branch) branch=${2:?--branch needs a name}; shift 2 ;;
+    --no-pull) pull=0; shift ;;
+    --skip-tests) tests=0; shift ;;
+    --install) install=1; shift ;;
+    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$root"
+export MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-13.0}
+app="$root/build/Glassmacs.app"
+artifacts="$root/build/artifacts"
+mkdir -p "$artifacts"
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+log="$artifacts/build-$stamp.log"
+exec > >(tee -a "$log") 2>&1
+
+# Fail early on missing tools and signing credentials, before any long step.
+for tool in git curl swift python3 hdiutil ditto codesign shasum; do
+  command -v "$tool" >/dev/null 2>&1 || die "required tool not found: $tool"
+done
+[ -z "$(git status --porcelain --untracked-files=no)" ] ||
+  die "working tree has uncommitted changes; refusing to update"
+
+identity=${GLASSMACS_SIGN_IDENTITY:-}
+if [ -z "$identity" ]; then
+  identity=$(/usr/bin/security find-identity -v -p codesigning |
+    /usr/bin/grep 'Developer ID Application' | /usr/bin/awk '{print $2}' | /usr/bin/head -n 1)
+fi
+[ -n "$identity" ] || die "no Developer ID Application identity; set GLASSMACS_SIGN_IDENTITY"
+/usr/bin/security find-identity -v -p codesigning | /usr/bin/grep -Fq "$identity" ||
+  die "signing identity is not in the Keychain"
+
+if [ -n "$ref" ]; then
+  git fetch --prune --tags origin
+  git checkout --detach "$ref"
+elif [ "$pull" = 1 ]; then
+  git fetch --prune --tags origin
+  git switch "$branch"
+  git merge --ff-only "origin/$branch"
+fi
+commit=$(git rev-parse HEAD)
+describe=$(git describe --tags --always --dirty)
+# shellcheck disable=SC1091
+source "$root/macos/bundled-ess.env"
+source "$root/macos/upstream-emacs.env"
+printf '== Glassmacs %s (%s)\n== ESS %s (pinned)\n== %s\n' \
+  "$describe" "$commit" "$GLASSMACS_ESS_VERSION" "$stamp"
+
+./scripts/build-macos-app
+./scripts/validate-macos-app "$app"
+
+if [ "$tests" = 1 ]; then
+  # Run the suites with the freshly built Emacs and its bundled ESS so the
+  # real-ESS tests run when R is installed.
+  emacs="$app/Contents/MacOS/Emacs"
+  ess_dir="$app/Contents/Resources/Glassmacs/site-lisp/ess"
+  command -v R >/dev/null 2>&1 || printf 'note: R not found; real-ESS/R tests will be skipped\n'
+  GLASSMACS_EMACS=$emacs EMACSLOADPATH="$ess_dir:" ./scripts/test
+  python3 -m unittest discover -s tests -p 'test_*.py'
+  swift test --package-path macos
+fi
+
+# Every binary modification is finished: sign last.
+GLASSMACS_SIGN_IDENTITY=$identity ./scripts/sign-macos-app "$app"
+/usr/bin/codesign --verify --deep --strict "$app"
+./scripts/validate-macos-app "$app"
+
+signing=$(/usr/bin/codesign -dvv "$app" 2>&1 | /usr/bin/grep -E '^(Authority=Developer ID Application|TeamIdentifier|CodeDirectory)' || true)
+gatekeeper=$(/usr/sbin/spctl --assess --type execute -vv "$app" 2>&1 | head -n 2 || true)
+ess_bundled=$(cat "$app/Contents/Resources/Glassmacs/site-lisp/ESS-BUNDLE")
+
+name="Glassmacs-$describe-$stamp"
+/usr/bin/ditto -c -k --keepParent --sequesterRsrc "$app" "$artifacts/$name.zip"
+(cd "$artifacts" && shasum -a 256 "$name.zip" >"$name.sha256")
+{
+  printf 'Glassmacs commit: %s (%s)\n' "$commit" "$describe"
+  printf 'ESS bundled:\n%s\n' "$ess_bundled"
+  printf 'Emacs: %s (universal arm64/x86_64)\n' "$GLASSMACS_EMACS_VERSION"
+  printf 'Built (UTC): %s\n' "$stamp"
+  printf 'Tests: %s\n' "$([ "$tests" = 1 ] && echo 'ERT, Python, Swift passed' || echo 'SKIPPED')"
+  printf 'Signing:\n%s\n' "$signing"
+  printf 'Gatekeeper: %s\n' "$gatekeeper"
+  printf 'Notarization: NOT performed\n'
+  printf 'Archive: %s\nSHA-256: %s\n' "$artifacts/$name.zip" "$(cut -d' ' -f1 "$artifacts/$name.sha256")"
+} | tee "$artifacts/$name.info.txt"
+
+if [ "$install" = 1 ]; then
+  dest=/Applications/Glassmacs.app
+  if /usr/bin/pgrep -f "$dest/Contents/MacOS" >/dev/null 2>&1; then
+    /usr/bin/osascript -e 'tell application "Glassmacs" to quit' || true
+    sleep 3
+    ! /usr/bin/pgrep -f "$dest/Contents/MacOS" >/dev/null 2>&1 ||
+      die "Glassmacs is still running (unsaved work?); quit it and rerun with --install"
+  fi
+  if [ -e "$dest" ]; then
+    backup="/Applications/Glassmacs.backup-$(date +%Y%m%d-%H%M%S).app"
+    mv "$dest" "$backup"
+    printf 'Previous install kept at %s\n' "$backup"
+  fi
+  /usr/bin/ditto "$app" "$dest"
+  /usr/bin/codesign --verify --deep --strict "$dest"
+  printf 'Installed %s\n' "$dest"
+fi
+
+printf 'Done. Artifact: %s\n' "$artifacts/$name.zip"

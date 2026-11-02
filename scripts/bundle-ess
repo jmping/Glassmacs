@@ -1,0 +1,82 @@
+#!/bin/bash
+# Install the pinned ESS release into Glassmacs.app/Contents/Resources/Glassmacs/site-lisp/ess.
+#
+# Usage: scripts/bundle-ess /path/to/Glassmacs.app [/path/to/runnable/Emacs]
+# The optional Emacs is used to byte-compile and smoke-test ESS; default is the
+# app's own.  The build passes the pristine upstream Emacs because the app's
+# binaries are modified (and unsigned) until later build steps finish.
+# GLASSMACS_ESS_ARCHIVE=/path/to/ess-X.Y.Z.tar uses a local archive (still checksum-verified).
+# Downloads are cached in build/cache so repeated builds need no network.
+# Run before signing: the bundle's ESS contains only Lisp and data, no Mach-O files.
+set -euo pipefail
+
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+source "$root/macos/bundled-ess.env"
+app=${1:?Usage: bundle-ess /path/to/Glassmacs.app}
+app=$(CDPATH='' cd -- "$app" && pwd)
+emacs=${2:-"$app/Contents/MacOS/Emacs"}
+site_lisp="$app/Contents/Resources/Glassmacs/site-lisp"
+dest="$site_lisp/ess"
+
+if [ ! -x "$emacs" ]; then
+  printf 'Emacs for compiling ESS is missing: %s\n' "$emacs" >&2
+  exit 1
+fi
+
+if [ -n "${GLASSMACS_ESS_ARCHIVE:-}" ]; then
+  archive=$GLASSMACS_ESS_ARCHIVE
+else
+  cache="$root/build/cache"
+  archive="$cache/ess-$GLASSMACS_ESS_VERSION.tar"
+  mkdir -p "$cache"
+  if [ ! -f "$archive" ]; then
+    printf 'Downloading ESS %s\n' "$GLASSMACS_ESS_VERSION"
+    curl --fail --location --silent --show-error "$GLASSMACS_ESS_ARCHIVE_URL" --output "$archive.part"
+    mv "$archive.part" "$archive"
+  fi
+fi
+if ! printf '%s  %s\n' "$GLASSMACS_ESS_ARCHIVE_SHA256" "$archive" | shasum -a 256 --check --status; then
+  printf 'ESS archive checksum mismatch: %s\n' "$archive" >&2
+  [ -z "${GLASSMACS_ESS_ARCHIVE:-}" ] && rm -f -- "$archive"
+  exit 1
+fi
+
+tmp=$(mktemp -d /tmp/glassmacs-ess.XXXXXX)
+trap 'rm -rf -- "$tmp"' EXIT
+tar -xf "$archive" -C "$tmp"
+source_dir="$tmp/ess-$GLASSMACS_ESS_VERSION"
+if [ ! -f "$source_dir/ess-r-mode.el" ] || [ ! -f "$source_dir/ess-site.el" ]; then
+  printf 'ESS archive does not contain the expected files: %s\n' "$archive" >&2
+  exit 1
+fi
+
+# Idempotent: replace any previous copy.
+rm -rf -- "$dest"
+mkdir -p "$site_lisp"
+ditto "$source_dir" "$dest"
+# Drop development-only files; keep Lisp, etc/ data, licence and version.
+rm -rf -- "$dest/doc" "$dest/test" "$dest/.travis.yml" "$dest/.dir-locals.el" \
+  "$dest/.mailmap" "$dest/RPM.spec.in" "$dest/ONEWS" "$dest"/*.patch
+
+# Byte-compile with the bundled Emacs so R mode loads quickly.  Failures to
+# compile one file are reported but are not fatal; the smoke test below is.
+(cd "$dest" && "$emacs" -Q --batch -L . \
+  --eval '(setq native-comp-jit-compilation nil)' \
+  -f batch-byte-compile ./*.el) >"$tmp/compile.log" 2>&1 || {
+  printf 'Warning: some ESS files failed to byte-compile (loading from source):\n' >&2
+  tail -n 5 "$tmp/compile.log" >&2
+}
+
+"$emacs" -Q --batch -L "$dest" \
+  --eval '(setq native-comp-jit-compilation nil)' \
+  --eval '(progn (require (quote ess-r-mode)) (require (quote ess-inf)) (princ (format "ESS %s loaded\n" ess-version)))' \
+  >"$tmp/smoke.log" 2>&1 || {
+  printf 'Bundled ESS failed to load:\n' >&2
+  cat "$tmp/smoke.log" >&2
+  exit 1
+}
+
+printf 'version=%s\nsha256=%s\nsource=%s\n' \
+  "$GLASSMACS_ESS_VERSION" "$GLASSMACS_ESS_ARCHIVE_SHA256" "$GLASSMACS_ESS_ARCHIVE_URL" \
+  >"$site_lisp/ESS-BUNDLE"
+printf 'Bundled ESS %s at %s\n' "$GLASSMACS_ESS_VERSION" "$dest"

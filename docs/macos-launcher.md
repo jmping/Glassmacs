@@ -469,3 +469,9 @@ The pinned input is a third-party Cocoa build of GNU Emacs. The builder retains
 its bundle resources and license notices, but this CI artifact is not a formal
 release: before broader redistribution, audit that exact build's patches and
 provide the corresponding source and notices required by its licenses.
+
+## Repeatable Alpha builds and bundled ESS
+
+`scripts/build-macos-app` bundles a pinned ESS release (`macos/bundled-ess.env`: version, GNU ELPA URL and SHA-256) into `Contents/Resources/Glassmacs/site-lisp/ess`, byte-compiled, with `ESS-BUNDLE` recording the version. Glassmacs appends that directory to `load-path`, so `.R` files use `ess-r-mode` with no first-launch download. An ESS installed with `package-install` (or placed on `load-path` earlier) takes precedence over the bundled copy. `validate-macos-app` fails if ESS is missing or R mode does not activate from the bundle.
+
+`scripts/update-build-sign [--ref COMMIT_OR_TAG | --branch NAME] [--no-pull] [--skip-tests] [--install]` pulls from GitHub, builds, validates, runs ERT (with the bundled ESS), Python and Swift tests, Developer ID signs last, re-validates, and writes a dated zip, SHA-256, info file and log to `build/artifacts/`. It needs a Developer ID Application identity (`GLASSMACS_SIGN_IDENTITY` or the first in the Keychain). Output is signed but **not notarized**.
