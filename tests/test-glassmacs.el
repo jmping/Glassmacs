@@ -88,6 +88,11 @@
       (should (equal submitted "x <- 1\ny <- 2\n"))
       (should (= (point) original)))))
 
+(ert-deftest glassmacs-r-toolbar-offers-run-paragraph ()
+  (should (equal (nth 2 (assq 'glassmacs-run-paragraph
+                              glassmacs-r-ui--toolbar-actions))
+                 'glassmacs-r-send-paragraph)))
+
 (ert-deftest glassmacs-r-menus-offer-preferences ()
   (dolist (menu (list glassmacs-r-ui-source-menu
                       glassmacs-r-ui-console-menu))
