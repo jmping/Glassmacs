@@ -473,6 +473,51 @@ In a document with R chunks, the target is cleared for the whole document."
   (glassmacs-r--set-document-target nil)
   (message "Cleared this buffer's R session target"))
 
+(defcustom glassmacs-r-console-placement
+  (if (eq system-type 'darwin) 'separate-window 'split-below)
+  "How Glassmacs displays ESS R consoles."
+  :type '(choice (const :tag "Separate macOS window" separate-window)
+                 (const :tag "Split below" split-below)
+                 (const :tag "Split right" split-right)
+                 (const :tag "Current window" current-window))
+  :group 'glassmacs-r)
+
+(defun glassmacs-r-display-console (buffer)
+  "Show ESS console BUFFER according to the R window placement preference."
+  (unless (buffer-live-p buffer)
+    (user-error "The R console buffer no longer exists"))
+  (let ((existing (get-buffer-window buffer t)))
+    (cond
+     (existing
+      (select-frame-set-input-focus (window-frame existing))
+      (select-window existing))
+     ((and (display-graphic-p)
+           (eq glassmacs-r-console-placement 'separate-window))
+      (let ((frame (make-frame)))
+        (with-selected-frame frame
+          (switch-to-buffer buffer))
+        (select-frame-set-input-focus frame)))
+     ((eq glassmacs-r-console-placement 'split-right)
+      (let ((window (split-window-right)))
+        (set-window-buffer window buffer)
+        (select-window window)))
+     ((eq glassmacs-r-console-placement 'split-below)
+      (let ((window (split-window-below)))
+        (set-window-buffer window buffer)
+        (select-window window)))
+     (t (switch-to-buffer buffer)))))
+
+(defun glassmacs-r-start-or-switch-console ()
+  "Show a current R console, or start and target one if none exists."
+  (interactive)
+  (let ((session (condition-case nil
+                     (glassmacs-sessions-resolve)
+                   (user-error nil))))
+    (if session
+        (glassmacs-r-display-console (glassmacs-session-buffer session))
+      (glassmacs-r-start-and-target-session)
+      (glassmacs-r-inspect-session))))
+
 (defun glassmacs-r-inspect-session ()
   "Display the selected or unambiguously resolved R session terminal."
   (interactive)
@@ -480,7 +525,7 @@ In a document with R chunks, the target is cleared for the whole document."
    (unless (buffer-live-p (glassmacs-session-buffer session))
      (user-error "The terminal for R session %s no longer exists"
                  (glassmacs-session-id session)))
-   (pop-to-buffer (glassmacs-session-buffer session))))
+   (glassmacs-r-display-console (glassmacs-session-buffer session))))
 
 (defun glassmacs-r--host-description (directory)
   "Describe the host represented by DIRECTORY without contacting it."
