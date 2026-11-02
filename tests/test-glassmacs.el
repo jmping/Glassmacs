@@ -228,7 +228,7 @@
 
 (ert-deftest glassmacs-r-source-menu-offers-session-workflows ()
   (should (eq (lookup-key glassmacs-r-ui-source-menu [start])
-              'glassmacs-r-start-or-switch-console))
+              'glassmacs-r-start-and-target-session))
   (should (eq (lookup-key glassmacs-r-ui-source-menu [show-target])
               'glassmacs-r-show-target-session))
   (should (eq (lookup-key glassmacs-r-ui-source-menu [clear-target])
