@@ -20,6 +20,7 @@
 (require 'glassmacs-diagnostics)
 (require 'glassmacs-shiny)
 (require 'glassmacs-appearance)
+(require 'glassmacs-aquamacs-toolbar)
 
 (setq custom-file (expand-file-name "custom.el" user-emacs-directory))
 ;; Glassmacs starts Emacs with -Q, so Emacs believes no init file was read
@@ -41,6 +42,8 @@
 (glassmacs-environment-initialize)
 (glassmacs-editing-apply)
 (glassmacs--install-hybrid-bindings)
+;; General document toolbar; R buffers install their own contextual map.
+(glassmacs-aquamacs-toolbar-install)
 ;; Last, so restored windows get the final settings and keymaps.
 (glassmacs-workspace-restore-at-startup)
 
