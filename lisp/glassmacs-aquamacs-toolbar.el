@@ -118,7 +118,9 @@ redistributed.  A missing icon leaves the toolbar command available."
     (_ t)))
 
 (defun glassmacs-aquamacs-toolbar--item (key label command stem)
-  "Return a toolbar menu item for KEY with LABEL, COMMAND and image STEM."
+  "Return a toolbar menu item for KEY with LABEL, COMMAND and image STEM.
+Menu properties are forms evaluated in the displaying buffer: visibility
+and enabled-state checks must not be evaluated during map construction."
   (let ((image (glassmacs-aquamacs-toolbar--image stem)))
     (append
      (list 'menu-item label command)
