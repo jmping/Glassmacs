@@ -66,6 +66,20 @@ Without ESS, offer once per session to install the optional packages."
         (with-current-buffer source
           (forward-line 1))))))
 
+(defun glassmacs-r-send-paragraph ()
+  "Send the current R paragraph to ESS without moving the source point.
+A paragraph is delimited by blank lines, using the buffer's paragraph
+syntax.  Empty paragraphs are not submitted."
+  (interactive)
+  (unless (fboundp 'ess-eval-region)
+    (user-error "ESS region evaluation is unavailable"))
+  (save-excursion
+    (let ((start (progn (backward-paragraph) (skip-chars-forward " \t\n") (point)))
+          (end (progn (forward-paragraph) (point))))
+      (when (<= end start)
+        (user-error "No R paragraph at point"))
+      (funcall (intern "ess-eval-region") start end))))
+
 (defun glassmacs-r-send-function ()
   "Send the current R function to the current ESS process."
   (interactive)
