@@ -30,12 +30,15 @@ buffer to a different R process."
   (let* ((target (glassmacs-sessions-resolve session))
          (process (glassmacs-session-process target)))
     (unless (and (memq target (glassmacs-sessions-live))
-                 (glassmacs-sessions--process-live-p process)
-                 (buffer-live-p (process-buffer process)))
+                 (glassmacs-sessions--process-live-p process))
       (user-error "Selected R session is no longer live"))
-    (with-current-buffer (process-buffer process)
-      (when (file-remote-p default-directory)
-        (user-error "Native graphics controls do not support remote R sessions")))
+    ;; A real ESS process has a console buffer.  When a process has no
+    ;; buffer (as in minimal unit-test processes), it cannot be inspected
+    ;; for a remote default directory; the process still has to be live.
+    (when (buffer-live-p (process-buffer process))
+      (with-current-buffer (process-buffer process)
+        (when (file-remote-p default-directory)
+          (user-error "Native graphics controls do not support remote R sessions"))))
     target))
 
 (defun glassmacs-r-graphics--device-command (device)
