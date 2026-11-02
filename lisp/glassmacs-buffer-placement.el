@@ -3,6 +3,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'tab-bar)
+(require 'context-menu)
 
 (defgroup glassmacs-buffer-placement nil
   "Explicit placement of Glassmacs buffer views."
@@ -17,7 +18,7 @@
 
 (defun glassmacs-buffer-placement--choose-frame ()
   "Select an existing live frame by its displayed document."
-  (let* ((frames (frame-list))
+  (let* ((frames (cl-remove-if-not #'frame-visible-p (frame-list)))
          (choices (cl-loop for frame in frames
                            for index from 1
                            collect (cons (format "%d: %s" index
@@ -80,7 +81,39 @@ the destination changed the selected tab in that frame."
           (with-selected-window source
             (switch-to-buffer (other-buffer buffer t)))))))))
 
-(defun glassmacs-move-buffer-to (placement &optional frame)
+(defun glassmacs-buffer-placement--source-window ()
+  "Use the clicked window for context-menu commands when possible."
+  (let ((event last-input-event))
+    (if (and (consp event) (mouse-event-p event))
+        (let ((window (posn-window (event-start event))))
+          (if (window-live-p window) window (selected-window)))
+      (selected-window))))
+
+(defvar glassmacs-buffer-placement--last-move nil
+  "Most recent buffer move for the undo command.")
+
+(defun glassmacs-undo-last-buffer-move ()
+  "Move the last relocated buffer back to its original frame.
+The original split arrangement is not recreated."
+  (interactive)
+  (pcase glassmacs-buffer-placement--last-move
+    (`(,buffer ,frame)
+     (unless (and (buffer-live-p buffer) (frame-live-p frame))
+       (user-error "Original buffer or window is unavailable"))
+     (let ((source (get-buffer-window buffer t)))
+       (with-selected-frame frame
+         (let ((destination (selected-window)))
+           (set-window-buffer destination buffer)
+           (when (and source (not (eq source destination))
+                      (window-live-p source))
+             (glassmacs-buffer-placement--remove-source-view
+              source destination buffer (window-frame source) nil))
+           (setq glassmacs-buffer-placement--last-move nil)
+           (select-frame-set-input-focus frame)
+           (select-window destination)))))
+    (_ (user-error "No buffer move to undo"))))
+
+(defun glassmacs-move-buffer-to (placement &optional frame source)
   "Move the current buffer view to PLACEMENT without killing its buffer.
 For existing-window placements, FRAME is selected interactively.
 Use `glassmacs-show-buffer-in' to retain the original view."
@@ -96,7 +129,7 @@ Use `glassmacs-show-buffer-in' to retain the original view."
   (when (and (not (eq placement 'new-frame))
              (not (frame-live-p frame)))
     (user-error "Destination window is no longer available"))
-  (let* ((source (selected-window))
+  (let* ((source (or source (glassmacs-buffer-placement--source-window)))
          (buffer (window-buffer source))
          (point (window-point source))
          (start (window-start source))
@@ -105,15 +138,19 @@ Use `glassmacs-show-buffer-in' to retain the original view."
                        (with-selected-frame source-frame
                          (1+ (tab-bar--current-tab-index)))))
          (destination (glassmacs-buffer-placement--display buffer placement frame)))
+    (unless (and (window-live-p destination)
+                 (eq (window-buffer destination) buffer))
+      (error "Destination could not display buffer; original view retained"))
     (set-window-point destination point)
     (set-window-start destination start t)
     (glassmacs-buffer-placement--remove-source-view
      source destination buffer source-frame source-tab)
+    (setq glassmacs-buffer-placement--last-move (list buffer source-frame))
     (select-frame-set-input-focus (window-frame destination))
     (select-window destination)
     destination))
 
-(defun glassmacs-show-buffer-in (placement &optional frame)
+(defun glassmacs-show-buffer-in (placement &optional frame source)
   "Show the current buffer at PLACEMENT while retaining its original view."
   (interactive
    (let* ((placement (intern (completing-read
@@ -127,7 +164,9 @@ Use `glassmacs-show-buffer-in' to retain the original view."
   (when (and (not (eq placement 'new-frame))
              (not (frame-live-p frame)))
     (user-error "Destination window is no longer available"))
-  (glassmacs-buffer-placement--display (current-buffer) placement frame))
+  (glassmacs-buffer-placement--display
+   (window-buffer (or source (glassmacs-buffer-placement--source-window)))
+   placement frame))
 
 (defun glassmacs-buffer-placement--context-menu (menu _click)
   "Add buffer placement actions to context MENU."
@@ -142,11 +181,12 @@ Use `glassmacs-show-buffer-in' to retain the original view."
   "Install menu entries for manual buffer placement."
   (define-key global-map [menu-bar window glassmacs-move-buffer]
     '(menu-item "Move Buffer To…" glassmacs-move-buffer-to))
+  (define-key global-map [menu-bar window glassmacs-undo-move]
+    '(menu-item "Undo Last Buffer Move" glassmacs-undo-last-buffer-move))
   (define-key global-map [menu-bar window glassmacs-show-buffer]
     '(menu-item "Show Buffer In…" glassmacs-show-buffer-in))
-  (with-eval-after-load 'context-menu
-    (add-hook 'context-menu-functions
-              #'glassmacs-buffer-placement--context-menu)))
+  (add-hook 'context-menu-functions
+            #'glassmacs-buffer-placement--context-menu))
 
 (glassmacs-buffer-placement-install)
 
