@@ -84,16 +84,16 @@ Each nonseparator item is (KEY LABEL COMMAND GNU-EMACS-ICON-STEM).")
   (call-interactively #'help-for-help))
 
 (defun glassmacs-aquamacs-toolbar--image (stem)
-  "Find a built-in GNU Emacs toolbar image for STEM.
-Do not assume Aquamacs' image names exist in GNU Emacs; a missing
-image must not prevent the button from being defined."
+  "Find GNU Emacs-provided toolbar art corresponding to STEM.
+The built-in image search path is sufficient; no Aquamacs artwork is
+redistributed.  A missing icon leaves the toolbar command available."
   (when (display-graphic-p)
-    (or (find-image (list (list :type 'xpm
-                                :file (concat stem ".xpm")
-                                :ascent 'center)))
-        (find-image (list (list :type 'png
-                                :file (concat stem ".png")
-                                :ascent 'center))))))
+    (let ((candidates (delete-dups
+                       (list (concat stem ".xpm") (concat stem ".png")
+                             (concat stem ".svg")))))
+      (cl-loop for file in candidates
+               thereis (find-image
+                        (list (list :file file :ascent 'center)))))))
 
 (defun glassmacs-aquamacs-toolbar--visible (key)
   "Return the contextual visibility rule for toolbar KEY."
