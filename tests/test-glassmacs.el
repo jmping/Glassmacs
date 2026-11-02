@@ -12,6 +12,19 @@
 (require 'glassmacs)
 
 
+(ert-deftest glassmacs-bundled-ess-does-not-trigger-installation ()
+  (cl-letf (((symbol-function 'package-installed-p) (lambda (_package) nil))
+            ((symbol-function 'locate-library)
+             (lambda (name &rest _)
+               (when (equal name "ess-site") "/bundle/ess-site.el"))))
+    (should-not (memq 'ess (glassmacs-missing-optional-packages)))
+    (should (memq 'markdown-mode (glassmacs-missing-optional-packages)))))
+
+(ert-deftest glassmacs-missing-ess-remains-installable ()
+  (cl-letf (((symbol-function 'package-installed-p) (lambda (_package) nil))
+            ((symbol-function 'locate-library) (lambda (&rest _) nil)))
+    (should (memq 'ess (glassmacs-missing-optional-packages)))))
+
 (ert-deftest glassmacs-new-buffer-in-mode-creates-distinct-mode-buffer ()
   (let (buffer)
     (unwind-protect
