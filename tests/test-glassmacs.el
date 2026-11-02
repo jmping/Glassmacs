@@ -12,6 +12,20 @@
 (require 'glassmacs)
 
 
+(ert-deftest glassmacs-toolbar-replacement-pngs-are-present ()
+  (should (file-directory-p glassmacs-toolbar-image-directory))
+  (dolist (item glassmacs-aquamacs-toolbar-items)
+    (when (= (length item) 4)
+      (let* ((stem (nth 3 item))
+             (path (expand-file-name (concat stem ".png")
+                                     glassmacs-toolbar-image-directory)))
+        (should (file-readable-p path))
+        (with-temp-buffer
+          (set-buffer-multibyte nil)
+          (insert-file-contents-literally path)
+          (should (equal (cl-subseq (string-to-list (buffer-string)) 0 8)
+                         '(137 80 78 71 13 10 26 10))))))))
+
 (ert-deftest glassmacs-aquamacs-toolbar-has-upstream-general-order ()
   (should
    (equal (mapcar #'car glassmacs-aquamacs-toolbar-items)

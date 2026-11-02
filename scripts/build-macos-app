@@ -82,6 +82,9 @@ glassmacs_resources="$output/Contents/Resources/Glassmacs"
 mkdir -p "$glassmacs_resources/scripts"
 cp "$root/init.el" "$glassmacs_resources/init.el"
 ditto "$root/lisp" "$glassmacs_resources/lisp"
+# Bundle independently drawn toolbar PNGs alongside the Lisp configuration.
+mkdir -p "$glassmacs_resources/assets"
+ditto "$root/assets/toolbar" "$glassmacs_resources/assets/toolbar"
 cp "$root/scripts/bootstrap" "$glassmacs_resources/scripts/bootstrap"
 "$root/scripts/build-macos-lifecycle" "$upstream_app" \
   "$glassmacs_resources/macos/libglassmacs-lifecycle.dylib"

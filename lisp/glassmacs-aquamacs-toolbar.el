@@ -7,11 +7,16 @@
 ;;
 ;; Original AQUAMACS IMAGES ARE NOT INCLUDED.  Its Icons/build/COPYING grants
 ;; many original icons only to the Aquamacs project; see Glassmacs issue #57.
-;; The toolbar uses GNU Emacs' built-in icons instead.
+;; Glassmacs ships independently drawn replacement PNGs in assets/toolbar/.
 
 (require 'cl-lib)
 (require 'tool-bar)
 (require 'glassmacs-frames)
+
+(defconst glassmacs-toolbar-image-directory
+  (expand-file-name "../assets/toolbar"
+                    (file-name-directory (or load-file-name buffer-file-name)))
+  "Location of original Glassmacs toolbar PNG assets.")
 
 (defgroup glassmacs-aquamacs-toolbar nil
   "Aquamacs-style document toolbar controls."
@@ -19,19 +24,19 @@
 
 (defcustom glassmacs-aquamacs-toolbar-enabled t
   "Whether to enable Aquamacs-style document controls in graphical frames.
-The visuals use Emacs' built-in icon assets until original Aquamacs artwork
-can be licensed separately.  R buffers retain their contextual R toolbar."
+The visuals use independently drawn Glassmacs PNGs rather than Aquamacs
+artwork.  R buffers retain their contextual R toolbar."
   :type 'boolean
   :group 'glassmacs-aquamacs-toolbar)
 
 (defconst glassmacs-aquamacs-toolbar-items
   '((new "New" glassmacs-new-document "new")
     (open "Open" glassmacs-open-document-from-toolbar "open")
-    (recent "Recent" glassmacs-toolbar-open-recent "open")
+    (recent "Recent" glassmacs-toolbar-open-recent "history")
     (close "Close" glassmacs-close-document "close")
     (revert "Revert" revert-buffer "refresh")
     (save "Save" save-buffer "save")
-    (save-as "Save" glassmacs-save-document-as-prompt "save")
+    (save-as "Save As" glassmacs-save-document-as-prompt "saveas")
     (print "Print" glassmacs-toolbar-print "print")
     (separator-1)
     (undo "Undo" undo "undo")
@@ -84,18 +89,21 @@ Each nonseparator item is (KEY LABEL COMMAND GNU-EMACS-ICON-STEM).")
   (call-interactively #'help-for-help))
 
 (defun glassmacs-aquamacs-toolbar--image (stem)
-  "Find GNU Emacs-provided toolbar art corresponding to STEM.
-The built-in image search path is sufficient; no Aquamacs artwork is
-redistributed.  A missing icon leaves the toolbar command available."
+  "Find the original Glassmacs PNG for STEM, falling back to Emacs art."
   (when (display-graphic-p)
-    (let ((candidates (delete-dups
-                       (list (concat stem ".xpm") (concat stem ".png")
-                             (concat stem ".svg")))))
-      (cl-loop for file in candidates
-               thereis (condition-case nil
-                           (find-image (list (list :file file
-                                                   :ascent 'center)))
-                         (error nil))))))
+    (let ((original (expand-file-name (concat stem ".png")
+                                      glassmacs-toolbar-image-directory)))
+      (or (and (file-readable-p original)
+               (condition-case nil
+                   (find-image (list (list :type 'png :file original
+                                           :ascent 'center)))
+                 (error nil)))
+          (cl-loop for file in (list (concat stem ".xpm")
+                                     (concat stem ".png"))
+                   thereis (condition-case nil
+                               (find-image (list (list :file file
+                                                       :ascent 'center)))
+                             (error nil)))))))
 
 (defun glassmacs-aquamacs-toolbar--visible (key)
   "Return the contextual visibility rule for toolbar KEY."
