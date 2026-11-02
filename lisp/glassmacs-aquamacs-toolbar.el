@@ -11,6 +11,7 @@
 
 (require 'cl-lib)
 (require 'tool-bar)
+(require 'glassmacs-frames)
 
 (defgroup glassmacs-aquamacs-toolbar nil
   "Aquamacs-style document toolbar controls."
@@ -136,6 +137,7 @@ No original Aquamacs PNG/TIFF artwork is needed or loaded."
   "Install the Aquamacs-style general toolbar as the current default."
   (when (and glassmacs-aquamacs-toolbar-enabled
              (display-graphic-p))
+    ;; R source and console buffers use a separate buffer-local toolbar.
     (setq-default tool-bar-map (glassmacs-aquamacs-toolbar-map))
     (tool-bar-mode 1)))
 
