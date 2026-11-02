@@ -1330,6 +1330,22 @@ otherwise never build."
       (glassmacs-r-send-line)
       (should (= (line-number-at-pos) 1)))))
 
+(ert-deftest glassmacs-new-buffer-mode-menu-has-selectable-commands ()
+  (should (commandp (lookup-key glassmacs-new-buffer-mode-menu [text-mode])))
+  (should (commandp (lookup-key glassmacs-new-buffer-mode-menu [other]))))
+
+(ert-deftest glassmacs-new-buffer-mode-menu-creates-untitled-text-buffer ()
+  (let ((command (lookup-key glassmacs-new-buffer-mode-menu [text-mode]))
+        created)
+    (save-window-excursion
+      (unwind-protect
+          (progn
+            (funcall command)
+            (setq created (current-buffer))
+            (should (eq major-mode 'text-mode))
+            (should-not buffer-file-name))
+        (when (buffer-live-p created) (kill-buffer created))))))
+
 (provide 'test-glassmacs)
 ;;; test-glassmacs.el ends here
 
