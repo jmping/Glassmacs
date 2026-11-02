@@ -95,7 +95,7 @@ print("Mach-O architectures: " + "; ".join(f"{k}: {v}" for k, v in sorted(counts
 # strings (libgccjit's /nix/store gcc driver paths, used only for
 # just-in-time native compilation, which Glassmacs disables), so prefixes
 # such as /nix/store, /opt/homebrew and /usr/local are counted, not failed.
-app_path = str(contents.parent).encode()
+app_paths = {str(contents.parent).encode(), str(Path(sys.argv[1]).parent).encode()}
 build_paths = [str(root).encode(), b"/tmp/glassmacs-build.", b"/private/tmp/glassmacs-build."]
 if os.environ.get("RUNNER_TEMP"):
     build_paths.append(os.environ["RUNNER_TEMP"].encode())
@@ -104,8 +104,9 @@ reported = {prefix: 0 for prefix in informational}
 own_resolved = {path.resolve() for path in own}
 for binary in binaries:
     data = binary.read_bytes()
-    if app_path in data:
-        fail(f"{binary.relative_to(contents)} refers to the app's own location {app_path.decode()}")
+    for app_path in app_paths:
+        if app_path in data:
+            fail(f"{binary.relative_to(contents)} refers to the app's own location {app_path.decode()}")
     if binary in own_resolved:
         for path in build_paths:
             if path in data:

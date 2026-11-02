@@ -959,8 +959,10 @@ if [[ "${SPCTL_FAIL:-0}" == 1 ]]; then exit 1; fi
 
     def test_info_plist_merge_keeps_upstream_document_types(self):
         from importlib.machinery import SourceFileLoader
-        merger = SourceFileLoader(
-            "merge_info_plist", str(ROOT / "scripts/merge-info-plist")).load_module()
+        from importlib.util import module_from_spec, spec_from_loader
+        loader = SourceFileLoader("merge_info_plist", str(ROOT / "scripts/merge-info-plist"))
+        merger = module_from_spec(spec_from_loader("merge_info_plist", loader))
+        loader.exec_module(merger)
         upstream = {
             "CFBundleExecutable": "Emacs",
             "CFBundleDocumentTypes": [
