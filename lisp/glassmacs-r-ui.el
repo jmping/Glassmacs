@@ -136,7 +136,7 @@ covers the first display before ESS finishes setting its help mode."
              (with-current-buffer buffer
                (derived-mode-p 'ess-help-mode)))
         (or (string-prefix-p "*help[R]" name)
-            (string-prefix-p "*R Help" name))))
+            (string-prefix-p "*R Help" name)))))
 
 (defun glassmacs-r-ui--help-frame-action ()
   "Return the ESS R help frame display action.
