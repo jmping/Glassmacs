@@ -192,5 +192,35 @@ The extra window means closing deletes a window rather than the frame."
         (kill-buffer buffer))
       (delete-file file))))
 
+(ert-deftest glassmacs-close-scratch-modified-prompts-and-cancel-keeps-it ()
+  (let ((scratch (get-buffer-create "*scratch*")))
+    (unwind-protect
+        (glassmacs-close-test--with-split scratch
+          (with-current-buffer scratch
+            (goto-char (point-max))
+            (insert "scratch unsaved edit"))
+          (glassmacs-close-test--answering ?c
+            (glassmacs-close-document)
+            (should (= prompts 1))
+            (should (buffer-live-p scratch))
+            (should (buffer-modified-p scratch))
+            (should (window-live-p window))))
+      (when (buffer-live-p scratch)
+        (with-current-buffer scratch
+          (erase-buffer)
+          (set-buffer-modified-p nil))))))
+
+(ert-deftest glassmacs-unsaved-review-includes-modified-scratch ()
+  (let ((scratch (get-buffer-create "*scratch*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer scratch
+            (goto-char (point-max))
+            (insert "review scratch edit"))
+          (should (memq scratch (glassmacs--modified-document-buffers))))
+      (with-current-buffer scratch
+        (erase-buffer)
+        (set-buffer-modified-p nil)))))
+
 (provide 'test-glassmacs-close)
 ;;; test-glassmacs-close.el ends here
