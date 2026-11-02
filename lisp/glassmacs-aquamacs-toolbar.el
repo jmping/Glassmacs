@@ -92,8 +92,10 @@ redistributed.  A missing icon leaves the toolbar command available."
                        (list (concat stem ".xpm") (concat stem ".png")
                              (concat stem ".svg")))))
       (cl-loop for file in candidates
-               thereis (find-image
-                        (list (list :file file :ascent 'center)))))))
+               thereis (condition-case nil
+                           (find-image (list (list :file file
+                                                   :ascent 'center)))
+                         (error nil))))))
 
 (defun glassmacs-aquamacs-toolbar--visible (key)
   "Return the contextual visibility rule for toolbar KEY."
