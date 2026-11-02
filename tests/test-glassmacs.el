@@ -2163,3 +2163,47 @@ example) can run first and delay the sentinel."
                            (expand-file-name "orphan.text"
                                              glassmacs-recovery-directory)))))))
       (delete-directory glassmacs-recovery-directory t)))
+
+(ert-deftest glassmacs-buffer-placement-missing-frame-keeps-original ()
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer " *glassmacs-missing-target*")))
+      (unwind-protect
+          (progn
+            (switch-to-buffer buffer)
+            (should-error (glassmacs-move-buffer-to 'replace nil))
+            (should (eq (window-buffer (selected-window)) buffer))
+            (should (buffer-live-p buffer)))
+        (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-buffer-placement-show-retains-source ()
+  (save-window-excursion
+    (delete-other-windows)
+    (let ((buffer (generate-new-buffer " *glassmacs-show-source*")))
+      (unwind-protect
+          (progn
+            (switch-to-buffer buffer)
+            (let* ((source (selected-window))
+                   (destination (glassmacs-show-buffer-in
+                                 'split-below (selected-frame) source)))
+              (should (window-live-p source))
+              (should (eq (window-buffer source) buffer))
+              (should (eq (window-buffer destination) buffer))))
+        (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-buffer-placement-move-preserves-process ()
+  (skip-unless (executable-find "cat"))
+  (save-window-excursion
+    (delete-other-windows)
+    (let* ((buffer (generate-new-buffer " *glassmacs-live-console*"))
+           (process (start-process "glassmacs-placement-test" buffer "cat")))
+      (unwind-protect
+          (progn
+            (switch-to-buffer buffer)
+            (let ((source (selected-window)))
+              (glassmacs-move-buffer-to 'split-right (selected-frame) source)
+              (should (buffer-live-p buffer))
+              (should (process-live-p process))
+              (should (eq (process-buffer process) buffer))))
+        (when (process-live-p process) (delete-process process))
+        (kill-buffer buffer)))))
+
