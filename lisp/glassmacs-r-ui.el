@@ -5,6 +5,7 @@
 (require 'cl-lib)
 (require 'tool-bar)
 (require 'glassmacs-sessions)
+(require 'glassmacs-r-graphics)
 
 (defgroup glassmacs-r-ui nil
   "R console and contextual user interface."
@@ -43,6 +44,22 @@
                   :enable glassmacs-r-target-session))
     (define-key menu [list-sessions]
       '(menu-item "List R Sessions" glassmacs-r-list-sessions))
+    (define-key menu [graphics-separator] menu-bar-separator)
+    (define-key menu [graphics-list]
+      '(menu-item "List Graphics Devices" glassmacs-r-graphics-list-devices
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-select]
+      '(menu-item "Select Graphics Device…" glassmacs-r-graphics-select-device
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-close]
+      '(menu-item "Close Current Graphics Device" glassmacs-r-graphics-close-device
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-open]
+      '(menu-item "Open Graphics Device…" glassmacs-r-graphics-open-device
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-test]
+      '(menu-item "Plot Cars (Graphics Test)" glassmacs-r-graphics-smoke-plot
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [shiny-separator] menu-bar-separator)
     (define-key menu [shiny-preview]
       '(menu-item "Open Shiny Preview" glassmacs-shiny-open-preview
@@ -81,6 +98,22 @@
       '(menu-item "Start Another R Session" glassmacs-r-start-session))
     (define-key menu [history]
       '(menu-item "Previous Command" comint-previous-input))
+    (define-key menu [graphics-separator] menu-bar-separator)
+    (define-key menu [graphics-list]
+      '(menu-item "List Graphics Devices" glassmacs-r-graphics-list-devices
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-select]
+      '(menu-item "Select Graphics Device…" glassmacs-r-graphics-select-device
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-close]
+      '(menu-item "Close Current Graphics Device" glassmacs-r-graphics-close-device
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-open]
+      '(menu-item "Open Graphics Device…" glassmacs-r-graphics-open-device
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-test]
+      '(menu-item "Plot Cars (Graphics Test)" glassmacs-r-graphics-smoke-plot
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [interrupt]
       '(menu-item "Interrupt R" glassmacs-r-interrupt
                   :enable (glassmacs-r-ui--menu-has-session-p)))
