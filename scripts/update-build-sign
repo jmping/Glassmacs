@@ -3,12 +3,23 @@
 #
 # Usage: scripts/update-build-sign [--ref COMMIT_OR_TAG | --branch NAME] [--no-pull]
 #                                  [--skip-tests] [--install]
+#                                  [--notarize | --require-notarization]
+#                                  [--notary-profile NAME]
 #   --ref REF      build exactly this commit or tag (detached HEAD)
 #   --branch NAME  fast-forward to origin/NAME and build it (default: main)
 #   --no-pull      build the current checkout without fetching
 #   --skip-tests   skip ERT, Python and Swift tests (validation always runs)
+#   --notarize     after signing, notarize with `xcrun notarytool`, staple and re-verify;
+#                  the distribution ZIP is created only after that succeeds
+#   --require-notarization
+#                  release mode: implies --notarize, refuses --skip-tests and guarantees
+#                  that no artifact is produced unless Apple accepted the submission
+#   --notary-profile NAME
+#                  notarytool Keychain profile (default: $GLASSMACS_NOTARY_PROFILE, else glassmacs-notary);
+#                  create once with: xcrun notarytool store-credentials NAME
 #   --install      replace /Applications/Glassmacs.app (old copy kept as a timestamped backup)
 #
+# Without --notarize the result is a development build (ZIP named ...-unnotarized.zip).
 # Signing uses GLASSMACS_SIGN_IDENTITY (certificate SHA-1) or else the first
 # "Developer ID Application" identity in the Keychain.  The result is Developer
 # ID signed with the hardened runtime but NOT notarized.
@@ -23,6 +34,9 @@ branch=main
 pull=1
 tests=1
 install=0
+notarize=0
+require_notarization=0
+notary_profile=${GLASSMACS_NOTARY_PROFILE:-glassmacs-notary}
 while [ $# -gt 0 ]; do
   case "$1" in
     --ref) ref=${2:?--ref needs a commit or tag}; shift 2 ;;
@@ -30,12 +44,19 @@ while [ $# -gt 0 ]; do
     --no-pull) pull=0; shift ;;
     --skip-tests) tests=0; shift ;;
     --install) install=1; shift ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    --notarize) notarize=1; shift ;;
+    --require-notarization) notarize=1; require_notarization=1; shift ;;
+    --notary-profile) notary_profile=${2:?--notary-profile needs a name}; shift 2 ;;
+    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+if [ "$require_notarization" = 1 ] && [ "$tests" = 0 ]; then
+  die "--require-notarization cannot be combined with --skip-tests"
+fi
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
@@ -62,6 +83,14 @@ fi
 [ -n "$identity" ] || die "no Developer ID Application identity; set GLASSMACS_SIGN_IDENTITY"
 /usr/bin/security find-identity -v -p codesigning | /usr/bin/grep -Fq "$identity" ||
   die "signing identity is not in the Keychain"
+
+if [ "$notarize" = 1 ]; then
+  command -v xcrun >/dev/null 2>&1 || die "xcrun not found; install the Xcode command line tools"
+  xcrun --find notarytool >/dev/null 2>&1 || die "xcrun notarytool is unavailable (needs Xcode 13 or later)"
+  xcrun --find stapler >/dev/null 2>&1 || die "xcrun stapler is unavailable"
+  xcrun notarytool history --keychain-profile "$notary_profile" >/dev/null 2>&1 ||
+    die "notarytool Keychain profile '$notary_profile' is missing or invalid; create it with: xcrun notarytool store-credentials $notary_profile"
+fi
 
 if [ -n "$ref" ]; then
   git fetch --prune --tags origin
@@ -98,11 +127,25 @@ GLASSMACS_SIGN_IDENTITY=$identity ./scripts/sign-macos-app "$app"
 /usr/bin/codesign --verify --deep --strict "$app"
 ./scripts/validate-macos-app "$app"
 
+name="Glassmacs-$describe-$stamp"
+notary_submission=n/a
+notary_status="not requested"
+if [ "$notarize" = 1 ]; then
+  ./scripts/notarize-staple "$app" "$notary_profile" "$artifacts" "$name"
+  # shellcheck disable=SC1090
+  source "$artifacts/$name.notary.env"
+  notary_submission=$SUBMISSION_ID
+  notary_status="$STATUS; stapled; Gatekeeper $SPCTL"
+  ./scripts/validate-macos-app "$app"
+else
+  name="$name-unnotarized"
+fi
+
 signing=$(/usr/bin/codesign -dvv "$app" 2>&1 | /usr/bin/grep -E '^(Authority=Developer ID Application|TeamIdentifier|CodeDirectory)' || true)
 gatekeeper=$(/usr/sbin/spctl --assess --type execute -vv "$app" 2>&1 | head -n 2 || true)
 ess_bundled=$(cat "$app/Contents/Resources/Glassmacs/site-lisp/ESS-BUNDLE")
 
-name="Glassmacs-$describe-$stamp"
+# The distribution ZIP is created only now, after notarization and stapling.
 /usr/bin/ditto -c -k --keepParent --sequesterRsrc "$app" "$artifacts/$name.zip"
 (cd "$artifacts" && shasum -a 256 "$name.zip" >"$name.sha256")
 {
@@ -113,7 +156,9 @@ name="Glassmacs-$describe-$stamp"
   printf 'Tests: %s\n' "$([ "$tests" = 1 ] && echo 'ERT, Python, Swift passed' || echo 'SKIPPED')"
   printf 'Signing:\n%s\n' "$signing"
   printf 'Gatekeeper: %s\n' "$gatekeeper"
-  printf 'Notarization: NOT performed\n'
+  printf 'Notarization: %s\n' "$notary_status"
+  printf 'Notarization submission ID: %s\n' "$notary_submission"
+  printf 'Release build (notarization required): %s\n' "$([ "$require_notarization" = 1 ] && echo yes || echo no)"
   printf 'Archive: %s\nSHA-256: %s\n' "$artifacts/$name.zip" "$(cut -d' ' -f1 "$artifacts/$name.sha256")"
 } | tee "$artifacts/$name.info.txt"
 

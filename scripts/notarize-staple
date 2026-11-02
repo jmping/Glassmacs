@@ -1,0 +1,109 @@
+#!/bin/bash
+# Notarize a Developer ID signed Glassmacs.app with notarytool, then staple and re-verify it.
+#
+# Usage: scripts/notarize-staple /path/to/Glassmacs.app KEYCHAIN_PROFILE OUTPUT_DIR PREFIX
+#
+# KEYCHAIN_PROFILE is created once with `xcrun notarytool store-credentials`; no
+# credentials are read from or written to the repository or logs.
+# Writes to OUTPUT_DIR:
+#   PREFIX.notary-submit.json   notarytool's submission result
+#   PREFIX.notary-log.json      Apple's notarization log (always fetched; essential on rejection)
+#   PREFIX.notary.env           SUBMISSION_ID, STATUS, SPCTL (shell-sourceable, no secrets)
+# Exits non-zero, leaving the app unstapled, unless Apple reports "Accepted" and
+# stapling, `stapler validate`, `codesign --verify` and `spctl` all succeed.
+# The temporary submission ZIP is always removed.
+set -euo pipefail
+
+[ "$#" -eq 4 ] || { sed -n '2,3p' "$0" >&2; exit 2; }
+app=$1
+profile=$2
+out=$3
+prefix=$4
+
+[ -n "$profile" ] || { printf 'A notarytool Keychain profile name is required.\n' >&2; exit 2; }
+[ -f "$app/Contents/Info.plist" ] || { printf 'Not an application bundle: %s\n' "$app" >&2; exit 1; }
+app=$(CDPATH='' cd -- "$app" && pwd)
+mkdir -p "$out"
+out=$(CDPATH='' cd -- "$out" && pwd)
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/glassmacs-notarize.XXXXXX")
+trap 'rm -rf -- "$tmp"' EXIT
+trap 'exit 1' HUP INT TERM
+
+submit_json="$out/$prefix.notary-submit.json"
+log_json="$out/$prefix.notary-log.json"
+env_file="$out/$prefix.notary.env"
+rm -f -- "$submit_json" "$log_json" "$env_file"
+
+codesign --verify --deep --strict "$app"
+metadata=$(codesign -dv --verbose=4 "$app" 2>&1)
+grep -Fq 'Authority=Developer ID Application:' <<<"$metadata" || {
+  printf 'The application is not signed with a Developer ID Application identity.\n' >&2
+  exit 1
+}
+
+ditto -c -k --keepParent "$app" "$tmp/notarize.zip"
+[ -s "$tmp/notarize.zip" ] || { printf 'Could not create the notarization archive.\n' >&2; exit 1; }
+
+printf 'Submitting to Apple notary service (profile %s); this can take several minutes.\n' "$profile"
+set +e
+xcrun notarytool submit "$tmp/notarize.zip" --keychain-profile "$profile" \
+  --wait --output-format json >"$submit_json" 2>"$tmp/stderr"
+submit_exit=$?
+set -e
+
+field() {
+  python3 -c '
+import json, sys
+try:
+    print(json.load(open(sys.argv[1])).get(sys.argv[2], ""))
+except Exception:
+    print("")' "$submit_json" "$1"
+}
+submission_id=$(field id)
+status=$(field status)
+if [ -z "$submission_id" ]; then
+  submission_id=$(grep -Eo '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}' "$tmp/stderr" "$submit_json" 2>/dev/null | head -n 1 | cut -d: -f2- || true)
+fi
+
+if [ -n "$submission_id" ]; then
+  xcrun notarytool log "$submission_id" --keychain-profile "$profile" "$log_json" >/dev/null 2>&1 ||
+    printf 'Warning: could not retrieve the notarization log for %s.\n' "$submission_id" >&2
+fi
+printf 'SUBMISSION_ID=%s\nSTATUS=%s\n' "$submission_id" "${status:-unknown}" >"$env_file"
+
+if [ "$submit_exit" -ne 0 ] || [ "$status" != "Accepted" ]; then
+  printf 'Apple notarization did not succeed (status: %s, submission: %s).\n' \
+    "${status:-unknown}" "${submission_id:-none}" >&2
+  if [ -s "$log_json" ]; then
+    printf 'Notarization log preserved at %s\n' "$log_json" >&2
+    python3 -c '
+import json, sys
+try:
+    for issue in json.load(open(sys.argv[1])).get("issues") or []:
+        print("  - {}: {}".format(issue.get("path", "?"), issue.get("message", "?")), file=sys.stderr)
+except Exception:
+    pass' "$log_json"
+  else
+    printf 'No log available. Check the Keychain profile (xcrun notarytool store-credentials) and network.\n' >&2
+    sed -n '1,5p' "$tmp/stderr" >&2
+  fi
+  exit 1
+fi
+[ -n "$submission_id" ] || { printf 'Accepted without a submission ID; refusing to staple.\n' >&2; exit 1; }
+printf 'Apple accepted notarization submission %s.\n' "$submission_id"
+
+xcrun stapler staple "$app"
+xcrun stapler validate "$app"
+codesign --verify --deep --strict "$app"
+if spctl_output=$(spctl --assess --type execute -vv "$app" 2>&1); then
+  spctl_status=accepted
+else
+  spctl_status=rejected
+fi
+printf '%s\n' "$spctl_output"
+printf 'SPCTL=%s\n' "$spctl_status" >>"$env_file"
+[ "$spctl_status" = accepted ] || {
+  printf 'Gatekeeper still rejects the stapled application.\n' >&2
+  exit 1
+}
