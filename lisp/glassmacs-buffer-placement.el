@@ -2,6 +2,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'tab-bar)
 
 (defgroup glassmacs-buffer-placement nil
   "Explicit placement of Glassmacs buffer views."
@@ -137,7 +138,7 @@ Use `glassmacs-show-buffer-in' to retain the original view."
     '(menu-item "Move Buffer To…" glassmacs-move-buffer-to))
   (define-key global-map [menu-bar window glassmacs-show-buffer]
     '(menu-item "Show Buffer In…" glassmacs-show-buffer-in))
-  (with-eval-after-load 'mouse
+  (with-eval-after-load 'context-menu
     (add-hook 'context-menu-functions
               #'glassmacs-buffer-placement--context-menu)))
 
