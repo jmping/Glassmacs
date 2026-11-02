@@ -15,6 +15,11 @@
   "Visible controls for R source and console buffers."
   :group 'glassmacs-r-ui)
 
+(defun glassmacs-r-open-preferences ()
+  "Open Glassmacs R preferences, including ESS and console controls."
+  (interactive)
+  (customize-group 'glassmacs-r))
+
 (defcustom glassmacs-r-show-toolbar t
   "Whether R buffers show contextual toolbar actions."
   :type 'boolean
@@ -22,10 +27,12 @@
 
 (defvar glassmacs-r-ui-source-menu
   (let ((menu (make-sparse-keymap "R")))
+    (define-key menu [preferences]
+      '(menu-item "R Preferences…" glassmacs-r-open-preferences))
     (define-key menu [help]
       '(menu-item "R Help…" glassmacs-r-ui-help))
     (define-key menu [console]
-      '(menu-item "Switch to R Console" glassmacs-r-inspect-session
+      '(menu-item "Show R Console" glassmacs-r-inspect-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [interrupt]
       '(menu-item "Interrupt R" glassmacs-r-interrupt
@@ -34,7 +41,7 @@
       '(menu-item "Choose R Session…" glassmacs-r-select-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [start]
-      '(menu-item "Start R Console" glassmacs-r-start-or-switch-console))
+      '(menu-item "Start R and Target This Buffer" glassmacs-r-start-and-target-session))
     (define-key menu [start-unbound]
       '(menu-item "Start Another R Session" glassmacs-r-start-session))
     (define-key menu [show-target]
@@ -77,6 +84,8 @@
     (define-key menu [separator] menu-bar-separator)
     (define-key menu [buffer]
       '(menu-item "Run Buffer" glassmacs-r-send-buffer))
+    (define-key menu [paragraph]
+      '(menu-item "Run Paragraph" glassmacs-r-send-paragraph))
     (define-key menu [function]
       '(menu-item "Run Function" glassmacs-r-send-function))
     (define-key menu [selection]
@@ -89,6 +98,8 @@
 
 (defvar glassmacs-r-ui-console-menu
   (let ((menu (make-sparse-keymap "R Console")))
+    (define-key menu [preferences]
+      '(menu-item "R Preferences…" glassmacs-r-open-preferences))
     (define-key menu [sessions]
       '(menu-item "Choose R Session…" glassmacs-r-select-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
@@ -175,9 +186,10 @@ Closing that help frame must not close or discard the source document."
 (defconst glassmacs-r-ui--toolbar-actions
   '((glassmacs-run-line "Run Line" glassmacs-r-send-line "right-arrow")
     (glassmacs-run-selection "Run Selection" glassmacs-r-send-region "copy")
+    (glassmacs-run-paragraph "Run Paragraph" glassmacs-r-send-paragraph "next-page")
     (glassmacs-run-function "Run Function" glassmacs-r-send-function "jump-to")
     (glassmacs-run-buffer "Run Buffer" glassmacs-r-send-buffer "next-page")
-    (glassmacs-show-console "R Console" glassmacs-r-start-or-switch-console "open")
+    (glassmacs-show-console "R Console" glassmacs-r-inspect-session "open")
     (glassmacs-help "R Help" glassmacs-r-ui-help "help"))
   "R source toolbar entries: (KEY LABEL COMMAND ICON).
 ICON is the base name of an image shipped with GNU Emacs.")

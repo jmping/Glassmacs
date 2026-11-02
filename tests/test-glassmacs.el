@@ -74,6 +74,58 @@
     (unless (fboundp 'markdown-mode)
       (should-not (assoc "Markdown" (glassmacs--available-major-modes))))))
 
+(ert-deftest glassmacs-r-send-paragraph-submits-region-without-moving-point ()
+  (with-temp-buffer
+    (insert "x <- 1\ny <- 2\n\nz <- 3\n")
+    (goto-char (point-min))
+    (forward-line 1)
+    (let ((original (point))
+          submitted)
+      (cl-letf (((symbol-function 'ess-eval-region)
+                 (lambda (start end)
+                   (setq submitted (buffer-substring-no-properties start end)))))
+        (glassmacs-r-send-paragraph))
+      (should (equal submitted "x <- 1\ny <- 2\n"))
+      (should (= (point) original)))))
+
+(ert-deftest glassmacs-r-execution-uses-explicit-session-target ()
+  (with-temp-buffer
+    (setq-local glassmacs-r-target-session "R-2")
+    (let (observed)
+      (cl-letf (((symbol-function 'glassmacs-sessions-resolve)
+                 (lambda (&optional _) 'test-session))
+                ((symbol-function 'glassmacs-session-name)
+                 (lambda (_) "R-process-2")))
+        (glassmacs-r--with-target
+         (lambda () (setq observed ess-local-process-name))))
+      (should (equal observed "R-process-2")))))
+
+(ert-deftest glassmacs-r-execution-rejects-stale-explicit-target ()
+  (with-temp-buffer
+    (setq-local glassmacs-r-target-session "gone")
+    (let ((called nil))
+      (cl-letf (((symbol-function 'glassmacs-sessions-resolve)
+                 (lambda (&optional _) (user-error "Session gone"))))
+        (should-error
+         (glassmacs-r--with-target (lambda () (setq called t)))
+         :type 'user-error))
+      (should-not called))))
+
+(ert-deftest glassmacs-r-toolbar-offers-run-paragraph ()
+  (should (eq (nth 2 (assq 'glassmacs-run-paragraph
+                           glassmacs-r-ui--toolbar-actions))
+              'glassmacs-r-send-paragraph)))
+
+(ert-deftest glassmacs-r-menus-offer-preferences ()
+  (dolist (menu (list glassmacs-r-ui-source-menu
+                      glassmacs-r-ui-console-menu))
+    (should (eq (lookup-key menu [preferences])
+                'glassmacs-r-open-preferences))))
+
+(ert-deftest glassmacs-r-source-menu-offers-run-paragraph ()
+  (should (eq (lookup-key glassmacs-r-ui-source-menu [paragraph])
+              'glassmacs-r-send-paragraph)))
+
 (ert-deftest glassmacs-r-source-and-console-menus-have-distinct-actions ()
   (should (eq (lookup-key glassmacs-r-ui-source-menu [line])
               'glassmacs-r-send-line))
@@ -127,7 +179,7 @@
         (should (eq (lookup-key map [glassmacs-run-buffer])
                     'glassmacs-r-send-buffer))
         (should (eq (lookup-key map [glassmacs-show-console])
-                    'glassmacs-r-start-or-switch-console))))))
+                    'glassmacs-r-inspect-session))))))
 
 (ert-deftest glassmacs-r-console-toolbar-has-console-only-actions ()
   (with-temp-buffer
@@ -176,7 +228,7 @@
 
 (ert-deftest glassmacs-r-source-menu-offers-session-workflows ()
   (should (eq (lookup-key glassmacs-r-ui-source-menu [start])
-              'glassmacs-r-start-or-switch-console))
+              'glassmacs-r-start-and-target-session))
   (should (eq (lookup-key glassmacs-r-ui-source-menu [show-target])
               'glassmacs-r-show-target-session))
   (should (eq (lookup-key glassmacs-r-ui-source-menu [clear-target])
