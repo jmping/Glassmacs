@@ -44,13 +44,13 @@ Return the destination Emacs window; never kill BUFFER."
        (selected-window)))
     ((or 'split-right 'split-below)
      (with-selected-frame (or frame (selected-frame))
-       (let ((window (split-window (frame-selected-window frame) nil
+       (let ((window (split-window (frame-selected-window (or frame (selected-frame))) nil
                                    (if (eq placement 'split-right) 'right 'below))))
          (set-window-buffer window buffer)
          window)))
     ('replace
      (with-selected-frame (or frame (selected-frame))
-       (let ((window (frame-selected-window frame)))
+       (let ((window (frame-selected-window (or frame (selected-frame)))))
          (set-window-buffer window buffer)
          window)))
     (_ (user-error "Unsupported buffer placement: %s" placement))))
@@ -93,6 +93,9 @@ Use `glassmacs-show-buffer-in' to retain the original view."
           (frame (unless (eq placement 'new-frame)
                    (glassmacs-buffer-placement--choose-frame))))
      (list placement frame)))
+  (when (and (not (eq placement 'new-frame))
+             (not (frame-live-p frame)))
+    (user-error "Destination window is no longer available"))
   (let* ((source (selected-window))
          (buffer (window-buffer source))
          (point (window-point source))
@@ -100,7 +103,7 @@ Use `glassmacs-show-buffer-in' to retain the original view."
          (source-frame (window-frame source))
          (source-tab (when (bound-and-true-p tab-bar-mode)
                        (with-selected-frame source-frame
-                         (tab-bar--current-tab-index))))
+                         (1+ (tab-bar--current-tab-index)))))
          (destination (glassmacs-buffer-placement--display buffer placement frame)))
     (set-window-point destination point)
     (set-window-start destination start t)
@@ -121,6 +124,9 @@ Use `glassmacs-show-buffer-in' to retain the original view."
           (frame (unless (eq placement 'new-frame)
                    (glassmacs-buffer-placement--choose-frame))))
      (list placement frame)))
+  (when (and (not (eq placement 'new-frame))
+             (not (frame-live-p frame)))
+    (user-error "Destination window is no longer available"))
   (glassmacs-buffer-placement--display (current-buffer) placement frame))
 
 (defun glassmacs-buffer-placement--context-menu (menu _click)
