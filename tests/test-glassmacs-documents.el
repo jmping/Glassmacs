@@ -319,7 +319,11 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
     (unwind-protect
         (with-current-buffer buffer
           (setq major-mode 'inferior-ess-r-mode)
-          (cl-letf (((symbol-function 'read-multiple-choice)
+          (cl-letf (((symbol-function 'window-buffer)
+                     (lambda (&rest _) buffer))
+                    ((symbol-function 'glassmacs--buffer-shown-elsewhere-p)
+                     (lambda (&rest _) nil))
+                    ((symbol-function 'read-multiple-choice)
                      (lambda (&rest _) '(?c "cancel"))))
             (should-not (glassmacs--confirm-console-windows-close
                          (list (selected-window)))))
@@ -329,7 +333,9 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
 
 (ert-deftest glassmacs-console-close-prompt-is-optional ()
   (let ((glassmacs-confirm-console-window-close nil))
-    (cl-letf (((symbol-function 'glassmacs--live-r-console-p)
+    (cl-letf (((symbol-function 'window-buffer)
+               (lambda (&rest _) (current-buffer)))
+              ((symbol-function 'glassmacs--live-r-console-p)
                (lambda (_) t))
               ((symbol-function 'read-multiple-choice)
                (lambda (&rest _) (ert-fail "No prompt when disabled"))))
@@ -338,7 +344,9 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
 
 (ert-deftest glassmacs-console-close-hiding-never-terminates-r ()
   (let ((glassmacs-confirm-console-window-close t))
-    (cl-letf (((symbol-function 'glassmacs--live-r-console-p)
+    (cl-letf (((symbol-function 'window-buffer)
+               (lambda (&rest _) (current-buffer)))
+              ((symbol-function 'glassmacs--live-r-console-p)
                (lambda (_) t))
               ((symbol-function 'glassmacs--buffer-shown-elsewhere-p)
                (lambda (&rest _) nil))
