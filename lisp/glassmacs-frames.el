@@ -361,13 +361,14 @@ An untitled buffer receives a file name only through the successful save."
     (or (cdr (assoc selection choices))
         (user-error "No major mode selected"))))
 
-(defun glassmacs-new-buffer-in-mode (mode)
-  "Create an untitled buffer using major MODE and the document-opening policy."
+(defun glassmacs-new-buffer-in-mode (mode &optional from-menu)
+  "Create an untitled buffer using major MODE and the document-opening policy.
+FROM-MENU applies the graphical document-opening policy for menu selection."
   (interactive (list (glassmacs--read-major-mode)))
   (unless (memq mode (mapcar #'cdr (glassmacs--available-major-modes)))
     (user-error "Unavailable major mode: %s" mode))
   (let ((buffer (generate-new-buffer "Untitled"))
-        (interactive-call (called-interactively-p 'interactive)))
+        (interactive-call (or from-menu (called-interactively-p 'interactive))))
     (condition-case error-data
         (progn
           (with-current-buffer buffer
@@ -400,6 +401,22 @@ An untitled buffer receives a file name only through the successful save."
              (not (derived-mode-p 'ess-r-mode 'R-mode)))
     (user-error "ESS R mode is unavailable; install ESS first")))
 
+(defvar glassmacs-new-buffer-mode-menu
+  (let ((map (make-sparse-keymap "New Buffer in Mode")))
+    (dolist (entry (reverse glassmacs-common-major-modes))
+      (let* ((label (car entry))
+             (mode (cdr entry))
+             (command (lambda ()
+                        (interactive)
+                        (glassmacs-new-buffer-in-mode mode t))))
+        (define-key map (vector mode)
+          `(menu-item ,label ,command
+                      :enable (assoc ,label (glassmacs--available-major-modes))))))
+    (define-key map [other]
+      '(menu-item "Other Mode…" glassmacs-new-buffer-in-mode))
+    map)
+  "Selectable major modes for File → New Buffer in Mode.")
+
 (defun glassmacs--install-document-menu ()
   "Route macOS File menu open commands through Glassmacs' document policy."
   (when (and (eq system-type 'darwin) (display-graphic-p))
@@ -409,8 +426,7 @@ An untitled buffer receives a file name only through the successful save."
     (define-key global-map [menu-bar file glassmacs-review-unsaved]
       '(menu-item "Review Unsaved Documents…" glassmacs-review-unsaved-documents))
     (define-key global-map [menu-bar file glassmacs-new-in-mode]
-      '(menu-item "New Buffer in Mode…" glassmacs-new-buffer-in-mode
-                  :enable (menu-bar-non-minibuffer-window-p)))
+      (cons "New Buffer in Mode" glassmacs-new-buffer-mode-menu))
     (define-key global-map [menu-bar file glassmacs-change-mode]
       '(menu-item "Change Buffer Mode…" glassmacs-change-buffer-mode
                   :enable (menu-bar-non-minibuffer-window-p)))
