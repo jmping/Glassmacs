@@ -310,5 +310,42 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
           (should (file-exists-p opened)))
       (delete-directory directory t))))
 
+
+(ert-deftest glassmacs-console-close-cancel-preserves-running-process ()
+  (let* ((buffer (generate-new-buffer " *glassmacs-console-close-test*"))
+         (process (start-process "glassmacs-console-close-test" buffer
+                                 (or (executable-find "cat") "cat")))
+         (glassmacs-confirm-console-window-close t))
+    (unwind-protect
+        (with-current-buffer buffer
+          (setq major-mode 'inferior-ess-r-mode)
+          (cl-letf (((symbol-function 'read-multiple-choice)
+                     (lambda (&rest _) '(?c "cancel"))))
+            (should-not (glassmacs--confirm-console-windows-close
+                         (list (selected-window)))))
+          (should (process-live-p process)))
+      (when (process-live-p process) (delete-process process))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-console-close-prompt-is-optional ()
+  (let ((glassmacs-confirm-console-window-close nil))
+    (cl-letf (((symbol-function 'glassmacs--live-r-console-p)
+               (lambda (_) t))
+              ((symbol-function 'read-multiple-choice)
+               (lambda (&rest _) (ert-fail "No prompt when disabled"))))
+      (should (glassmacs--confirm-console-windows-close
+               (list (selected-window)))))))
+
+(ert-deftest glassmacs-console-close-hiding-never-terminates-r ()
+  (let ((glassmacs-confirm-console-window-close t))
+    (cl-letf (((symbol-function 'glassmacs--live-r-console-p)
+               (lambda (_) t))
+              ((symbol-function 'glassmacs--buffer-shown-elsewhere-p)
+               (lambda (&rest _) nil))
+              ((symbol-function 'read-multiple-choice)
+               (lambda (&rest _) '(?h "hide"))))
+      (should (glassmacs--confirm-console-windows-close
+               (list (selected-window)))))))
+
 (provide 'test-glassmacs-documents)
 ;;; test-glassmacs-documents.el ends here
