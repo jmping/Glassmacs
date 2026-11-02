@@ -15,6 +15,11 @@
   "Visible controls for R source and console buffers."
   :group 'glassmacs-r-ui)
 
+(defun glassmacs-r-open-preferences ()
+  "Open Glassmacs R preferences, including ESS and console controls."
+  (interactive)
+  (customize-group 'glassmacs-r))
+
 (defcustom glassmacs-r-show-toolbar t
   "Whether R buffers show contextual toolbar actions."
   :type 'boolean
@@ -22,6 +27,8 @@
 
 (defvar glassmacs-r-ui-source-menu
   (let ((menu (make-sparse-keymap "R")))
+    (define-key menu [preferences]
+      '(menu-item "R Preferences…" glassmacs-r-open-preferences))
     (define-key menu [help]
       '(menu-item "R Help…" glassmacs-r-ui-help))
     (define-key menu [console]
@@ -91,6 +98,8 @@
 
 (defvar glassmacs-r-ui-console-menu
   (let ((menu (make-sparse-keymap "R Console")))
+    (define-key menu [preferences]
+      '(menu-item "R Preferences…" glassmacs-r-open-preferences))
     (define-key menu [sessions]
       '(menu-item "Choose R Session…" glassmacs-r-select-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
