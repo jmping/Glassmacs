@@ -443,5 +443,7 @@ FROM-MENU applies the graphical document-opening policy for menu selection."
 (with-eval-after-load 'menu-bar
   (glassmacs--install-document-menu))
 
+(require 'glassmacs-buffer-placement)
+
 (provide 'glassmacs-frames)
 ;;; glassmacs-frames.el ends here
