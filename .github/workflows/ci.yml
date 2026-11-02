@@ -50,6 +50,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes emacs-nox r-base-core elpa-ess auctex hunspell hunspell-en-us r-cran-shiny r-cran-rmarkdown pandoc elpa-markdown-mode
+      - name: Verify real R graphics device lifecycle
+        run: Rscript --vanilla tests/r-graphics-device.R
       - name: Install pinned polymode and poly-R
         # Not packaged for Ubuntu; fetch exact upstream commits so the mixed
         # document tests run against known versions.
