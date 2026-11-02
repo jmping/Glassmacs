@@ -179,7 +179,7 @@
         (should (eq (lookup-key map [glassmacs-run-buffer])
                     'glassmacs-r-send-buffer))
         (should (eq (lookup-key map [glassmacs-show-console])
-                    'glassmacs-r-start-or-switch-console))))))
+                    'glassmacs-r-start-and-target-session))))))
 
 (ert-deftest glassmacs-r-console-toolbar-has-console-only-actions ()
   (with-temp-buffer
