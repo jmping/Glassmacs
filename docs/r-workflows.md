@@ -39,6 +39,24 @@ ESS's `inferior-ess-r-program` setting. No platform-specific R path is
 assumed. ESS provides completion, help, syntax highlighting, and project-aware
 session behavior.
 
+### R Help window safety (Alpha)
+
+On graphical macOS, **R Help…** opens ESS R documentation in a separate
+native frame instead of replacing the active R source document. The
+display rule applies to ESS R help buffers, not ordinary Emacs help,
+source files, or R consoles. This does not kill, save, or clear the source
+buffer. To opt out, customize `glassmacs-r-help-separate-frame` to nil
+and restart Glassmacs; ordinary ESS help display behavior is restored.
+
+**Packaged macOS acceptance (still required):** modify an R file without
+saving, invoke **R Help…**, and confirm the source stays visible and
+modified in its original frame. Close the help frame, return to the
+source, then close the source using Command-W and the native red close
+button in separate runs; confirm the Save / Don't Save / Cancel
+safeguard remains active and Cancel preserves the source. Repeat with
+a visible R console. Automated Emacs batch tests verify routing only,
+not Cocoa focus or native close-button behavior.
+
 ### Native ESS/R graphics controls (Alpha, GUI verification outstanding)
 
 Glassmacs retains R's native graphics devices rather than replacing them
