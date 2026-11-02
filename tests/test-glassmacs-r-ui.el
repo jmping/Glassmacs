@@ -355,5 +355,47 @@
     (should-not (eq (lookup-key comint-mode-map [up])
                     #'glassmacs-r-ui-previous-input-or-line))))
 
+
+(ert-deftest glassmacs-r-ui-help-display-only-matches-ess-help ()
+  (should (glassmacs-r-ui--ess-help-buffer-p "*help[R](lm)" nil))
+  (should (glassmacs-r-ui--ess-help-buffer-p "*R Help: lm*" nil))
+  (should-not (glassmacs-r-ui--ess-help-buffer-p "*Help*" nil))
+  (should-not (glassmacs-r-ui--ess-help-buffer-p "analysis.R" nil))
+  (with-temp-buffer
+    (rename-buffer " *glassmacs-ess-help-test*" t)
+    (setq major-mode 'ess-help-mode)
+    (should (glassmacs-r-ui--ess-help-buffer-p (buffer-name) nil))))
+
+(ert-deftest glassmacs-r-ui-help-display-action-never-reuses-document-window ()
+  (let ((action (glassmacs-r-ui--help-frame-action)))
+    (should (eq (car action) 'display-buffer-pop-up-frame))
+    (should (eq (cdr (assq 'inhibit-same-window (cdr action))) t))
+    (should (eq (cdr (assq 'reusable-frames (cdr action))) nil))))
+
+(ert-deftest glassmacs-r-ui-help-display-installs-on-macos-once ()
+  (let ((system-type 'darwin)
+        (glassmacs-r-help-separate-frame t)
+        (display-buffer-alist nil))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t)))
+      (glassmacs-r-ui--install-help-display)
+      (glassmacs-r-ui--install-help-display)
+      (should (= (length display-buffer-alist) 1))
+      (should (eq (caar display-buffer-alist)
+                  #'glassmacs-r-ui--ess-help-buffer-p)))))
+
+(ert-deftest glassmacs-r-ui-help-display-respects-off-switch-and-batch ()
+  (let ((system-type 'darwin)
+        (glassmacs-r-help-separate-frame nil)
+        (display-buffer-alist nil))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t)))
+      (glassmacs-r-ui--install-help-display)
+      (should-not display-buffer-alist)))
+  (let ((system-type 'gnu/linux)
+        (glassmacs-r-help-separate-frame t)
+        (display-buffer-alist nil))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t)))
+      (glassmacs-r-ui--install-help-display)
+      (should-not display-buffer-alist))))
+
 (provide 'test-glassmacs-r-ui)
 ;;; test-glassmacs-r-ui.el ends here

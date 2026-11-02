@@ -154,6 +154,40 @@ the user cancels or the save does not complete."
           t)
       (_ nil))))
 
+(defcustom glassmacs-confirm-console-window-close t
+  "Ask before hiding the last visible window of a live R console.
+Hiding the window leaves the R process, pending work, command history,
+and console buffer intact.  Explicit session termination is a separate
+command and requires its own confirmation."
+  :type 'boolean
+  :group 'glassmacs-frames)
+
+(defun glassmacs--live-r-console-p (buffer)
+  "Return non-nil when BUFFER belongs to a live ESS R process."
+  (and (buffer-live-p buffer)
+       (with-current-buffer buffer
+         (and (derived-mode-p 'inferior-ess-r-mode 'inferior-ess-mode)
+              (let ((process (get-buffer-process buffer)))
+                (and (processp process) (process-live-p process)))))))
+
+(defun glassmacs--confirm-console-windows-close (windows)
+  "Confirm hiding live R consoles whose last visible view is in WINDOWS.
+This never terminates R.  An explicit Cancel aborts the frame/window
+close; closing one of several console views needs no confirmation."
+  (catch 'cancel
+    (dolist (buffer (delete-dups (mapcar #'window-buffer windows)) t)
+      (when (and glassmacs-confirm-console-window-close
+                 (glassmacs--live-r-console-p buffer)
+                 (not (glassmacs--buffer-shown-elsewhere-p buffer windows)))
+        (unless (eq
+                 (car (read-multiple-choice
+                       (format "Hide R console %s? The R session keeps running. "
+                               (buffer-name buffer))
+                       '((?h "hide" "Hide this window; keep R running")
+                         (?c "cancel" "Keep this R console window open"))))
+                 ?h)
+          (throw 'cancel nil))))))
+
 (defun glassmacs--close-documents-in-windows (windows)
   "Close the documents shown only in WINDOWS, asking about unsaved changes.
 Only ordinary documents are closed (see
@@ -196,7 +230,8 @@ tab, or its frame."
   (when (active-minibuffer-window)
     (abort-recursive-edit))
   (let ((window (selected-window)))
-    (if (glassmacs--close-documents-in-windows (list window))
+    (if (and (glassmacs--confirm-console-windows-close (list window))
+             (glassmacs--close-documents-in-windows (list window)))
         (glassmacs--close-view window)
       (message "Close canceled"))))
 

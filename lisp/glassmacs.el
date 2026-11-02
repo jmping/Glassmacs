@@ -8,6 +8,7 @@
 (require 'glassmacs-keys)
 (require 'glassmacs-r)
 (require 'glassmacs-sessions)
+(require 'glassmacs-r-graphics)
 (require 'glassmacs-r-ui)
 (require 'glassmacs-remote)
 (require 'glassmacs-documents)

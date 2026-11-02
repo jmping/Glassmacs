@@ -5,6 +5,7 @@
 (require 'cl-lib)
 (require 'tool-bar)
 (require 'glassmacs-sessions)
+(require 'glassmacs-r-graphics)
 
 (defgroup glassmacs-r-ui nil
   "R console and contextual user interface."
@@ -43,6 +44,22 @@
                   :enable glassmacs-r-target-session))
     (define-key menu [list-sessions]
       '(menu-item "List R Sessions" glassmacs-r-list-sessions))
+    (define-key menu [graphics-separator] menu-bar-separator)
+    (define-key menu [graphics-list]
+      '(menu-item "List Graphics Devices" glassmacs-r-graphics-list-devices
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-select]
+      '(menu-item "Select Graphics Device…" glassmacs-r-graphics-select-device
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-close]
+      '(menu-item "Close Current Graphics Device" glassmacs-r-graphics-close-device
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-open]
+      '(menu-item "Open Graphics Device…" glassmacs-r-graphics-open-device
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-test]
+      '(menu-item "Plot Cars (Graphics Test)" glassmacs-r-graphics-smoke-plot
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [shiny-separator] menu-bar-separator)
     (define-key menu [shiny-preview]
       '(menu-item "Open Shiny Preview" glassmacs-shiny-open-preview
@@ -81,17 +98,74 @@
       '(menu-item "Start Another R Session" glassmacs-r-start-session))
     (define-key menu [history]
       '(menu-item "Previous Command" comint-previous-input))
+    (define-key menu [graphics-separator] menu-bar-separator)
+    (define-key menu [graphics-list]
+      '(menu-item "List Graphics Devices" glassmacs-r-graphics-list-devices
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-select]
+      '(menu-item "Select Graphics Device…" glassmacs-r-graphics-select-device
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-close]
+      '(menu-item "Close Current Graphics Device" glassmacs-r-graphics-close-device
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-open]
+      '(menu-item "Open Graphics Device…" glassmacs-r-graphics-open-device
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [graphics-test]
+      '(menu-item "Plot Cars (Graphics Test)" glassmacs-r-graphics-smoke-plot
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [interrupt]
       '(menu-item "Interrupt R" glassmacs-r-interrupt
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     menu)
   "Console-specific R actions.")
 
+(defcustom glassmacs-r-help-separate-frame t
+  "Display ESS R help in a separate native frame on graphical macOS.
+This setting does not alter the user's ordinary help display rules on
+other platforms.  When nil, ESS uses its normal display behavior."
+  :type 'boolean
+  :group 'glassmacs-r-ui)
+
+(defun glassmacs-r-ui--ess-help-buffer-p (name _action)
+  "Return non-nil if NAME is an ESS R help buffer.
+Check the actual buffer's major mode when available.  The name fallback
+covers the first display before ESS finishes setting its help mode."
+  (let ((buffer (get-buffer name)))
+    (or (and buffer
+             (with-current-buffer buffer
+               (derived-mode-p 'ess-help-mode)))
+        (or (string-prefix-p "*help[R]" name)
+            (string-prefix-p "*R Help" name)))))
+
+(defun glassmacs-r-ui--help-frame-action ()
+  "Return the ESS R help frame display action.
+Never reuse the selected document window, even if the user has configured
+a general-purpose display rule that would otherwise do so."
+  '(display-buffer-pop-up-frame
+    (inhibit-same-window . t)
+    (reusable-frames . nil)))
+
+(defun glassmacs-r-ui--install-help-display ()
+  "Install a narrowly scoped, macOS-only ESS R help display rule."
+  (when (and (eq system-type 'darwin)
+             (display-graphic-p)
+             glassmacs-r-help-separate-frame)
+    (unless (cl-find #'glassmacs-r-ui--ess-help-buffer-p
+                     display-buffer-alist :key #'car :test #'eq)
+      (push (cons #'glassmacs-r-ui--ess-help-buffer-p
+                  (glassmacs-r-ui--help-frame-action))
+            display-buffer-alist))))
+
 (defun glassmacs-r-ui-help ()
-  "Prompt for R documentation using ESS, if available."
+  "Prompt for R documentation using ESS, without replacing R source.
+On graphical macOS, R help is routed to a separate native frame.
+Closing that help frame must not close or discard the source document."
   (interactive)
   (if (fboundp 'ess-display-help-on-object)
-      (call-interactively #'ess-display-help-on-object)
+      (progn
+        (glassmacs-r-ui--install-help-display)
+        (call-interactively #'ess-display-help-on-object))
     (user-error "R help requires ESS")))
 
 ;; ICON names must be images that GNU Emacs itself ships in `etc/images'
@@ -383,6 +457,10 @@ menus everywhere; only the R entries are added buffer-locally."
   (when (boundp 'inferior-ess-r-mode-map)
     (define-key inferior-ess-r-mode-map [up] #'glassmacs-r-ui-previous-input-or-line)
     (define-key inferior-ess-r-mode-map [down] #'glassmacs-r-ui-next-input-or-line)))
+
+;; Help buffers can be displayed asynchronously after the ESS request.
+;; Install at startup as well as at the explicit R Help entrypoint.
+(add-hook 'window-setup-hook #'glassmacs-r-ui--install-help-display)
 
 (provide 'glassmacs-r-ui)
 ;;; glassmacs-r-ui.el ends here
