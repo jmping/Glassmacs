@@ -119,11 +119,11 @@
 (ert-deftest glassmacs-r-menus-offer-preferences ()
   (dolist (menu (list glassmacs-r-ui-source-menu
                       glassmacs-r-ui-console-menu))
-    (should (eq (nth 2 (lookup-key menu [preferences]))
+    (should (eq (lookup-key menu [preferences])
                 'glassmacs-r-open-preferences))))
 
 (ert-deftest glassmacs-r-source-menu-offers-run-paragraph ()
-  (should (eq (nth 2 (lookup-key glassmacs-r-ui-source-menu [paragraph]))
+  (should (eq (lookup-key glassmacs-r-ui-source-menu [paragraph])
               'glassmacs-r-send-paragraph)))
 
 (ert-deftest glassmacs-r-source-and-console-menus-have-distinct-actions ()
