@@ -35,20 +35,20 @@ Return the destination Emacs window; never kill BUFFER."
          (switch-to-buffer buffer)
          (selected-window))))
     ('new-tab
-     (with-selected-frame frame
+     (with-selected-frame (or frame (selected-frame))
        (require 'tab-bar)
        (tab-bar-mode 1)
        (tab-bar-new-tab)
        (switch-to-buffer buffer)
        (selected-window)))
     ((or 'split-right 'split-below)
-     (with-selected-frame frame
+     (with-selected-frame (or frame (selected-frame))
        (let ((window (split-window (frame-selected-window frame) nil
                                    (if (eq placement 'split-right) 'right 'below))))
          (set-window-buffer window buffer)
          window)))
     ('replace
-     (with-selected-frame frame
+     (with-selected-frame (or frame (selected-frame))
        (let ((window (frame-selected-window frame)))
          (set-window-buffer window buffer)
          window)))
@@ -58,23 +58,26 @@ Return the destination Emacs window; never kill BUFFER."
   "Whether WINDOW still displays BUFFER."
   (and (window-live-p window) (eq (window-buffer window) buffer)))
 
-(defun glassmacs-buffer-placement--remove-source-view (source destination buffer)
-  "Remove SOURCE after BUFFER is visible at DESTINATION.
-Never kill BUFFER, and never remove DESTINATION."
+(defun glassmacs-buffer-placement--remove-source-view (source destination buffer
+                                                        source-frame source-tab)
+  "Remove the original view of BUFFER after DESTINATION is established.
+SOURCE-FRAME and SOURCE-TAB identify the original tab even if creating
+the destination changed the selected tab in that frame."
   (when (and (not (eq source destination))
-             (glassmacs-buffer-placement--source-view-live-p source buffer))
-    (let ((frame (window-frame source)))
-      (cond
-       ((> (length (window-list frame 'never)) 1)
-        (delete-window source))
-       ((and (bound-and-true-p tab-bar-mode)
-             (> (length (funcall tab-bar-tabs-function frame)) 1))
-        (with-selected-frame frame (tab-bar-close-tab)))
-       ;; A last view in a frame is replaced by another buffer rather than
-       ;; deleting the native frame (which can have other tabs).
-       (t
-        (with-selected-window source
-          (switch-to-buffer (other-buffer buffer t))))))))
+             (frame-live-p source-frame))
+    (with-selected-frame source-frame
+      (when (and source-tab (bound-and-true-p tab-bar-mode))
+        (tab-bar-select-tab source-tab))
+      (when (glassmacs-buffer-placement--source-view-live-p source buffer)
+        (cond
+         ((> (length (window-list source-frame 'never)) 1)
+          (delete-window source))
+         ((and source-tab (bound-and-true-p tab-bar-mode)
+               (> (length (funcall tab-bar-tabs-function source-frame)) 1))
+          (tab-bar-close-tab))
+         (t
+          (with-selected-window source
+            (switch-to-buffer (other-buffer buffer t)))))))))
 
 (defun glassmacs-move-buffer-to (placement &optional frame)
   "Move the current buffer view to PLACEMENT without killing its buffer.
@@ -93,10 +96,15 @@ Use `glassmacs-show-buffer-in' to retain the original view."
          (buffer (window-buffer source))
          (point (window-point source))
          (start (window-start source))
+         (source-frame (window-frame source))
+         (source-tab (when (bound-and-true-p tab-bar-mode)
+                       (with-selected-frame source-frame
+                         (tab-bar--current-tab-index))))
          (destination (glassmacs-buffer-placement--display buffer placement frame)))
     (set-window-point destination point)
     (set-window-start destination start t)
-    (glassmacs-buffer-placement--remove-source-view source destination buffer)
+    (glassmacs-buffer-placement--remove-source-view
+     source destination buffer source-frame source-tab)
     (select-frame-set-input-focus (window-frame destination))
     (select-window destination)
     destination))
@@ -130,9 +138,8 @@ Use `glassmacs-show-buffer-in' to retain the original view."
   (define-key global-map [menu-bar window glassmacs-show-buffer]
     '(menu-item "Show Buffer In…" glassmacs-show-buffer-in))
   (with-eval-after-load 'mouse
-    (when (boundp 'context-menu-functions)
-      (add-hook 'context-menu-functions
-                #'glassmacs-buffer-placement--context-menu))))
+    (add-hook 'context-menu-functions
+              #'glassmacs-buffer-placement--context-menu)))
 
 (glassmacs-buffer-placement-install)
 
