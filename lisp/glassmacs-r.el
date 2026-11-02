@@ -13,6 +13,7 @@ When nil, ESS uses its normal PATH-based discovery."
   :group 'glassmacs-r)
 
 (defvar inferior-ess-r-program)
+(defvar ess-local-process-name)
 
 (defun glassmacs-r--configure-ess ()
   "Configure ESS without replacing its keymaps."
