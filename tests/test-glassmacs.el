@@ -1313,7 +1313,7 @@ otherwise never build."
             (setq created (current-buffer))
             (should (eq major-mode 'text-mode))
             (should-not buffer-file-name))
-        (when (buffer-live-p created) (kill-buffer created)))))
+        (when (buffer-live-p created) (kill-buffer created))))))
 
 (provide 'test-glassmacs)
 ;;; test-glassmacs.el ends here
