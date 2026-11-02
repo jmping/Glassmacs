@@ -74,6 +74,24 @@
     (unless (fboundp 'markdown-mode)
       (should-not (assoc "Markdown" (glassmacs--available-major-modes))))))
 
+(ert-deftest glassmacs-r-send-paragraph-submits-region-without-moving-point ()
+  (with-temp-buffer
+    (insert "x <- 1\ny <- 2\n\nz <- 3\n")
+    (goto-char (point-min))
+    (forward-line 1)
+    (let ((original (point))
+          submitted)
+      (cl-letf (((symbol-function 'ess-eval-region)
+                 (lambda (start end)
+                   (setq submitted (buffer-substring-no-properties start end)))))
+        (glassmacs-r-send-paragraph))
+      (should (equal submitted "x <- 1\ny <- 2\n"))
+      (should (= (point) original)))))
+
+(ert-deftest glassmacs-r-source-menu-offers-run-paragraph ()
+  (should (eq (lookup-key glassmacs-r-ui-source-menu [paragraph])
+              'glassmacs-r-send-paragraph)))
+
 (ert-deftest glassmacs-r-source-and-console-menus-have-distinct-actions ()
   (should (eq (lookup-key glassmacs-r-ui-source-menu [line])
               'glassmacs-r-send-line))
