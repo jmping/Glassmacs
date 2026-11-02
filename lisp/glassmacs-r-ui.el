@@ -186,6 +186,7 @@ Closing that help frame must not close or discard the source document."
 (defconst glassmacs-r-ui--toolbar-actions
   '((glassmacs-run-line "Run Line" glassmacs-r-send-line "right-arrow")
     (glassmacs-run-selection "Run Selection" glassmacs-r-send-region "copy")
+    (glassmacs-run-paragraph "Run Paragraph" glassmacs-r-send-paragraph "next-page")
     (glassmacs-run-function "Run Function" glassmacs-r-send-function "jump-to")
     (glassmacs-run-buffer "Run Buffer" glassmacs-r-send-buffer "next-page")
     (glassmacs-show-console "R Console" glassmacs-r-inspect-session "open")
