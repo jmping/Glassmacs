@@ -1398,6 +1398,36 @@ otherwise never build."
             (should-not buffer-file-name))
         (when (buffer-live-p created) (kill-buffer created))))))
 
+
+(ert-deftest glassmacs-buffer-placement-replace-preserves-buffer ()
+  (save-window-excursion
+    (let ((source (generate-new-buffer " *glassmacs-move-source*"))
+          (destination (generate-new-buffer " *glassmacs-move-destination*")))
+      (unwind-protect
+          (progn
+            (switch-to-buffer destination)
+            (let ((window (glassmacs-buffer-placement--display
+                           source 'replace (selected-frame))))
+              (should (eq (window-buffer window) source))
+              (should (buffer-live-p destination))
+              (should (buffer-live-p source))))
+        (kill-buffer source)
+        (kill-buffer destination)))))
+
+(ert-deftest glassmacs-buffer-placement-split-preserves-original-view ()
+  (save-window-excursion
+    (delete-other-windows)
+    (let ((source (generate-new-buffer " *glassmacs-split-source*")))
+      (unwind-protect
+          (let* ((original (selected-window))
+                 (destination (glassmacs-buffer-placement--display
+                               source 'split-right (selected-frame))))
+            (should (window-live-p original))
+            (should (window-live-p destination))
+            (should-not (eq original destination))
+            (should (eq (window-buffer destination) source)))
+        (kill-buffer source)))))
+
 (provide 'test-glassmacs)
 ;;; test-glassmacs.el ends here
 
