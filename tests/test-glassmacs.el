@@ -12,6 +12,32 @@
 (require 'glassmacs)
 
 
+(ert-deftest glassmacs-aquamacs-toolbar-has-upstream-general-order ()
+  (should
+   (equal (mapcar #'car glassmacs-aquamacs-toolbar-items)
+          '(new open recent close revert save save-as print separator-1
+                undo redo cut copy paste search spelling separator-2
+                duplicate preferences help))))
+
+(ert-deftest glassmacs-aquamacs-toolbar-map-dispatches-document-commands ()
+  (let ((map (glassmacs-aquamacs-toolbar-map)))
+    (should (eq (lookup-key map [new]) 'glassmacs-new-document))
+    (should (eq (lookup-key map [open])
+                'glassmacs-open-document-from-toolbar))
+    (should (eq (lookup-key map [close]) 'glassmacs-close-document))
+    (should (eq (lookup-key map [save-as])
+                'glassmacs-save-document-as-prompt))
+    (should (eq (lookup-key map [search]) 'isearch-forward))
+    (should (eq (lookup-key map [preferences]) 'customize))))
+
+(ert-deftest glassmacs-aquamacs-toolbar-install-respects-preferences ()
+  (with-temp-buffer
+    (let ((glassmacs-aquamacs-toolbar-enabled nil))
+      (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+                ((symbol-function 'tool-bar-mode)
+                 (lambda (&rest _) (error "Toolbar should be disabled"))))
+        (glassmacs-aquamacs-toolbar-install)))))
+
 (ert-deftest glassmacs-new-buffer-in-mode-creates-distinct-mode-buffer ()
   (let (buffer)
     (unwind-protect
