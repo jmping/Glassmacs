@@ -88,6 +88,29 @@
       (should (equal submitted "x <- 1\ny <- 2\n"))
       (should (= (point) original)))))
 
+(ert-deftest glassmacs-r-execution-uses-explicit-session-target ()
+  (with-temp-buffer
+    (setq-local glassmacs-r-target-session "R-2")
+    (let (observed)
+      (cl-letf (((symbol-function 'glassmacs-sessions-resolve)
+                 (lambda (&optional _) 'test-session))
+                ((symbol-function 'glassmacs-session-name)
+                 (lambda (_) "R-process-2")))
+        (glassmacs-r--with-target
+         (lambda () (setq observed ess-local-process-name))))
+      (should (equal observed "R-process-2")))))
+
+(ert-deftest glassmacs-r-execution-rejects-stale-explicit-target ()
+  (with-temp-buffer
+    (setq-local glassmacs-r-target-session "gone")
+    (let ((called nil))
+      (cl-letf (((symbol-function 'glassmacs-sessions-resolve)
+                 (lambda (&optional _) (user-error "Session gone"))))
+        (should-error
+         (glassmacs-r--with-target (lambda () (setq called t)))
+         :type 'user-error))
+      (should-not called))))
+
 (ert-deftest glassmacs-r-toolbar-offers-run-paragraph ()
   (should (equal (nth 2 (assq 'glassmacs-run-paragraph
                               glassmacs-r-ui--toolbar-actions))
