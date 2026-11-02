@@ -8,7 +8,50 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      emacs: ${{ steps.paths.outputs.emacs }}
+      ess: ${{ steps.paths.outputs.ess }}
+      macos: ${{ steps.paths.outputs.macos }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: paths
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+            changed=$(git ls-files)
+          else
+            changed=$(git diff --name-only "$BASE_SHA" "$GITHUB_SHA")
+          fi
+          # Shared Emacs configuration and tests need the fast ERT gate.
+          emacs=false; ess=false; macos=false
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            case "$file" in
+              lisp/*|init.el|tests/*|scripts/test|scripts/acceptance-matrix|scripts/macos-gui-acceptance|docs/acceptance-matrix*|.github/workflows/ci.yml) emacs=true ;;
+            esac
+            case "$file" in
+              lisp/glassmacs-r*|lisp/glassmacs-sessions.el|lisp/glassmacs-ess*|lisp/glassmacs-packages.el|tests/*ess*|tests/*r-*|tests/r-*|scripts/bundle-ess|.github/workflows/ci.yml) ess=true ;;
+            esac
+            case "$file" in
+              macos/*|scripts/build-macos-app|scripts/validate-macos-app|scripts/update-build-sign|scripts/notarize-staple|scripts/bundle-ess|lisp/*|init.el|tests/*|scripts/macos-gui-acceptance|.github/workflows/ci.yml) macos=true ;;
+            esac
+          done <<< "$changed"
+          echo "emacs=$emacs" >> "$GITHUB_OUTPUT"
+          echo "ess=$ess" >> "$GITHUB_OUTPUT"
+          echo "macos=$macos" >> "$GITHUB_OUTPUT"
+          printf 'Changed paths:\n%s\nGates: emacs=%s ess=%s macos=%s\n' "$changed" "$emacs" "$ess" "$macos"
+
   emacs-batch:
+    needs: changes
+    if: needs.changes.outputs.emacs == 'true'
+
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -41,6 +84,8 @@ jobs:
                         (byte-compile-file file)))'
 
   ess-r-integration:
+    needs: changes
+    if: needs.changes.outputs.ess == 'true'
     runs-on: ubuntu-24.04
     # A stuck package installation must fail the job, not hang it.
     timeout-minutes: 30
@@ -79,6 +124,8 @@ jobs:
           EMACSLOADPATH="$ess_dir:$auctex_dir:$markdown_dir:$poly/polymode:$poly/poly-markdown:$poly/poly-noweb:$poly/poly-R:/usr/share/emacs/site-lisp:" ./scripts/test
 
   macos-launcher:
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
