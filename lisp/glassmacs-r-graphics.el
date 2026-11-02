@@ -4,8 +4,6 @@
 ;; Glassmacs does not replace ESS's evaluation/filter machinery, install
 ;; XQuartz, force a device at startup, or switch editor windows automatically.
 
-(require 'cl-lib)
-(require 'subr-x)
 (require 'glassmacs-sessions)
 
 (defgroup glassmacs-r-graphics nil
@@ -53,11 +51,22 @@ buffer to a different R process."
      "if (grDevices::dev.cur() == 1L) grDevices::dev.new()")
     (_ (user-error "Unknown R graphics device: %s" device))))
 
+(defun glassmacs-r-graphics--session-scope (session)
+  "Return the SESSION identity while preserving an explicit buffer target.
+The queue's explicit session argument is only used after resolving the current
+buffer's target, so it cannot bypass a stale or terminated buffer binding."
+  (let ((target (glassmacs-r-graphics--local-session session)))
+    (when (and glassmacs-r-target-session
+               (not (equal glassmacs-r-target-session
+                           (glassmacs-session-id target))))
+      (user-error "This buffer targets a different R session"))
+    target))
+
 (defun glassmacs-r-graphics--enqueue (expression operation &optional session)
   "Submit R EXPRESSION for OPERATION to a verified local SESSION.
 Use the existing queue so source code and the original process identity
 remain bound to the selected session at submission time."
-  (let ((target (glassmacs-r-graphics--local-session session)))
+  (let ((target (glassmacs-r-graphics--session-scope session)))
     (glassmacs-queue-submit
      expression target
      (list :buffer (buffer-name)
