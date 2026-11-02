@@ -1298,6 +1298,38 @@ otherwise never build."
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
+
+(ert-deftest glassmacs-r-run-line-advances-r-source-after-send ()
+  (with-temp-buffer
+    (setq major-mode 'ess-r-mode)
+    (insert "x <- 1\ny <- 2\n")
+    (goto-char (point-min))
+    (let ((calls 0))
+      (cl-letf (((symbol-function 'ess-eval-line)
+                 (lambda () (setq calls (1+ calls)))))
+        (glassmacs-r-send-line)
+        (should (= calls 1))
+        (should (= (line-number-at-pos) 2))))))
+
+(ert-deftest glassmacs-r-run-line-does-not-advance-on-error ()
+  (with-temp-buffer
+    (setq major-mode 'ess-r-mode)
+    (insert "stop('error')\ny <- 2\n")
+    (goto-char (point-min))
+    (cl-letf (((symbol-function 'ess-eval-line)
+               (lambda () (error "R evaluation failed"))))
+      (should-error (glassmacs-r-send-line))
+      (should (= (line-number-at-pos) 1)))))
+
+(ert-deftest glassmacs-r-run-line-does-not-advance-non-r-buffer ()
+  (with-temp-buffer
+    (text-mode)
+    (insert "one\ntwo\n")
+    (goto-char (point-min))
+    (cl-letf (((symbol-function 'ess-eval-line) (lambda () t)))
+      (glassmacs-r-send-line)
+      (should (= (line-number-at-pos) 1)))))
+
 (provide 'test-glassmacs)
 ;;; test-glassmacs.el ends here
 
