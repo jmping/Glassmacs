@@ -23,9 +23,8 @@
         (with-temp-buffer
           (set-buffer-multibyte nil)
           (insert-file-contents-literally path)
-          (should (string-prefix-p (concat (string 137) "PNG\r\n"
-                                            (string 26) "\n")
-                                   (buffer-string))))))))
+          (should (equal (cl-subseq (string-to-list (buffer-string)) 0 8)
+                         '(137 80 78 71 13 10 26 10)))))))
 
 (ert-deftest glassmacs-aquamacs-toolbar-has-upstream-general-order ()
   (should
