@@ -39,27 +39,61 @@ ESS's `inferior-ess-r-program` setting. No platform-specific R path is
 assumed. ESS provides completion, help, syntax highlighting, and project-aware
 session behavior.
 
-### ESS/R graphics smoke path
+### Native ESS/R graphics controls (Alpha, GUI verification outstanding)
 
-Glassmacs does not manage graphics devices or provide a plot viewer. From an R
-source buffer, start ESS with `M-x glassmacs-r-start`, then evaluate
-`plot(cars)` using `M-x glassmacs-r-send-line` or ESS's normal evaluation
-bindings. On macOS, use the native graphics device provided by the installed R
-build when available; device and window behavior depend on that R installation.
-This path has not been validated on macOS by Linux CI.
+Glassmacs retains R's native graphics devices rather than replacing them
+with an Emacs plot viewer. Regular R commands such as `plot(cars)` and
+`ggplot2` (if installed) continue to use the device managed by **R itself**.
+There is no graphics initialization at startup, no background process, and
+no forced XQuartz dependency. R graphics capability and actual Quartz window
+behavior are properties of the locally installed R build and macOS.
 
-If `ggplot2` is already installed, an optional second check is:
+The **R** menus in both R source and R console buffers now provide:
 
-```r
-ggplot2::ggplot(cars, ggplot2::aes(speed, dist)) +
-  ggplot2::geom_point()
-```
+- **Plot Cars (Graphics Test):** send `plot(cars)` to the selected local ESS
+  session for an opt-in visual smoke test.
+- **Open Graphics Device…:** open a device only when explicitly requested;
+  `glassmacs-r-graphics-device` defaults to `auto` (R's ordinary device
+  behavior). Set it to `quartz` to request native Quartz on macOS.
+  Use `C-u M-x glassmacs-r-graphics-open-device` to select `auto`,
+  `quartz` or the explicit `x11` fallback once.
+- **List Graphics Devices:** print `dev.list()` in the ESS console.
+- **Select Graphics Device…:** select an existing device by its R device
+  number, without creating a new graphics window.
+- **Close Current Graphics Device:** call `dev.off()` if an active R device
+  exists; no effect if only the null device is present.
 
-If the native device is unavailable, check the R build's graphics capabilities
-in the ESS console. `X11()` is an explicit fallback only when XQuartz and its
-display are configured; Glassmacs neither requires XQuartz nor selects X11
-automatically. To diagnose Glassmacs startup and optional dependencies, run
-`M-x glassmacs-diagnostics`; it does not probe or execute R.
+These actions are submitted through Glassmacs's per-session R execution
+queue. They retain the source buffer's explicit target and the exact ESS
+process incarnation. An absent, terminated, ambiguous, or remote session
+is rejected rather than silently switching to another R process. Remote
+graphics are deliberately outside the Alpha scope. The commands do not
+change Emacs window focus explicitly; the native Quartz window manager may
+still activate a graphics window according to the installed R build.
+
+**Three-step native macOS acceptance test (not satisfied by Linux CI):**
+1. In an R source file, start a local R session and run `plot(cars)`
+   through the R menu or ordinary ESS execution. Confirm a native Quartz
+   graphics window appears and source editing remains usable.
+2. If `ggplot2` is installed, execute
+   `print(ggplot2::ggplot(cars, ggplot2::aes(speed, dist)) +
+   ggplot2::geom_point())` in that same session. Confirm it appears on
+   the expected device. Without `ggplot2`, skip this check.
+3. Run **List Graphics Devices**, then **Select Graphics Device…** and
+   **Close Current Graphics Device**; reopen it explicitly with
+   `glassmacs-r-graphics-open-device` (Quartz on a capable macOS R build).
+   Verify that returning to the R source file remains possible and that
+   closing a plot does not terminate ESS.
+
+If the native device is unavailable, query `capabilities("aqua")` in R
+and verify you are using a framework R build that supports Quartz.
+`capabilities("X11")` plus a working XQuartz server is an **opt-in
+fallback**, not an automatic choice. R may report device-level errors in
+the ESS console; an R-level error is not the same as an Emacs process or
+GUI crash. For local diagnostic information use
+`M-x glassmacs-diagnostics`. Native Cocoa plotting, focus behavior, and
+multiple-device lifecycle remain unverified until the acceptance test
+runs on the built app.
 
 ## Documents
 
