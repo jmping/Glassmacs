@@ -420,6 +420,18 @@ open(binary, "wb").write(data[:32] + text.encode())
         self.assertNotIn("applicationShouldTerminateAfterLastWindowClosed",
                          lifecycle)
 
+    def test_build_bundles_pinned_ess_before_signing(self):
+        builder = (ROOT / "scripts/build-macos-app").read_text()
+        env = (ROOT / "macos/bundled-ess.env").read_text()
+        self.assertRegex(env, r"GLASSMACS_ESS_ARCHIVE_SHA256=[0-9a-f]{64}")
+        self.assertIn("scripts/bundle-ess", builder)
+        self.assertLess(
+            builder.index("scripts/bundle-ess"),
+            builder.index("scripts/adhoc-sign-macos-app"),
+        )
+        self.assertIn("assets/toolbar", builder)
+        self.assertTrue(os.access(ROOT / "scripts/bundle-ess", os.X_OK))
+
     def test_build_sanitizes_before_strict_bundle_validation(self):
         builder = (ROOT / "scripts/build-macos-app").read_text()
         validator = (ROOT / "scripts/validate-macos-app").read_text()
@@ -476,6 +488,11 @@ open(binary, "wb").write(data[:32] + text.encode())
             (resources / "scripts").mkdir()
             (resources / "scripts/bootstrap").write_text("#!/bin/sh\n")
             (contents / "Resources/Glassmacs.icns").write_bytes(b"icon")
+            ess = resources.parent / "Glassmacs/site-lisp/ess"
+            ess.mkdir(parents=True)
+            (ess / "ess-r-mode.el").write_text(";;; fixture\n")
+            (ess / "ess-site.el").write_text(";;; fixture\n")
+            (ess.parent / "ESS-BUNDLE").write_text("version=26.5.0\n")
             lifecycle_module = (
                 contents / "Resources/Glassmacs/macos/libglassmacs-lifecycle.dylib"
             )

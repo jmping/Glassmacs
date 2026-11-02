@@ -82,6 +82,7 @@ glassmacs_resources="$output/Contents/Resources/Glassmacs"
 mkdir -p "$glassmacs_resources/scripts"
 cp "$root/init.el" "$glassmacs_resources/init.el"
 ditto "$root/lisp" "$glassmacs_resources/lisp"
+"$root/scripts/bundle-ess" "$output" "$upstream_app/Contents/MacOS/Emacs"
 # Bundle independently drawn toolbar PNGs alongside the Lisp configuration.
 mkdir -p "$glassmacs_resources/assets"
 ditto "$root/assets/toolbar" "$glassmacs_resources/assets/toolbar"

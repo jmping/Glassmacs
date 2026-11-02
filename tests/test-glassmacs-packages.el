@@ -139,3 +139,26 @@ nor while another question is open."
 
 (provide 'test-glassmacs-packages)
 ;;; test-glassmacs-packages.el ends here
+
+(ert-deftest glassmacs-packages-bundled-ess-satisfies-ess-without-hiding-user-package ()
+  (let ((glassmacs-bundled-ess-directory "/tmp/bundle/site-lisp/ess/"))
+    (cl-letf (((symbol-function 'package-installed-p) (lambda (&rest _) nil)))
+      (should-not (memq 'ess (glassmacs-missing-optional-packages)))
+      (should (memq 'auctex (glassmacs-missing-optional-packages)))))
+  (let ((glassmacs-bundled-ess-directory nil))
+    (cl-letf (((symbol-function 'package-installed-p) (lambda (&rest _) nil)))
+      (should (memq 'ess (glassmacs-missing-optional-packages))))))
+
+(ert-deftest glassmacs-packages-bundled-ess-is-appended-and-yields-to-user-install ()
+  (let* ((bundled (make-temp-file "gm-ess" t))
+         (glassmacs-bundled-ess-directory (file-name-as-directory bundled)))
+    (unwind-protect
+        (progn
+          (let ((load-path (list "/first")) (package-alist nil))
+            (glassmacs-packages--use-bundled-ess)
+            (should (equal (car (last load-path)) bundled))
+            (should (equal (car load-path) "/first")))
+          (let ((load-path (list "/first")) (package-alist (list (list 'ess))))
+            (glassmacs-packages--use-bundled-ess)
+            (should (equal load-path '("/first")))))
+      (delete-directory bundled t))))
