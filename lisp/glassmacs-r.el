@@ -58,7 +58,13 @@ Without ESS, offer once per session to install the optional packages."
   (interactive)
   (unless (fboundp 'ess-eval-line)
     (user-error "ESS line evaluation is unavailable"))
-  (funcall (intern "ess-eval-line")))
+  (let ((source (current-buffer)))
+    (prog1 (funcall (intern "ess-eval-line"))
+      (when (and (buffer-live-p source)
+                 (with-current-buffer source
+                   (derived-mode-p 'ess-r-mode 'R-mode)))
+        (with-current-buffer source
+          (forward-line 1))))))
 
 (defun glassmacs-r-send-function ()
   "Send the current R function to the current ESS process."
