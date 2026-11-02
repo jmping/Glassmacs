@@ -43,11 +43,11 @@ additional contextual mapping before this becomes the default.")
   "Build a general toolbar with Aquamacs button order and fallback icons."
   (let ((map (make-sparse-keymap)))
     (dolist (item glassmacs-aquamacs-toolbar-items)
-      (pcase-let ((\`(,key ,label ,command ,icon) item))
+      (pcase-let ((`(,key ,label ,command ,icon) item))
         (when (fboundp command)
           (define-key-after
             map (vector key)
-            \`(menu-item ,label ,command
+            `(menu-item ,label ,command
                          :image (find-image
                                  (list (list :type 'png
                                              :file ,(concat icon ".png")
