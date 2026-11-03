@@ -104,7 +104,9 @@ the destination changed the selected tab in that frame."
       (selected-window))))
 
 (defvar glassmacs-buffer-placement--last-move nil
-  "Most recent move: (BUFFER SOURCE-FRAME SOURCE-WINDOW SOURCE-TAB DESTINATION).
+  "Most recent move:
+(BUFFER SOURCE-FRAME SOURCE-WINDOW SOURCE-TAB SOURCE-REPLACEMENT
+ DESTINATION DESTINATION-FRAME DESTINATION-TAB).
 The undo operation never overwrites an unrelated destination buffer.")
 
 (defun glassmacs-undo-last-buffer-move ()
@@ -113,7 +115,8 @@ If the original window is gone, create a new split in its frame.
 An unavailable original frame leaves the move record intact."
   (interactive)
   (pcase glassmacs-buffer-placement--last-move
-    (`(,buffer ,frame ,original ,tab ,moved-to)
+    (`(,buffer ,frame ,original ,tab ,source-replacement
+               ,moved-to ,destination-frame ,destination-tab)
      (unless (and (buffer-live-p buffer) (frame-live-p frame))
        (user-error "Original buffer or frame is unavailable"))
      (let ((destination nil))
@@ -124,29 +127,31 @@ An unavailable original frame leaves the move record intact."
                (if (and (window-live-p original)
                         (eq (window-frame original) frame)
                         (or (eq (window-buffer original) buffer)
-                            (not (get-buffer-window buffer frame))))
-                   (if (eq (window-buffer original) buffer)
-                       original
-                     ;; A surviving original pane may now hold another
-                     ;; document; do not replace it.
-                     (condition-case nil
-                         (split-window original nil 'right)
-                       (error nil)))
+                            (and source-replacement
+                                 (eq (window-buffer original)
+                                     source-replacement))))
+                   original
                  (condition-case nil
                      (split-window (frame-selected-window frame) nil 'right)
                    (error nil))))
          (unless destination
            (user-error "Cannot restore view without replacing another document"))
          (set-window-buffer destination buffer))
-       (when (and (window-live-p moved-to)
-                  (not (eq moved-to destination))
-                  (eq (window-buffer moved-to) buffer))
-         (with-selected-frame (window-frame moved-to)
-           (if (> (length (window-list (window-frame moved-to) 'never)) 1)
-               (delete-window moved-to)
-             (with-selected-window moved-to
-               (switch-to-buffer (other-buffer buffer t))))))
+       (when (frame-live-p destination-frame)
+         (with-selected-frame destination-frame
+           (when (and destination-tab (bound-and-true-p tab-bar-mode))
+             (tab-bar-select-tab destination-tab))
+           (when (and (window-live-p moved-to)
+                      (not (eq moved-to destination))
+                      (eq (window-buffer moved-to) buffer))
+             (if (> (length (window-list destination-frame 'never)) 1)
+                 (delete-window moved-to)
+               (with-selected-window moved-to
+                 (switch-to-buffer (other-buffer buffer t)))))))
        (setq glassmacs-buffer-placement--last-move nil)
+       (when (and tab (bound-and-true-p tab-bar-mode))
+         (with-selected-frame frame
+           (tab-bar-select-tab tab)))
        (select-frame-set-input-focus frame)
        (select-window destination)))
     (_ (user-error "No buffer move to undo"))))
@@ -172,14 +177,22 @@ Use `glassmacs-show-buffer-in' to retain the original view."
          (point (window-point source))
          (start (window-start source))
          (source-frame (window-frame source))
-         (source-tab (when (bound-and-true-p tab-bar-mode)
-                       (with-selected-frame source-frame
-                         (1+ (tab-bar--current-tab-index)))))
+         (source-tab
+          (progn
+            (when (and (eq placement 'new-tab)
+                       (eq source-frame (or frame (selected-frame))))
+              (with-selected-frame source-frame
+                (unless (bound-and-true-p tab-bar-mode)
+                  (tab-bar-mode 1))))
+            (when (bound-and-true-p tab-bar-mode)
+              (with-selected-frame source-frame
+                (1+ (tab-bar--current-tab-index))))))
          (destination (glassmacs-buffer-placement--display buffer placement frame))
          (destination-frame (window-frame destination))
          (destination-tab (when (bound-and-true-p tab-bar-mode)
                             (with-selected-frame destination-frame
-                              (1+ (tab-bar--current-tab-index))))))
+                              (1+ (tab-bar--current-tab-index)))))
+         source-replacement)
     (unless (and (window-live-p destination)
                  (eq (window-buffer destination) buffer))
       (error "Destination could not display buffer; original view retained"))
@@ -187,11 +200,18 @@ Use `glassmacs-show-buffer-in' to retain the original view."
     (set-window-start destination start t)
     (glassmacs-buffer-placement--remove-source-view
      source destination buffer source-frame source-tab)
+    (when (frame-live-p source-frame)
+      (with-selected-frame source-frame
+        (when (and source-tab (bound-and-true-p tab-bar-mode))
+          (tab-bar-select-tab source-tab))
+        (when (window-live-p source)
+          (setq source-replacement (window-buffer source)))))
     (when (and destination-tab (frame-live-p destination-frame))
       (with-selected-frame destination-frame
         (tab-bar-select-tab destination-tab)))
     (setq glassmacs-buffer-placement--last-move
-          (list buffer source-frame source source-tab destination))
+          (list buffer source-frame source source-tab source-replacement
+                destination destination-frame destination-tab))
     (select-frame-set-input-focus (window-frame destination))
     (select-window destination)
     destination))
