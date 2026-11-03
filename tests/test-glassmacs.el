@@ -2668,3 +2668,24 @@ example) can run first and delay the sentinel."
                  (lambda (&rest _) (ert-fail "ESS bypassed the queue"))))
         (should (eq (glassmacs-r-send-line) :queued)))
       (should (equal submitted "Sys.sleep(10)")))))
+
+(ert-deftest glassmacs-p0-r-help-placement-preserves-source-pane ()
+  "ESS Help opens in a dedicated side pane in a terminal frame."
+  (let ((source (generate-new-buffer "Glassmacs P0 Help Source"))
+        (help (generate-new-buffer "Glassmacs P0 Help")))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer source)
+          (with-current-buffer help
+            (setq-local major-mode 'ess-help-mode))
+          (let ((glassmacs-r-help-placement 'side-right)
+                (source-window (selected-window)))
+            (should (glassmacs-r--help-buffer-p help nil))
+            (let ((help-window (glassmacs-r--display-help help nil)))
+              (should (window-live-p help-window))
+              (should (eq (window-buffer source-window) source))
+              (should (eq (window-buffer help-window) help)))))
+      (dolist (buffer (list source help))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
