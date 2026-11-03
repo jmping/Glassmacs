@@ -88,9 +88,6 @@ the destination changed the selected tab in that frame."
         (cond
          ((> (length (window-list source-frame 'never)) 1)
           (delete-window source))
-         ((and source-tab (bound-and-true-p tab-bar-mode)
-               (> (length (funcall tab-bar-tabs-function source-frame)) 1))
-          (tab-bar-close-tab))
          (t
           (with-selected-window source
             (switch-to-buffer (other-buffer buffer t)))))))))
@@ -155,7 +152,11 @@ Use `glassmacs-show-buffer-in' to retain the original view."
          (source-tab (when (bound-and-true-p tab-bar-mode)
                        (with-selected-frame source-frame
                          (1+ (tab-bar--current-tab-index)))))
-         (destination (glassmacs-buffer-placement--display buffer placement frame)))
+         (destination (glassmacs-buffer-placement--display buffer placement frame))
+         (destination-frame (window-frame destination))
+         (destination-tab (when (bound-and-true-p tab-bar-mode)
+                            (with-selected-frame destination-frame
+                              (1+ (tab-bar--current-tab-index))))))
     (unless (and (window-live-p destination)
                  (eq (window-buffer destination) buffer))
       (error "Destination could not display buffer; original view retained"))
@@ -163,6 +164,9 @@ Use `glassmacs-show-buffer-in' to retain the original view."
     (set-window-start destination start t)
     (glassmacs-buffer-placement--remove-source-view
      source destination buffer source-frame source-tab)
+    (when (and destination-tab (frame-live-p destination-frame))
+      (with-selected-frame destination-frame
+        (tab-bar-select-tab destination-tab)))
     (setq glassmacs-buffer-placement--last-move (list buffer source-frame)
           glassmacs-buffer-placement--clicked-window nil)
     (select-frame-set-input-focus (window-frame destination))
