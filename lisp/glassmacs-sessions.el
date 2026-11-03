@@ -380,10 +380,23 @@ deleted or replayed."
     (glassmacs-sessions--record :session-terminated
                                 :session (glassmacs-session-id session))))
 
+(defun glassmacs-sessions--console-directory (session)
+  "Return SESSION's current Emacs console directory, without querying R.
+Unlike the registration snapshot, this reflects changes to the live
+console buffer's `default-directory'.  It is not a claim about R's getwd()."
+  (let ((buffer (glassmacs-session-buffer session)))
+    (or (and (buffer-live-p buffer)
+             (buffer-local-value 'default-directory buffer))
+        (glassmacs-session-directory session))))
+
 (defun glassmacs-sessions--describe (session)
-  (format "%s [%s] %s%s" (glassmacs-session-id session)
+  "Describe SESSION by identity and console directory, not just its number."
+  (format "%s [%s] — Console: %s%s"
+          (glassmacs-session-id session)
           (glassmacs-session-name session)
-          (or (glassmacs-session-directory session) "")
+          (if-let ((dir (glassmacs-sessions--console-directory session)))
+              (abbreviate-file-name dir)
+            "(unknown)")
           (if (glassmacs-session-paused session) " (paused)" "")))
 
 (defun glassmacs-sessions-resolve (&optional session)
@@ -548,7 +561,7 @@ This command does not query R or contact a remote host."
         (session (condition-case nil
                     (glassmacs-sessions-resolve)
                   (user-error nil)))
-        (session-dir (and session (glassmacs-session-directory session)))
+        (session-dir (and session (glassmacs-sessions--console-directory session)))
         (buffer (get-buffer-create "*Glassmacs R Directories*")))
    (with-current-buffer buffer
      (let ((inhibit-read-only t)
@@ -567,9 +580,9 @@ This command does not query R or contact a remote host."
                              "(not in a project)"))))
        (insert (format "R session: %s\n"
                        (if session (glassmacs-session-id session) "(not selected)")))
-       (insert (format "R process host at registration: %s\n"
+       (insert (format "ESS console host (current): %s\n"
                        (glassmacs-r--host-description session-dir)))
-       (insert (format "ESS console default-directory at registration: %s\n"
+       (insert (format "ESS console default-directory (current): %s\n"
                        (or session-dir "(unknown)")))
        (insert "\nNo live R getwd() query was made. Use "
                "`M-x glassmacs-r-show-r-working-directory' to request it explicitly.\n")))
