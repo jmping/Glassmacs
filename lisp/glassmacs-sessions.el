@@ -486,6 +486,37 @@ In a document with R chunks, the target is cleared for the whole document."
   (glassmacs-r--set-document-target nil)
   (message "Cleared this buffer's R session target"))
 
+(defcustom glassmacs-r-help-placement 'separate-window
+  "Where ESS R Help buffers appear without replacing the source document."
+  :type '(choice (const :tag "Separate graphical window" separate-window)
+                 (const :tag "Right side pane" side-right)
+                 (const :tag "Bottom side pane" side-bottom))
+  :group 'glassmacs-r)
+
+(defun glassmacs-r--help-buffer-p (buffer _action)
+  "Recognize an ESS Help BUFFER for `display-buffer-alist'."
+  (and (buffer-live-p buffer)
+       (with-current-buffer buffer
+         (derived-mode-p 'ess-help-mode))))
+
+(defun glassmacs-r--display-help (buffer _alist)
+  "Display ESS Help BUFFER without replacing the source window."
+  (let ((existing (get-buffer-window buffer t)))
+    (cond
+     (existing existing)
+     ((and (display-graphic-p)
+           (eq glassmacs-r-help-placement 'separate-window))
+      (display-buffer-pop-up-frame buffer nil))
+     (t (display-buffer-in-side-window
+         buffer (list (cons 'side
+                            (if (eq glassmacs-r-help-placement 'side-bottom)
+                                'bottom 'right))
+                      (cons 'slot 0)))))))
+
+;; This rule precedes generic display actions but only matches ESS Help mode.
+(add-to-list 'display-buffer-alist
+             '(glassmacs-r--help-buffer-p glassmacs-r--display-help))
+
 (defcustom glassmacs-r-console-placement
   (if (eq system-type 'darwin) 'separate-window 'split-below)
   "How Glassmacs displays ESS R consoles."

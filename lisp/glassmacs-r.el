@@ -61,53 +61,82 @@ An invalid explicit target is an error, never a reason to send to another R."
           (funcall operation)))
     (funcall operation)))
 
+(defcustom glassmacs-r-queue-editor-submissions t
+  "When non-nil, submit editor commands through the per-session FIFO queue.
+This keeps editing responsive while R is busy.  The ESS console retains its
+native interactive input; commands typed directly there are not queued."
+  :type 'boolean
+  :group 'glassmacs-r)
+
+(defun glassmacs-r--send-source (source operation fallback)
+  "Send SOURCE with OPERATION metadata, using FALLBACK only when opted out."
+  (if glassmacs-r-queue-editor-submissions
+      (progn
+        (unless (fboundp 'glassmacs-queue-submit)
+          (user-error "Glassmacs R execution queue is unavailable"))
+        (glassmacs-queue-submit
+         source nil (list :buffer (buffer-name) :operation operation)))
+    (glassmacs-r--with-target fallback)))
+
 (defun glassmacs-r-send-region (start end)
-  "Send the region from START to END to the current ESS process."
+  "Queue the region START..END for the selected R session."
   (interactive "r")
-  (unless (fboundp 'ess-eval-region)
-    (user-error "ESS region evaluation is unavailable"))
-  (glassmacs-r--with-target (lambda () (funcall (intern "ess-eval-region") start end))))
+  (glassmacs-r--send-source
+   (buffer-substring-no-properties start end) 'region
+   (lambda () (ess-eval-region start end))))
 
 (defun glassmacs-r-send-line ()
-  "Send the current line to the current ESS process."
+  "Queue the current line without blocking while R is executing."
   (interactive)
-  (unless (fboundp 'ess-eval-line)
-    (user-error "ESS line evaluation is unavailable"))
-  (let ((source (current-buffer)))
-    (prog1 (glassmacs-r--with-target (lambda () (funcall (intern "ess-eval-line"))))
-      (when (and (buffer-live-p source)
-                 (with-current-buffer source
-                   (derived-mode-p 'ess-r-mode 'R-mode)))
-        (with-current-buffer source
-          (forward-line 1))))))
+  (let* ((start (line-beginning-position))
+         (end (line-end-position))
+         (source (buffer-substring-no-properties start end)))
+    (prog1 (glassmacs-r--send-source
+            source 'line (lambda () (ess-eval-line)))
+      (when (derived-mode-p 'ess-r-mode 'R-mode)
+        (forward-line 1)))))
 
 (defun glassmacs-r-send-paragraph ()
-  "Send the current R paragraph to ESS without moving the source point.
-A paragraph is delimited by blank lines, using the buffer's paragraph
-syntax.  Empty paragraphs are not submitted."
+  "Queue the R paragraph at point without moving the source cursor."
   (interactive)
-  (unless (fboundp 'ess-eval-region)
-    (user-error "ESS region evaluation is unavailable"))
   (save-excursion
-    (let ((start (progn (backward-paragraph) (skip-chars-forward " \t\n") (point)))
+    (let ((start (progn (backward-paragraph)
+                        (skip-chars-forward " \t\n")
+                        (point)))
           (end (progn (forward-paragraph) (point))))
       (when (<= end start)
         (user-error "No R paragraph at point"))
-      (glassmacs-r--with-target (lambda () (funcall (intern "ess-eval-region") start end))))))
+      (glassmacs-r--send-source
+       (buffer-substring-no-properties start end) 'paragraph
+       (lambda () (ess-eval-region start end))))))
+
+(defun glassmacs-r--function-source ()
+  "Copy the current R function using ESS's defun navigation.
+Signal a user error when the current buffer has no navigable definition."
+  (save-excursion
+    (condition-case nil
+        (let ((end (progn (end-of-defun) (point)))
+              (start (progn (beginning-of-defun) (point))))
+          (when (<= end start)
+            (user-error "No R function at point"))
+          (buffer-substring-no-properties start end))
+      (error (user-error "No R function at point")))))
 
 (defun glassmacs-r-send-function ()
-  "Send the current R function to the current ESS process."
+  "Queue the R function at point, preserving ESS's native opt-out path."
   (interactive)
-  (unless (fboundp 'ess-eval-function)
-    (user-error "ESS function evaluation is unavailable"))
-  (glassmacs-r--with-target (lambda () (funcall (intern "ess-eval-function")))))
+  (if glassmacs-r-queue-editor-submissions
+      (glassmacs-r--send-source
+       (glassmacs-r--function-source) 'function
+       (lambda () (ess-eval-function)))
+    (glassmacs-r--with-target (lambda () (ess-eval-function)))))
 
 (defun glassmacs-r-send-buffer ()
-  "Send the current buffer to the current ESS process."
+  "Queue the current R source buffer for the selected session."
   (interactive)
-  (unless (fboundp 'ess-eval-buffer)
-    (user-error "ESS buffer evaluation is unavailable"))
-  (glassmacs-r--with-target (lambda () (funcall (intern "ess-eval-buffer")))))
+  (glassmacs-r--send-source
+   (buffer-substring-no-properties (point-min) (point-max)) 'buffer
+   (lambda () (ess-eval-buffer))))
 
 (provide 'glassmacs-r)
 ;;; glassmacs-r.el ends here
