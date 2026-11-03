@@ -201,6 +201,8 @@ jobs:
         run: |
           ./scripts/macos-gui-acceptance "$RUNNER_TEMP/app/Glassmacs.app" \
             "$RUNNER_TEMP/gui-acceptance"
+      - name: Require core Alpha GUI scenarios to pass
+        run: python3 scripts/check-alpha-gui-results "$RUNNER_TEMP/gui-acceptance/results.json"
       - name: Publish summary
         if: always()
         run: |
