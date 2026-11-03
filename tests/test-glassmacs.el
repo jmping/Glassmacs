@@ -2612,3 +2612,24 @@ example) can run first and delay the sentinel."
       (when (buffer-live-p buffer)
         (with-current-buffer buffer (set-buffer-modified-p nil))
         (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-p0-discard-kill-error-restores-modified-state ()
+  "A failing kill hook must not clear unsaved changes."
+  (let ((buffer (generate-new-buffer "Glassmacs P0 Kill Error")))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer buffer)
+          (with-current-buffer buffer (insert "unsaved"))
+          (cl-letf (((symbol-function 'read-multiple-choice)
+                     (lambda (&rest _) '(?d "don't save")))
+                    ((symbol-function 'kill-buffer)
+                     (lambda (&optional _) (error "Simulated kill failure"))))
+            (should-error
+             (glassmacs--close-documents-in-windows
+              (list (selected-window)))))
+          (should (buffer-live-p buffer))
+          (should (buffer-modified-p buffer)))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)))))
