@@ -2700,3 +2700,21 @@ example) can run first and delay the sentinel."
       (dolist (buffer (list source help))
         (when (buffer-live-p buffer)
           (kill-buffer buffer))))))
+
+(ert-deftest glassmacs-p0-r-function-queues-source-snapshot ()
+  "Function execution queues a copied definition instead of direct ESS evaluation."
+  (with-temp-buffer
+    (insert "f <- function(x) { x + 1 }\n")
+    (let ((glassmacs-r-queue-editor-submissions t)
+          submitted)
+      (cl-letf (((symbol-function 'glassmacs-r--function-source)
+                 (lambda () "f <- function(x) { x + 1 }"))
+                ((symbol-function 'glassmacs-queue-submit)
+                 (lambda (source _session origin)
+                   (setq submitted (list source origin))
+                   :queued))
+                ((symbol-function 'ess-eval-function)
+                 (lambda (&rest _) (ert-fail "Direct ESS execution bypassed queue"))))
+        (should (eq (glassmacs-r-send-function) :queued)))
+      (should (equal (car submitted) "f <- function(x) { x + 1 }"))
+      (should (eq (plist-get (cadr submitted) :operation) 'function)))))
