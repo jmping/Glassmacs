@@ -134,6 +134,28 @@ Trim the history to `glassmacs-sessions-history-limit' events."
   "Return non-nil when ESS marks PROCESS busy."
   (process-get process 'busy))
 
+(defcustom glassmacs-r-echo-submitted-commands t
+  "Whether to show source-submitted R commands in their console transcript."
+  :type 'boolean
+  :group 'glassmacs-r)
+
+(defun glassmacs-r--echo-submitted-command (process source)
+  "Display SOURCE at PROCESS's insertion marker as submitted input.
+Use a distinct prefix to distinguish source submission from R output.
+Do not change process markers or feed synthetic text through ESS filters."
+  (when (and glassmacs-r-echo-submitted-commands
+             (buffer-live-p (process-buffer process)))
+    (with-current-buffer (process-buffer process)
+      (let ((inhibit-read-only t)
+            (text (concat
+                   (mapconcat (lambda (line) (concat "> " line))
+                              (split-string (string-trim-right source) "\n")
+                              "\n")
+                   "\n")))
+        (save-excursion
+          (goto-char (process-mark process))
+          (insert-before-markers text))))))
+
 (defun glassmacs-sessions--send (process string)
   "Send STRING to PROCESS through ESS."
   (unless (fboundp 'ess-send-string)
@@ -832,6 +854,8 @@ when no live target exists or SOURCE is blank."
               (glassmacs-entry-started-at next) (current-time))
         (condition-case err
             (progn (glassmacs-sessions--send process (glassmacs-entry-source next))
+                   (glassmacs-r--echo-submitted-command
+                    process (glassmacs-entry-source next))
                    (glassmacs-sessions--record
                     :dispatched :entry (glassmacs-entry-id next)
                     :session (glassmacs-session-id session)))
