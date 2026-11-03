@@ -551,6 +551,23 @@ In a document with R chunks, the target is cleared for the whole document."
         (select-window window)))
      (t (switch-to-buffer buffer)))))
 
+(defun glassmacs-r-move-console-to-new-frame ()
+  "Move the current live R console to a separate graphical frame.
+The process and buffer are retained; only the display window changes."
+  (interactive)
+  (unless (and (display-graphic-p)
+               (derived-mode-p 'inferior-ess-r-mode))
+    (user-error "Select an R console in the graphical app first"))
+  (let* ((buffer (current-buffer))
+         (old-window (selected-window))
+         (frame (make-frame)))
+    (with-selected-frame frame
+      (switch-to-buffer buffer))
+    (when (window-live-p old-window)
+      (with-selected-window old-window
+        (switch-to-prev-buffer old-window)))
+    (select-frame-set-input-focus frame)))
+
 (defun glassmacs-r-start-or-switch-console ()
   "Show a current R console, or start and target one if none exists."
   (interactive)
@@ -635,7 +652,20 @@ This command does not query R or contact a remote host."
                                (and (boundp 'inferior-ess-r-program) inferior-ess-r-program)
                                "R"))
     (user-error "R executable not found; install R or set glassmacs-r-executable"))
-  (call-interactively (intern "R"))
+  (let ((origin-frame (selected-frame))
+        (origin-buffer (current-buffer)))
+    (call-interactively (intern "R"))
+    ;; ESS may split the source frame when starting R. Restore the document
+    ;; and display the new console in its own frame on graphical macOS.
+    (when (and (eq system-type 'darwin) (display-graphic-p)
+               (eq glassmacs-r-console-placement 'separate-window)
+               (derived-mode-p 'inferior-ess-r-mode))
+      (let ((console (current-buffer)))
+        (with-selected-frame origin-frame
+          (when (buffer-live-p origin-buffer)
+            (delete-other-windows)
+            (switch-to-buffer origin-buffer)))
+        (glassmacs-r-display-console console))))
   (let ((proc (and (boundp 'ess-local-process-name) ess-local-process-name
                    (get-process ess-local-process-name))))
     (if (glassmacs-sessions--process-live-p proc)
