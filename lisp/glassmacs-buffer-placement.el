@@ -93,7 +93,7 @@ the destination changed the selected tab in that frame."
             (switch-to-buffer (other-buffer buffer t)))))))))
 
 (defvar glassmacs-buffer-placement--clicked-window nil
-  "Window selected by the latest Glassmacs context menu.")
+  "Deprecated compatibility variable; no longer used to target commands.")
 
 (defun glassmacs-buffer-placement--source-window ()
   "Use the clicked window for context-menu commands when possible."
@@ -104,27 +104,51 @@ the destination changed the selected tab in that frame."
       (selected-window))))
 
 (defvar glassmacs-buffer-placement--last-move nil
-  "Most recent buffer move for the undo command.")
+  "Most recent move: (BUFFER SOURCE-FRAME SOURCE-WINDOW SOURCE-TAB DESTINATION).
+The undo operation never overwrites an unrelated destination buffer.")
 
 (defun glassmacs-undo-last-buffer-move ()
-  "Move the last relocated buffer back to its original frame.
-The original split arrangement is not recreated."
+  "Restore the last moved buffer without overwriting unrelated documents.
+If the original window is gone, create a new split in its frame.
+An unavailable original frame leaves the move record intact."
   (interactive)
   (pcase glassmacs-buffer-placement--last-move
-    (`(,buffer ,frame)
+    (`(,buffer ,frame ,original ,tab ,moved-to)
      (unless (and (buffer-live-p buffer) (frame-live-p frame))
-       (user-error "Original buffer or window is unavailable"))
-     (let ((source (get-buffer-window buffer t)))
+       (user-error "Original buffer or frame is unavailable"))
+     (let ((destination nil))
        (with-selected-frame frame
-         (let ((destination (selected-window)))
-           (set-window-buffer destination buffer)
-           (when (and source (not (eq source destination))
-                      (window-live-p source))
-             (glassmacs-buffer-placement--remove-source-view
-              source destination buffer (window-frame source) nil))
-           (setq glassmacs-buffer-placement--last-move nil)
-           (select-frame-set-input-focus frame)
-           (select-window destination)))))
+         (when (and tab (bound-and-true-p tab-bar-mode))
+           (tab-bar-select-tab tab))
+         (setq destination
+               (if (and (window-live-p original)
+                        (eq (window-frame original) frame)
+                        (or (eq (window-buffer original) buffer)
+                            (not (get-buffer-window buffer frame))))
+                   (if (eq (window-buffer original) buffer)
+                       original
+                     ;; A surviving original pane may now hold another
+                     ;; document; do not replace it.
+                     (condition-case nil
+                         (split-window original nil 'right)
+                       (error nil)))
+                 (condition-case nil
+                     (split-window (frame-selected-window frame) nil 'right)
+                   (error nil))))
+         (unless destination
+           (user-error "Cannot restore view without replacing another document"))
+         (set-window-buffer destination buffer))
+       (when (and (window-live-p moved-to)
+                  (not (eq moved-to destination))
+                  (eq (window-buffer moved-to) buffer))
+         (with-selected-frame (window-frame moved-to)
+           (if (> (length (window-list (window-frame moved-to) 'never)) 1)
+               (delete-window moved-to)
+             (with-selected-window moved-to
+               (switch-to-buffer (other-buffer buffer t))))))
+       (setq glassmacs-buffer-placement--last-move nil)
+       (select-frame-set-input-focus frame)
+       (select-window destination)))
     (_ (user-error "No buffer move to undo"))))
 
 (defun glassmacs-move-buffer-to (placement &optional frame source)
@@ -143,8 +167,7 @@ Use `glassmacs-show-buffer-in' to retain the original view."
   (when (and (not (eq placement 'new-frame))
              (not (frame-live-p frame)))
     (user-error "Destination window is no longer available"))
-  (let* ((source (or source glassmacs-buffer-placement--clicked-window
-                     (glassmacs-buffer-placement--source-window)))
+  (let* ((source (or source (glassmacs-buffer-placement--source-window)))
          (buffer (window-buffer source))
          (point (window-point source))
          (start (window-start source))
@@ -167,8 +190,8 @@ Use `glassmacs-show-buffer-in' to retain the original view."
     (when (and destination-tab (frame-live-p destination-frame))
       (with-selected-frame destination-frame
         (tab-bar-select-tab destination-tab)))
-    (setq glassmacs-buffer-placement--last-move (list buffer source-frame)
-          glassmacs-buffer-placement--clicked-window nil)
+    (setq glassmacs-buffer-placement--last-move
+          (list buffer source-frame source source-tab destination))
     (select-frame-set-input-focus (window-frame destination))
     (select-window destination)
     destination))
@@ -187,22 +210,45 @@ Use `glassmacs-show-buffer-in' to retain the original view."
   (when (and (not (eq placement 'new-frame))
              (not (frame-live-p frame)))
     (user-error "Destination window is no longer available"))
-  (prog1
-      (glassmacs-buffer-placement--display
-       (window-buffer (or source glassmacs-buffer-placement--clicked-window
-                          (glassmacs-buffer-placement--source-window)))
-       placement frame)
-    (setq glassmacs-buffer-placement--clicked-window nil)))
+  (glassmacs-buffer-placement--display
+   (window-buffer (or source (glassmacs-buffer-placement--source-window)))
+   placement frame))
 
-(defun glassmacs-buffer-placement--context-menu (menu _click)
-  "Add buffer placement actions to context MENU."
-  (setq glassmacs-buffer-placement--clicked-window
-        (glassmacs-buffer-placement--source-window))
-  (define-key-after menu [glassmacs-move-buffer]
-    '(menu-item "Move Buffer To…" glassmacs-move-buffer-to))
-  (define-key-after menu [glassmacs-show-buffer]
-    '(menu-item "Show Buffer In…" glassmacs-show-buffer-in)
-    'glassmacs-move-buffer)
+(defun glassmacs-buffer-placement--context-menu (menu click)
+  "Add buffer placement actions to context MENU for CLICK's window.
+Bind the source window in the menu command itself, so later menu-bar
+commands cannot accidentally inherit an earlier right-click target."
+  (let* ((window (and click (ignore-errors (posn-window click))))
+         (source (if (window-live-p window) window (selected-window))))
+    (define-key-after menu [glassmacs-move-buffer]
+      `(menu-item "Move Buffer To…"
+                  ,(lambda ()
+                     (interactive)
+                     (call-interactively
+                      (lambda (placement frame)
+                        (interactive
+                         (let* ((placement (intern
+                                            (completing-read
+                                             "Move buffer to: "
+                                             '("new-frame" "new-tab" "split-right"
+                                               "split-below" "replace") nil t)))
+                                (frame (unless (eq placement 'new-frame)
+                                         (glassmacs-buffer-placement--choose-frame))))
+                           (list placement frame)))
+                        (glassmacs-move-buffer-to placement frame source))))))
+    (define-key-after menu [glassmacs-show-buffer]
+      `(menu-item "Show Buffer In…"
+                  ,(lambda ()
+                     (interactive)
+                     (let* ((placement (intern
+                                        (completing-read
+                                         "Show buffer in: "
+                                         '("new-frame" "new-tab" "split-right"
+                                           "split-below" "replace") nil t)))
+                            (frame (unless (eq placement 'new-frame)
+                                     (glassmacs-buffer-placement--choose-frame))))
+                       (glassmacs-show-buffer-in placement frame source))))
+      'glassmacs-move-buffer))
   menu)
 
 (defun glassmacs-buffer-placement-install ()
