@@ -2633,3 +2633,38 @@ example) can run first and delay the sentinel."
       (when (buffer-live-p buffer)
         (with-current-buffer buffer (set-buffer-modified-p nil))
         (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-p0-r-editor-region-submits-queue-snapshot ()
+  "Queued R source is copied and ESS's synchronous evaluator is bypassed."
+  (with-temp-buffer
+    (insert "x <- 1\ny <- 2\n")
+    (let ((glassmacs-r-queue-editor-submissions t)
+          submitted)
+      (cl-letf (((symbol-function 'glassmacs-queue-submit)
+                 (lambda (source session origin)
+                   (setq submitted (list source session origin))
+                   :queued))
+                ((symbol-function 'ess-eval-region)
+                 (lambda (&rest _) (ert-fail "ESS bypassed the queue"))))
+        (should (eq (glassmacs-r-send-region (point-min) (point-max))
+                    :queued)))
+      (should (equal (car submitted) "x <- 1\ny <- 2\n"))
+      (should (eq (plist-get (nth 2 submitted) :operation) 'region))
+      (erase-buffer)
+      (should (equal (car submitted) "x <- 1\ny <- 2\n")))))
+
+(ert-deftest glassmacs-p0-r-editor-line-queues-without-waiting ()
+  "Submitting a line uses the queue and does not invoke ESS directly."
+  (with-temp-buffer
+    (insert "Sys.sleep(10)\nprint(1)\n")
+    (goto-char (point-min))
+    (let ((glassmacs-r-queue-editor-submissions t)
+          submitted)
+      (cl-letf (((symbol-function 'glassmacs-queue-submit)
+                 (lambda (source &rest _)
+                   (setq submitted source)
+                   :queued))
+                ((symbol-function 'ess-eval-line)
+                 (lambda (&rest _) (ert-fail "ESS bypassed the queue"))))
+        (should (eq (glassmacs-r-send-line) :queued)))
+      (should (equal submitted "Sys.sleep(10)")))))
