@@ -110,11 +110,26 @@ native interactive input; commands typed directly there are not queued."
        (buffer-substring-no-properties start end) 'paragraph
        (lambda () (ess-eval-region start end))))))
 
+(defun glassmacs-r--function-source ()
+  "Copy the current R function using ESS's defun navigation.
+Signal a user error when the current buffer has no navigable definition."
+  (save-excursion
+    (condition-case nil
+        (let ((end (progn (end-of-defun) (point)))
+              (start (progn (beginning-of-defun) (point))))
+          (when (<= end start)
+            (user-error "No R function at point"))
+          (buffer-substring-no-properties start end))
+      (error (user-error "No R function at point")))))
+
 (defun glassmacs-r-send-function ()
-  "Evaluate the current R function using ESS's function boundaries.
-ESS's function evaluator remains responsible for locating the definition."
+  "Queue the R function at point, preserving ESS's native opt-out path."
   (interactive)
-  (glassmacs-r--with-target (lambda () (ess-eval-function))))
+  (if glassmacs-r-queue-editor-submissions
+      (glassmacs-r--send-source
+       (glassmacs-r--function-source) 'function
+       (lambda () (ess-eval-function)))
+    (glassmacs-r--with-target (lambda () (ess-eval-function)))))
 
 (defun glassmacs-r-send-buffer ()
   "Queue the current R source buffer for the selected session."
