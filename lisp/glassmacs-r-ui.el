@@ -18,7 +18,9 @@
 (defun glassmacs-r-open-preferences ()
   "Open Glassmacs R preferences, including ESS and console controls."
   (interactive)
-  (customize-group 'glassmacs-r))
+  (let ((display-buffer-overriding-action
+         '((display-buffer-pop-up-frame) (inhibit-same-window . t))))
+    (customize-group 'glassmacs-r)))
 
 (defcustom glassmacs-r-show-toolbar t
   "Whether R buffers show contextual toolbar actions."
@@ -189,7 +191,7 @@ Closing that help frame must not close or discard the source document."
     (glassmacs-run-paragraph "Run Paragraph" glassmacs-r-send-paragraph "next-page")
     (glassmacs-run-function "Run Function" glassmacs-r-send-function "jump-to")
     (glassmacs-run-buffer "Run Buffer" glassmacs-r-send-buffer "next-page")
-    (glassmacs-show-console "R Console" glassmacs-r-inspect-session "open")
+    (glassmacs-show-console "Start R / Console" glassmacs-r-start-or-switch-console "open")
     (glassmacs-help "R Help" glassmacs-r-ui-help "help"))
   "R source toolbar entries: (KEY LABEL COMMAND ICON).
 ICON is the base name of an image shipped with GNU Emacs.")
@@ -223,8 +225,7 @@ ICON is the base name of an image shipped with GNU Emacs.")
                                 ((eq command 'glassmacs-r-send-region)
                                  '(use-region-p))
                                 ((memq command
-                                       '(glassmacs-r-inspect-session
-                                         glassmacs-r-interrupt
+                                       '(glassmacs-r-interrupt
                                          glassmacs-r-select-session))
                                  '(glassmacs-r-ui--menu-has-session-p))
                                 (t t))))))
@@ -347,6 +348,11 @@ ESS's prompt and completion-cache state before calling `comint-send-input'."
     (define-key menu [clear-target]
       '(menu-item "Clear R Session Target" glassmacs-r-clear-session-target
                   :enable glassmacs-r-target-session))
+    (define-key menu [move-console]
+      '(menu-item "Move R Console to New Window" glassmacs-r-move-console-to-new-frame
+                  :enable (derived-mode-p 'inferior-ess-r-mode)))
+    (define-key menu [start-console]
+      '(menu-item "Start R / Show Console" glassmacs-r-start-or-switch-console))
     (define-key menu [inspect-terminal]
       '(menu-item "Show Associated R Console" glassmacs-r-inspect-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
