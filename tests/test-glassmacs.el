@@ -181,7 +181,21 @@
         (should (eq (lookup-key map [glassmacs-run-buffer])
                     'glassmacs-r-send-buffer))
         (should (eq (lookup-key map [glassmacs-show-console])
-                    'glassmacs-r-inspect-session))))))
+                    'glassmacs-r-start-or-switch-console))))))
+
+(ert-deftest glassmacs-r-console-launch-is-available-without-session ()
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
+               (lambda () t)))
+      (let ((map (glassmacs-r-ui--toolbar-map)))
+        (should (eq (lookup-key map [glassmacs-show-console])
+                    'glassmacs-r-start-or-switch-console))))))
+
+(ert-deftest glassmacs-preferences-default-to-new-frame-on-macos ()
+  (when (eq system-type 'darwin)
+    (should (eq (default-value 'glassmacs-preferences-opening-policy)
+                'new-frame))))
 
 (ert-deftest glassmacs-r-console-toolbar-has-console-only-actions ()
   (with-temp-buffer

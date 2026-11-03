@@ -134,6 +134,28 @@ Trim the history to `glassmacs-sessions-history-limit' events."
   "Return non-nil when ESS marks PROCESS busy."
   (process-get process 'busy))
 
+(defcustom glassmacs-r-echo-submitted-commands t
+  "Whether to show source-submitted R commands in their console transcript."
+  :type 'boolean
+  :group 'glassmacs-r)
+
+(defun glassmacs-r--echo-submitted-command (process source)
+  "Display SOURCE at PROCESS's insertion marker as submitted input.
+Use a distinct prefix to distinguish source submission from R output.
+Do not change process markers or feed synthetic text through ESS filters."
+  (when (and glassmacs-r-echo-submitted-commands
+             (buffer-live-p (process-buffer process)))
+    (with-current-buffer (process-buffer process)
+      (let ((inhibit-read-only t)
+            (text (concat
+                   (mapconcat (lambda (line) (concat "> " line))
+                              (split-string (string-trim-right source) "\n")
+                              "\n")
+                   "\n")))
+        (save-excursion
+          (goto-char (process-mark process))
+          (insert-before-markers text))))))
+
 (defun glassmacs-sessions--send (process string)
   "Send STRING to PROCESS through ESS."
   (unless (fboundp 'ess-send-string)
@@ -551,6 +573,23 @@ In a document with R chunks, the target is cleared for the whole document."
         (select-window window)))
      (t (switch-to-buffer buffer)))))
 
+(defun glassmacs-r-move-console-to-new-frame ()
+  "Move the current live R console to a separate graphical frame.
+The process and buffer are retained; only the display window changes."
+  (interactive)
+  (unless (and (display-graphic-p)
+               (derived-mode-p 'inferior-ess-r-mode))
+    (user-error "Select an R console in the graphical app first"))
+  (let* ((buffer (current-buffer))
+         (old-window (selected-window))
+         (frame (make-frame)))
+    (with-selected-frame frame
+      (switch-to-buffer buffer))
+    (when (window-live-p old-window)
+      (with-selected-window old-window
+        (switch-to-prev-buffer old-window)))
+    (select-frame-set-input-focus frame)))
+
 (defun glassmacs-r-start-or-switch-console ()
   "Show a current R console, or start and target one if none exists."
   (interactive)
@@ -627,20 +666,35 @@ This command does not query R or contact a remote host."
    (list :buffer (buffer-name) :operation 'working-directory)))
 
 (defun glassmacs-r-start-session ()
-  "Start an ESS R session and register it; report missing R or ESS."
+  "Start and register an ESS R session, showing a native console frame."
   (interactive)
   (unless (locate-library "ess-site")
     (user-error "ESS is unavailable; install the ess package first"))
-  (unless (executable-find (or (and (boundp 'glassmacs-r-executable) glassmacs-r-executable)
-                               (and (boundp 'inferior-ess-r-program) inferior-ess-r-program)
+  (unless (executable-find (or (and (boundp 'glassmacs-r-executable)
+                                    glassmacs-r-executable)
+                               (and (boundp 'inferior-ess-r-program)
+                                    inferior-ess-r-program)
                                "R"))
     (user-error "R executable not found; install R or set glassmacs-r-executable"))
-  (call-interactively (intern "R"))
-  (let ((proc (and (boundp 'ess-local-process-name) ess-local-process-name
-                   (get-process ess-local-process-name))))
-    (if (glassmacs-sessions--process-live-p proc)
-        (glassmacs-session-id (glassmacs-sessions-register proc))
-      (user-error "R started but no live ESS process was found"))))
+  (let ((origin-frame (selected-frame))
+        (origin-buffer (current-buffer)))
+    (call-interactively (intern "R"))
+    (let* ((console (current-buffer))
+           (proc (and (boundp 'ess-local-process-name)
+                      ess-local-process-name
+                      (get-process ess-local-process-name))))
+      (unless (glassmacs-sessions--process-live-p proc)
+        (user-error "R started but no live ESS process was found"))
+      (let ((id (glassmacs-session-id (glassmacs-sessions-register proc))))
+        (when (and (eq system-type 'darwin)
+                   (display-graphic-p)
+                   (eq glassmacs-r-console-placement 'separate-window))
+          (with-selected-frame origin-frame
+            (when (buffer-live-p origin-buffer)
+              (delete-other-windows)
+              (switch-to-buffer origin-buffer)))
+          (glassmacs-r-display-console console))
+        id))))
 
 (defun glassmacs-r-start-and-target-session ()
   "Start R and target the new session from the current source buffer.
@@ -800,6 +854,8 @@ when no live target exists or SOURCE is blank."
               (glassmacs-entry-started-at next) (current-time))
         (condition-case err
             (progn (glassmacs-sessions--send process (glassmacs-entry-source next))
+                   (glassmacs-r--echo-submitted-command
+                    process (glassmacs-entry-source next))
                    (glassmacs-sessions--record
                     :dispatched :entry (glassmacs-entry-id next)
                     :session (glassmacs-session-id session)))
