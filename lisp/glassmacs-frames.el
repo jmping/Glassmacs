@@ -209,12 +209,17 @@ Save operations may already have completed before a later cancellation."
       (catch 'veto
         (dolist (buffer buffers t)
           (when (buffer-live-p buffer)
-            (let ((discard-p (memq buffer discard)))
-              (when discard-p
-                (with-current-buffer buffer (set-buffer-modified-p nil)))
-              (unless (kill-buffer buffer)
+            (let ((discard-p (memq buffer discard))
+                  (killed nil))
+              (unwind-protect
+                  (progn
+                    (when discard-p
+                      (with-current-buffer buffer (set-buffer-modified-p nil)))
+                    (setq killed (kill-buffer buffer)))
+                ;; A veto, error, or quit must never silently discard edits.
                 (when (and discard-p (buffer-live-p buffer))
-                  (with-current-buffer buffer (set-buffer-modified-p t)))
+                  (with-current-buffer buffer (set-buffer-modified-p t))))
+              (unless killed
                 (throw 'veto nil)))))))))
 
 
