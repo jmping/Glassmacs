@@ -1030,7 +1030,7 @@
                       (cl-loop for i below 100 collect (format "a_%03d" i))))
        (should (equal (mapcar #'cdr (cl-remove-if-not
                                     (lambda (sent) (eq (car sent) p2)) ordered))
-                      (cl-loop for i below 100 collect (format "b_%03d" i)))))))))
+                      (cl-loop for i below 100 collect (format "b_%03d" i))))))))
 
 (provide 'test-glassmacs-sessions)
 ;;; test-glassmacs-sessions.el ends here
