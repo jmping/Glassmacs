@@ -84,30 +84,63 @@ On macOS, preserve the source document by opening a new frame."
              (glassmacs--ordinary-document-buffer-p buffer))
     glassmacs-document-opening-policy))
 
-(defun glassmacs--show-document-buffer (buffer action)
-  "Display BUFFER according to ACTION.
-With no visible frame, BUFFER is shown in the retained frame instead of
-creating an additional one."
-  (let ((visible-window (get-buffer-window buffer t)))
+(defun glassmacs-present-buffer (buffer &optional intent placement destination)
+  "Present BUFFER according to INTENT and PLACEMENT, returning its window.
+INTENT is one of open, focus, move, split, tab, or replace.  An open
+or focus operation first reuses a visible view of BUFFER.  PLACEMENT
+defaults to the document opening policy; DESTINATION is an explicit frame
+for intentional consolidation.  This API does not advise Emacs primitives."
+  (unless (buffer-live-p buffer)
+    (user-error "Cannot present a dead buffer"))
+  (let* ((intent (or intent 'open))
+         (existing (get-buffer-window buffer t))
+         (placement (or placement
+                        (and (eq intent 'open)
+                             (glassmacs--document-opening-action buffer))
+                        'reuse-current)))
     (cond
-     ((and (fboundp 'glassmacs--ensure-visible-frame)
+     ((and (memq intent '(open focus)) existing)
+      (select-frame-set-input-focus (window-frame existing))
+      (select-window existing)
+      existing)
+     ((eq intent 'focus)
+      (glassmacs-present-buffer buffer 'open placement destination))
+     ((and (memq intent '(open focus))
+           (fboundp 'glassmacs--ensure-visible-frame)
            (glassmacs--ensure-visible-frame))
-      (switch-to-buffer buffer))
-     (visible-window
-      (select-frame-set-input-focus (window-frame visible-window))
-      (select-window visible-window))
-     ((eq action 'new-frame)
+      (switch-to-buffer buffer)
+      (selected-window))
+     ((or (eq intent 'move) (eq intent 'split)
+          (eq intent 'tab) (eq intent 'replace))
+      (unless (fboundp 'glassmacs-buffer-placement--display)
+        (require 'glassmacs-buffer-placement))
+      (glassmacs-buffer-placement--display
+       buffer (pcase intent
+                ('split (if (memq placement '(split-right split-below))
+                            placement 'split-below))
+                ('tab 'new-tab)
+                ('replace 'replace)
+                (_ placement))
+       destination))
+     ((eq placement 'new-frame)
       (let ((frame (make-frame)))
         (with-selected-frame frame
           (switch-to-buffer buffer))
-        (select-frame-set-input-focus frame)))
-     ((eq action 'new-tab)
+        (select-frame-set-input-focus frame)
+        (frame-selected-window frame)))
+     ((eq placement 'new-tab)
       (require 'tab-bar)
       (tab-bar-mode 1)
       (tab-bar-new-tab)
-      (switch-to-buffer buffer))
+      (switch-to-buffer buffer)
+      (selected-window))
      (t
-      (switch-to-buffer buffer)))))
+      (switch-to-buffer buffer)
+      (selected-window)))))
+
+(defun glassmacs--show-document-buffer (buffer action)
+  "Compatibility wrapper for presenting document BUFFER using ACTION."
+  (glassmacs-present-buffer buffer 'open action))
 
 (defun glassmacs-open-file (filename &optional wildcards)
   "Open FILENAME interactively using Glassmacs' document policy."
