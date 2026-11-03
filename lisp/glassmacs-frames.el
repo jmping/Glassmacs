@@ -137,24 +137,6 @@ creating an additional one."
   (cl-some (lambda (window) (not (memq window windows)))
            (get-buffer-window-list buffer nil t)))
 
-(defun glassmacs--resolve-unsaved-changes (buffer)
-  "Ask how to handle unsaved changes in BUFFER before closing it.
-Return non-nil when closing may proceed: the buffer was unmodified,
-was saved, or its changes were explicitly discarded.  Return nil when
-the user cancels or the save does not complete."
-  (if (not (buffer-modified-p buffer))
-      t
-    (pcase (car (read-multiple-choice
-                 (format "Save changes to %s before closing? " (buffer-name buffer))
-                 '((?s "save" "Save the document, then close it")
-                   (?d "don't save" "Discard the unsaved changes and close")
-                   (?c "cancel" "Keep the document open"))))
-      (?s (with-current-buffer buffer (save-buffer))
-          (not (buffer-modified-p buffer)))
-      (?d (with-current-buffer buffer (set-buffer-modified-p nil))
-          t)
-      (_ nil))))
-
 (defcustom glassmacs-confirm-console-window-close t
   "Ask before hiding the last visible window of a live R console.
 Hiding the window leaves the R process, pending work, command history,
@@ -190,19 +172,51 @@ close; closing one of several console views needs no confirmation."
           (throw 'cancel nil))))))
 
 (defun glassmacs--close-documents-in-windows (windows)
-  "Close the documents shown only in WINDOWS, asking about unsaved changes.
-Only ordinary documents are closed (see
-`glassmacs--ordinary-document-buffer-p'): consoles, Help, Dired and
-other special buffers stay alive, so closing a window never stops an R
-session.  A document also visible in another window stays open.  Return
-nil, closing nothing further, as soon as the user cancels."
-  (catch 'canceled
-    (dolist (buffer (delete-dups (mapcar #'window-buffer windows)) t)
-      (when (and (glassmacs--ordinary-document-buffer-p buffer)
-                 (not (glassmacs--buffer-shown-elsewhere-p buffer windows)))
-        (unless (and (glassmacs--resolve-unsaved-changes buffer)
-                     (kill-buffer buffer))
-          (throw 'canceled nil))))))
+  "Close documents exclusive to WINDOWS, with all decisions made first.
+A canceled decision leaves every buffer alive and retains modified flags.
+Save operations may already have completed before a later cancellation."
+  (let* ((buffers (cl-remove-if-not
+                   (lambda (buffer)
+                     (and (glassmacs--ordinary-document-buffer-p buffer)
+                          (not (glassmacs--buffer-shown-elsewhere-p buffer windows))))
+                   (delete-dups (mapcar #'window-buffer windows))))
+         (discard nil))
+    (if (catch 'canceled
+          (dolist (buffer buffers)
+            (when (buffer-modified-p buffer)
+              (pcase (condition-case nil
+                         (car (read-multiple-choice
+                               (format "Save changes to %s before closing? "
+                                       (buffer-name buffer))
+                               '((?s "save" "Save the document, then close")
+                                 (?d "don't save" "Discard unsaved changes")
+                                 (?c "cancel" "Keep the document open"))))
+                       (quit ?c)
+                       (error ?c))
+                (?s (unless (condition-case nil
+                                (with-current-buffer buffer
+                                  (save-buffer)
+                                  (not (buffer-modified-p)))
+                              (quit nil)
+                              (error nil))
+                      (throw 'canceled t)))
+                (?d (push buffer discard))
+                (_ (throw 'canceled t)))))
+          nil)
+        nil
+      ;; Preserve the modified flag if a kill hook vetoes the operation.
+      ;; Clear it only immediately before an explicitly discarded kill.
+      (catch 'veto
+        (dolist (buffer buffers t)
+          (when (buffer-live-p buffer)
+            (let ((discard-p (memq buffer discard)))
+              (when discard-p
+                (with-current-buffer buffer (set-buffer-modified-p nil)))
+              (unless (kill-buffer buffer)
+                (when (and discard-p (buffer-live-p buffer))
+                  (with-current-buffer buffer (set-buffer-modified-p t)))
+                (throw 'veto nil)))))))))
+
 
 (defun glassmacs--close-view (window)
   "Close WINDOW: the window itself, its tab, or its frame.
@@ -242,7 +256,9 @@ Used for the window close button.  Return nil when the user cancels,
 in which case the frame must stay open."
   (or (not (framep frame))
       (not (frame-live-p frame))
-      (glassmacs--close-documents-in-windows (window-list frame 'never))))
+      (let ((windows (window-list frame 'never)))
+        (and (glassmacs--confirm-console-windows-close windows)
+             (glassmacs--close-documents-in-windows windows)))))
 
 (defun glassmacs-save-document-as (filename)
   "Save the current document as FILENAME using Emacs' native file safeguards.
