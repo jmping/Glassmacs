@@ -33,6 +33,34 @@ POLICY must be `new-frame', `new-tab', or `reuse-current'."
     (customize-save-variable 'glassmacs-document-opening-policy policy))
   (message "Glassmacs document opening policy: %s" policy))
 
+(defcustom glassmacs-preferences-opening-policy
+  (if (eq system-type 'darwin) 'new-frame 'reuse-current)
+  "Where Glassmacs displays Customize/Preferences buffers.
+On macOS, preserve the source document by opening a new frame."
+  :type '(choice (const :tag "Separate native window" new-frame)
+                 (const :tag "Reuse current window" reuse-current))
+  :group 'glassmacs-frames)
+
+(defun glassmacs--preferences-buffer-p (buffer _action)
+  "Recognize Emacs Customize buffers without affecting ordinary documents."
+  (and (buffer-live-p buffer)
+       (with-current-buffer buffer
+         (derived-mode-p 'custom-mode))))
+
+(defun glassmacs--display-preferences (buffer _alist)
+  "Show BUFFER without replacing a document on graphical macOS."
+  (let ((existing (get-buffer-window buffer t)))
+    (cond
+     (existing existing)
+     ((and (display-graphic-p)
+           (eq glassmacs-preferences-opening-policy 'new-frame))
+      (display-buffer-pop-up-frame buffer nil))
+     (t (display-buffer-same-window buffer nil)))))
+
+(add-to-list 'display-buffer-alist
+             '(glassmacs--preferences-buffer-p
+               glassmacs--display-preferences))
+
 (defun glassmacs-open-document-preferences ()
   "Open the dedicated document and window opening preferences."
   (interactive)
