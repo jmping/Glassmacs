@@ -2239,3 +2239,30 @@ example) can run first and delay the sentinel."
                            directory)))
         (kill-buffer buffer)))))
 
+
+(ert-deftest glassmacs-buffer-move-undo-preserves-unrelated-view ()
+  (save-window-excursion
+    (delete-other-windows)
+    (let ((original (generate-new-buffer " *glassmacs-undo-original*"))
+          (unrelated (generate-new-buffer " *glassmacs-undo-unrelated*"))
+          (glassmacs-buffer-placement--last-move nil))
+      (unwind-protect
+          (progn
+            (switch-to-buffer original)
+            (let ((source (selected-window)))
+              (glassmacs-move-buffer-to 'split-right (selected-frame) source)
+              (should (eq (window-buffer (selected-window)) original))
+              (glassmacs-undo-last-buffer-move)
+              (should (get-buffer-window original))
+              (should (buffer-live-p unrelated))
+              (should-not glassmacs-buffer-placement--last-move)))
+        (kill-buffer original)
+        (kill-buffer unrelated)))))
+
+(ert-deftest glassmacs-buffer-placement-context-menu-does-not-store-target ()
+  (let ((glassmacs-buffer-placement--clicked-window nil)
+        (menu (make-sparse-keymap)))
+    (glassmacs-buffer-placement--context-menu menu nil)
+    (should-not glassmacs-buffer-placement--clicked-window)
+    (should (lookup-key menu [glassmacs-move-buffer]))
+    (should (lookup-key menu [glassmacs-show-buffer]))))
