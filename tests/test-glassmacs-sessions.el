@@ -962,5 +962,97 @@
                   (car (last (glassmacs-session-entries s))))
                  'pending)))))
 
+
+(ert-deftest glassmacs-alpha-queue-hundred-commands-fifo-with-busy-process ()
+  "A hundred queued snapshots must remain ordered and never send while busy."
+  (gs-test--with-env
+   (let* ((p (gs-test--proc "R"))
+          (s (glassmacs-sessions-register p))
+          (count 100)
+          (expected (cl-loop for i below count collect (format "alpha_%03d" i))))
+     (process-put p 'busy t)
+     (dolist (source expected)
+       (glassmacs-queue-submit source s))
+     (should-not gs-test--sent)
+     (should (= count (length (glassmacs-queue-pending s))))
+     (dotimes (_ count)
+       (gs-test--finish-running p)
+       (glassmacs-sessions--pump s))
+     (should (equal (mapcar #'cdr (reverse gs-test--sent)) expected))
+     (gs-test--finish-running p)
+     (glassmacs-sessions--pump s)
+     (should-not (glassmacs-queue-pending s))
+     (should (cl-every (lambda (entry) (eq (glassmacs-entry-state entry) 'completed))
+                       (glassmacs-session-entries s))))))
+
+(ert-deftest glassmacs-alpha-queue-hundred-commands-remain-pending-on-interrupt ()
+  "An interrupted active command must not cause queued work to replay."
+  (gs-test--with-env
+   (let* ((p (gs-test--proc "R"))
+          (s (glassmacs-sessions-register p)))
+     (glassmacs-queue-submit "long_running()" s)
+     (dotimes (i 100)
+       (glassmacs-queue-submit (format "pending_%03d" i) s))
+     (should (= 1 (length gs-test--sent)))
+     (cl-letf (((symbol-function 'interrupt-process) (lambda (&rest _) nil)))
+       (glassmacs-queue-interrupt s))
+     (should (glassmacs-session-paused s))
+     (gs-test--finish-running p)
+     (dotimes (_ 5) (glassmacs-sessions--pump s))
+     (should (= 1 (length gs-test--sent)))
+     (should (= 100 (length (glassmacs-queue-pending s)))))))
+
+
+(ert-deftest glassmacs-alpha-two-session-hundred-command-isolation ()
+  "Two backlogged R sessions dispatch only their own ordered snapshots."
+  (gs-test--with-env
+   (let* ((p1 (gs-test--proc "R-alpha-a"))
+          (p2 (gs-test--proc "R-alpha-b"))
+          (s1 (glassmacs-sessions-register p1))
+          (s2 (glassmacs-sessions-register p2)))
+     (process-put p1 'busy t)
+     (process-put p2 'busy t)
+     (dotimes (i 100)
+       (glassmacs-queue-submit (format "a_%03d" i) s1)
+       (glassmacs-queue-submit (format "b_%03d" i) s2))
+     (should-not gs-test--sent)
+     (dotimes (_ 100)
+       (gs-test--finish-running p1)
+       (glassmacs-sessions--pump s1))
+     (should (= 100 (length gs-test--sent)))
+     (should (= 100 (length (glassmacs-queue-pending s2))))
+     (dotimes (_ 100)
+       (gs-test--finish-running p2)
+       (glassmacs-sessions--pump s2))
+     (let ((ordered (reverse gs-test--sent)))
+       (should (equal (mapcar #'cdr (cl-remove-if-not
+                                    (lambda (sent) (eq (car sent) p1)) ordered))
+                      (cl-loop for i below 100 collect (format "a_%03d" i))))
+       (should (equal (mapcar #'cdr (cl-remove-if-not
+                                    (lambda (sent) (eq (car sent) p2)) ordered))
+                      (cl-loop for i below 100 collect (format "b_%03d" i))))))))
+
+
+(ert-deftest glassmacs-alpha-output-flood-remains-bounded-and-recovers ()
+  "Large chunks must be suppressed without losing the next primary prompt."
+  (gs-test--with-env
+   (let* ((glassmacs-r-output-budget 1024)
+          (console (gs-test--console "glassmacs-alpha-output-flood"))
+          (process (car console))
+          (buffer (cdr console)))
+     (unwind-protect
+         (with-current-buffer buffer
+           (let ((result (gs-test--filter-output process (make-string 131072 ?x))))
+             (should (<= (length result)
+                         (+ glassmacs-r-output-budget
+                            (length glassmacs-r-output-suppressed-marker))))
+             (should (string-match-p
+                      (regexp-quote glassmacs-r-output-suppressed-marker) result))
+             (should glassmacs-r--output-suppressed))
+           (should (equal (gs-test--filter-output process "> " t) "> "))
+           (should-not glassmacs-r--output-suppressed)
+           (should (equal (gs-test--filter-output process "ok" ) "ok")))
+       (kill-buffer buffer)))))
+
 (provide 'test-glassmacs-sessions)
 ;;; test-glassmacs-sessions.el ends here

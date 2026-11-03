@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Fail CI if packaged GUI acceptance silently skips the core Alpha scenarios.
+
+Usage: python3 scripts/check-alpha-gui-results RESULTS.json
+Manual Layer D acceptance remains a separate gate.
+"""
+import json
+import sys
+from pathlib import Path
+
+REQUIRED = {
+    "launch-clean-home",
+    "last-window-close-and-dock-reopen",
+    "finder-open-while-windowless",
+    "command-w-never-loses-changes",
+    "quit-with-unsaved-document-asks",
+    "preferences-persist-across-relaunch",
+}
+
+
+def check(path):
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    scenarios = data.get("scenarios")
+    if not isinstance(scenarios, list):
+        raise ValueError("results.json has no scenarios list")
+    by_name = {}
+    for item in scenarios:
+        name = item.get("name")
+        if not isinstance(name, str) or name in by_name:
+            raise ValueError(f"invalid or duplicate scenario name: {name!r}")
+        by_name[name] = item
+    problems = []
+    for name in sorted(REQUIRED):
+        item = by_name.get(name)
+        if item is None:
+            problems.append(f"{name}: missing")
+        elif item.get("status") != "pass":
+            problems.append(f"{name}: {item.get('status', 'missing status')} "
+                            f"({item.get('detail', '')})")
+    for name, item in by_name.items():
+        if item.get("status") == "fail" and name not in REQUIRED:
+            problems.append(f"{name}: failed ({item.get('detail', '')})")
+    return problems
+
+
+def main():
+    if len(sys.argv) != 2:
+        print("usage: check-alpha-gui-results RESULTS.json", file=sys.stderr)
+        return 2
+    try:
+        problems = check(sys.argv[1])
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"Alpha GUI results invalid: {exc}", file=sys.stderr)
+        return 1
+    if problems:
+        print("Alpha GUI acceptance incomplete:", file=sys.stderr)
+        for problem in problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 1
+    print(f"Alpha GUI core gate: {len(REQUIRED)} required scenarios passed")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
