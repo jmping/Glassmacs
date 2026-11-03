@@ -2718,3 +2718,43 @@ example) can run first and delay the sentinel."
         (should (eq (glassmacs-r-send-function) :queued)))
       (should (equal (car submitted) "f <- function(x) { x + 1 }"))
       (should (eq (plist-get (cadr submitted) :operation) 'function)))))
+
+(ert-deftest glassmacs-p0-native-frame-close-cancel-preserves-frame ()
+  "Native close cancellation must not call the original frame handler."
+  (let ((called nil))
+    (cl-letf (((symbol-function 'posn-window) (lambda (&rest _) (selected-frame)))
+              ((symbol-function 'event-start) (lambda (&rest _) nil))
+              ((symbol-function 'glassmacs-close-frame-documents)
+               (lambda (_frame) nil)))
+      (should-not
+       (glassmacs--handle-delete-frame-preserving-app
+        (lambda (&rest _) (setq called t)) 'mock-event))
+      (should-not called))))
+
+(ert-deftest glassmacs-p0-native-frame-close-continues-after-review ()
+  "A reviewed native frame close delegates when final-frame hiding is inapplicable."
+  (let ((called nil))
+    (cl-letf (((symbol-function 'posn-window) (lambda (&rest _) (selected-frame)))
+              ((symbol-function 'event-start) (lambda (&rest _) nil))
+              ((symbol-function 'glassmacs-close-frame-documents)
+               (lambda (_frame) t)))
+      (glassmacs--handle-delete-frame-preserving-app
+       (lambda (&rest _) (setq called t)) 'mock-event)
+      (should called))))
+
+(ert-deftest glassmacs-p0-direct-quit-rejects-dirty-document ()
+  "A direct quit cannot bypass recovery's unsaved-document safety guard."
+  (let ((buffer (generate-new-buffer "Glassmacs P0 Quit Guard"))
+        (glassmacs-preserve-open-buffers-on-quit nil)
+        (glassmacs-recovery--save-reviewed-quit nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "unsaved"))
+          (cl-letf (((symbol-function 'glassmacs-recovery--documents)
+                     (lambda () (list buffer))))
+            (should-not (glassmacs-recovery--quit-safety-check))
+            (let ((glassmacs-recovery--save-reviewed-quit t))
+              (should (glassmacs-recovery--quit-safety-check)))))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)))))
