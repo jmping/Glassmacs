@@ -962,5 +962,45 @@
                   (car (last (glassmacs-session-entries s))))
                  'pending)))))
 
+
+(ert-deftest glassmacs-alpha-queue-hundred-commands-fifo-with-busy-process ()
+  "A hundred queued snapshots must remain ordered and never send while busy."
+  (gs-test--with-env
+   (let* ((p (gs-test--proc "R"))
+          (s (glassmacs-sessions-register p))
+          (count 100)
+          (expected (cl-loop for i below count collect (format "alpha_%03d" i))))
+     (process-put p 'busy t)
+     (dolist (source expected)
+       (glassmacs-queue-submit source s))
+     (should-not gs-test--sent)
+     (should (= count (length (glassmacs-queue-pending s))))
+     (dotimes (_ count)
+       (gs-test--finish-running p)
+       (glassmacs-sessions--pump s))
+     (should (equal (mapcar #'cdr (reverse gs-test--sent)) expected))
+     (gs-test--finish-running p)
+     (glassmacs-sessions--pump s)
+     (should-not (glassmacs-queue-pending s))
+     (should (cl-every (lambda (entry) (eq (glassmacs-entry-state entry) 'completed))
+                       (glassmacs-session-entries s))))))
+
+(ert-deftest glassmacs-alpha-queue-hundred-commands-remain-pending-on-interrupt ()
+  "An interrupted active command must not cause queued work to replay."
+  (gs-test--with-env
+   (let* ((p (gs-test--proc "R"))
+          (s (glassmacs-sessions-register p)))
+     (glassmacs-queue-submit "long_running()" s)
+     (dotimes (i 100)
+       (glassmacs-queue-submit (format "pending_%03d" i) s))
+     (should (= 1 (length gs-test--sent)))
+     (cl-letf (((symbol-function 'interrupt-process) (lambda (&rest _) nil)))
+       (glassmacs-queue-interrupt s))
+     (should (glassmacs-session-paused s))
+     (gs-test--finish-running p)
+     (dotimes (_ 5) (glassmacs-sessions--pump s))
+     (should (= 1 (length gs-test--sent)))
+     (should (= 100 (length (glassmacs-queue-pending s)))))))
+
 (provide 'test-glassmacs-sessions)
 ;;; test-glassmacs-sessions.el ends here
