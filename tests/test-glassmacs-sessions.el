@@ -1032,5 +1032,27 @@
                                     (lambda (sent) (eq (car sent) p2)) ordered))
                       (cl-loop for i below 100 collect (format "b_%03d" i))))))))
 
+
+(ert-deftest glassmacs-alpha-output-flood-remains-bounded-and-recovers ()
+  "Large chunks must be suppressed without losing the next primary prompt."
+  (gs-test--with-env
+   (let* ((glassmacs-r-output-budget 1024)
+          (console (gs-test--console "glassmacs-alpha-output-flood"))
+          (process (car console))
+          (buffer (cdr console)))
+     (unwind-protect
+         (with-current-buffer buffer
+           (let ((result (gs-test--filter-output process (make-string 131072 ?x))))
+             (should (<= (length result)
+                         (+ glassmacs-r-output-budget
+                            (length glassmacs-r-output-suppressed-marker))))
+             (should (string-match-p
+                      (regexp-quote glassmacs-r-output-suppressed-marker) result))
+             (should glassmacs-r--output-suppressed))
+           (should (equal (gs-test--filter-output process "> " t) "> "))
+           (should-not glassmacs-r--output-suppressed)
+           (should (equal (gs-test--filter-output process "ok" ) "ok")))
+       (kill-buffer buffer)))))
+
 (provide 'test-glassmacs-sessions)
 ;;; test-glassmacs-sessions.el ends here
