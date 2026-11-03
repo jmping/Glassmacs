@@ -1002,5 +1002,35 @@
      (should (= 1 (length gs-test--sent)))
      (should (= 100 (length (glassmacs-queue-pending s)))))))
 
+
+(ert-deftest glassmacs-alpha-two-session-hundred-command-isolation ()
+  "Two backlogged R sessions dispatch only their own ordered snapshots."
+  (gs-test--with-env
+   (let* ((p1 (gs-test--proc "R-alpha-a"))
+          (p2 (gs-test--proc "R-alpha-b"))
+          (s1 (glassmacs-sessions-register p1))
+          (s2 (glassmacs-sessions-register p2)))
+     (process-put p1 'busy t)
+     (process-put p2 'busy t)
+     (dotimes (i 100)
+       (glassmacs-queue-submit (format "a_%03d" i) s1)
+       (glassmacs-queue-submit (format "b_%03d" i) s2))
+     (should-not gs-test--sent)
+     (dotimes (_ 100)
+       (gs-test--finish-running p1)
+       (glassmacs-sessions--pump s1))
+     (should (= 100 (length gs-test--sent)))
+     (should (= 100 (length (glassmacs-queue-pending s2))))
+     (dotimes (_ 100)
+       (gs-test--finish-running p2)
+       (glassmacs-sessions--pump s2))
+     (let ((ordered (reverse gs-test--sent)))
+       (should (equal (mapcar #'cdr (cl-remove-if-not
+                                    (lambda (sent) (eq (car sent) p1)) ordered))
+                      (cl-loop for i below 100 collect (format "a_%03d" i))))
+       (should (equal (mapcar #'cdr (cl-remove-if-not
+                                    (lambda (sent) (eq (car sent) p2)) ordered))
+                      (cl-loop for i below 100 collect (format "b_%03d" i)))))))))
+
 (provide 'test-glassmacs-sessions)
 ;;; test-glassmacs-sessions.el ends here
