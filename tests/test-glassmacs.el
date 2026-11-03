@@ -2490,3 +2490,125 @@ example) can run first and delay the sentinel."
                 (should (eq (process-buffer process) buffer)))))
         (when (process-live-p process) (delete-process process))
         (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-p0-close-cancel-does-not-kill-earlier-documents ()
+  "A later Cancel must leave earlier documents and their edits intact."
+  (let ((first (generate-new-buffer "Glassmacs P0 First"))
+        (second (generate-new-buffer "Glassmacs P0 Second")))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer first)
+          (let ((left (selected-window))
+                (right (split-window-right))
+                (answers '(?d ?c)))
+            (set-window-buffer right second)
+            (dolist (buffer (list first second))
+              (with-current-buffer buffer
+                (insert "unsaved")
+                (set-buffer-modified-p t)))
+            (cl-letf (((symbol-function 'read-multiple-choice)
+                       (lambda (&rest _) (list (pop answers)))))
+              (should-not (glassmacs--close-documents-in-windows
+                           (list left right))))
+            (should (buffer-live-p first))
+            (should (buffer-live-p second))
+            (should (buffer-modified-p first))
+            (should (buffer-modified-p second))))
+      (dolist (buffer (list first second))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer))))))
+
+(ert-deftest glassmacs-p0-console-frame-close-honors-cancel ()
+  "The native frame-close path must consult console close protection."
+  (let ((frame (selected-frame))
+        (called nil))
+    (cl-letf (((symbol-function 'glassmacs--confirm-console-windows-close)
+               (lambda (windows)
+                 (setq called windows)
+                 nil))
+              ((symbol-function 'glassmacs--close-documents-in-windows)
+               (lambda (_) (ert-fail "Documents must not close after Cancel"))))
+      (should-not (glassmacs-close-frame-documents frame))
+      (should called))))
+
+(ert-deftest glassmacs-p0-discard-kill-veto-restores-modified-state ()
+  (let ((buffer (generate-new-buffer "Glassmacs P0 Veto")))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer buffer)
+          (with-current-buffer buffer
+            (insert "unsaved")
+            (set-buffer-modified-p t))
+          (cl-letf (((symbol-function 'read-multiple-choice)
+                     (lambda (&rest _) '(?d "don't save")))
+                    ((symbol-function 'kill-buffer)
+                     (lambda (&optional _) nil)))
+            (should-not
+             (glassmacs--close-documents-in-windows (list (selected-window)))))
+          (should (buffer-live-p buffer))
+          (should (buffer-modified-p buffer)))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-p0-close-save-failure-preserves-document ()
+  "A failed Save must leave the modified document and its view intact."
+  (let ((buffer (generate-new-buffer "Glassmacs P0 Save Failure")))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer buffer)
+          (with-current-buffer buffer (insert "not saved"))
+          (cl-letf (((symbol-function 'read-multiple-choice)
+                     (lambda (&rest _) '(?s "save")))
+                    ((symbol-function 'save-buffer)
+                     (lambda (&rest _) (error "Simulated write failure"))))
+            (should-not (glassmacs--close-documents-in-windows
+                         (list (selected-window)))))
+          (should (buffer-live-p buffer))
+          (should (buffer-modified-p buffer))
+          (should (eq (window-buffer (selected-window)) buffer)))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-p0-close-one-view-preserves-modified-buffer ()
+  "Closing one presentation must not kill a document still shown elsewhere."
+  (let ((buffer (generate-new-buffer "Glassmacs P0 Shared")))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer buffer)
+          (let ((left (selected-window))
+                (right (split-window-right)))
+            (set-window-buffer right buffer)
+            (with-current-buffer buffer (insert "shared edits"))
+            (cl-letf (((symbol-function 'read-multiple-choice)
+                       (lambda (&rest _) (ert-fail "Unexpected save prompt"))))
+              (should (glassmacs--close-documents-in-windows (list left))))
+            (should (buffer-live-p buffer))
+            (should (buffer-modified-p buffer))
+            (should (eq (window-buffer right) buffer))))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-p0-modified-scratch-is-a-document ()
+  "A modified scratch buffer must participate in document-close review."
+  (let ((buffer (generate-new-buffer "*scratch*")))
+    (unwind-protect
+        (with-current-buffer buffer
+          (insert "important notes")
+          (cl-letf (((symbol-function 'buffer-name)
+                     (lambda (&optional candidate)
+                       (if (eq (or candidate (current-buffer)) buffer)
+                           "*scratch*"
+                         "other"))))
+            (should (glassmacs--ordinary-document-buffer-p buffer))
+            (should (glassmacs--document-buffer-needs-saving-p buffer))))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)))))
