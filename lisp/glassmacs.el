@@ -42,6 +42,9 @@
 ;; After custom.el, so the user's environment preferences apply.
 (glassmacs-environment-initialize)
 (glassmacs-editing-apply)
+;; Use the familiar macOS insertion caret unless the user customized it.
+(unless (get 'cursor-type 'saved-value)
+  (setq-default cursor-type 'bar))
 (glassmacs--install-hybrid-bindings)
 ;; General document toolbar; R buffers install their own contextual map.
 (glassmacs-aquamacs-toolbar-install)
