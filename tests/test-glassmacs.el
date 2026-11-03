@@ -2303,6 +2303,27 @@ example) can run first and delay the sentinel."
                 (should-not (eq (window-buffer (selected-window)) buffer))))
         (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
+(ert-deftest glassmacs-buffer-move-from-previously-inactive-tab ()
+  (glassmacs-test--with-isolated-tab-bar
+    (let ((buffer (generate-new-buffer " *glassmacs-inactive-tab-source*"))
+          (other (generate-new-buffer " *glassmacs-inactive-tab-other*"))
+          (glassmacs-buffer-placement--last-move nil))
+      (unwind-protect
+          (progn
+            (switch-to-buffer buffer)
+            (let* ((source-tab (1+ (tab-bar--current-tab-index)))
+                   (source (selected-window)))
+              (tab-bar-new-tab)
+              (switch-to-buffer other)
+              (tab-bar-select-tab source-tab)
+              (should (eq (window-buffer source) buffer))
+              (glassmacs-move-buffer-to 'new-tab (selected-frame) source)
+              (should (eq (window-buffer (selected-window)) buffer))
+              (tab-bar-select-tab source-tab)
+              (should-not (eq (window-buffer source) buffer))))
+        (kill-buffer buffer)
+        (kill-buffer other)))))
+
 (ert-deftest glassmacs-buffer-move-to-tab-enables-tabs-without-duplicating-source ()
   (let* ((frame (selected-frame))
          (saved-tabs (frame-parameter frame 'tabs))
@@ -2416,31 +2437,26 @@ example) can run first and delay the sentinel."
         (should (eq (nth 2 observed) clicked))
         (should (eq (car observed) 'new-frame))))))
 
-(ert-deftest glassmacs-buffer-move-retains-source-if-destination-fails ()
+(ert-deftest glassmacs-buffer-move-retains-source-if-destination-creation-fails ()
   (save-window-excursion
     (delete-other-windows)
     (let ((buffer (generate-new-buffer " *glassmacs-failed-move*"))
-          (unrelated (generate-new-buffer " *glassmacs-failed-destination*"))
           (glassmacs-buffer-placement--last-move nil))
       (unwind-protect
           (progn
             (switch-to-buffer buffer)
             (let ((source (selected-window)))
               (cl-letf (((symbol-function 'glassmacs-buffer-placement--display)
-                         (lambda (_buffer _placement _frame)
-                           (let ((window (split-window-right)))
-                             (set-window-buffer window unrelated)
-                             window))))
+                         (lambda (&rest _)
+                           (error "Destination creation failed"))))
                 (should-error
                  (glassmacs-move-buffer-to
-                  'split-right (selected-frame) source)
-                 :type 'error))
+                  'split-right (selected-frame) source)))
               (should (window-live-p source))
               (should (eq (window-buffer source) buffer))
               (should (buffer-live-p buffer))
               (should-not glassmacs-buffer-placement--last-move)))
-        (kill-buffer buffer)
-        (kill-buffer unrelated)))))
+        (kill-buffer buffer)))))
 
 (ert-deftest glassmacs-buffer-move-preserves-buffer-state-and-process ()
   (save-window-excursion
