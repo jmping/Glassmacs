@@ -644,33 +644,35 @@ This command does not query R or contact a remote host."
    (list :buffer (buffer-name) :operation 'working-directory)))
 
 (defun glassmacs-r-start-session ()
-  "Start an ESS R session and register it; report missing R or ESS."
+  "Start and register an ESS R session, showing a native console frame."
   (interactive)
   (unless (locate-library "ess-site")
     (user-error "ESS is unavailable; install the ess package first"))
-  (unless (executable-find (or (and (boundp 'glassmacs-r-executable) glassmacs-r-executable)
-                               (and (boundp 'inferior-ess-r-program) inferior-ess-r-program)
+  (unless (executable-find (or (and (boundp 'glassmacs-r-executable)
+                                    glassmacs-r-executable)
+                               (and (boundp 'inferior-ess-r-program)
+                                    inferior-ess-r-program)
                                "R"))
     (user-error "R executable not found; install R or set glassmacs-r-executable"))
   (let ((origin-frame (selected-frame))
         (origin-buffer (current-buffer)))
     (call-interactively (intern "R"))
-    ;; ESS may split the source frame when starting R. Restore the document
-    ;; and display the new console in its own frame on graphical macOS.
-    (when (and (eq system-type 'darwin) (display-graphic-p)
-               (eq glassmacs-r-console-placement 'separate-window)
-               (derived-mode-p 'inferior-ess-r-mode))
-      (let ((console (current-buffer)))
-        (with-selected-frame origin-frame
-          (when (buffer-live-p origin-buffer)
-            (delete-other-windows)
-            (switch-to-buffer origin-buffer)))
-        (glassmacs-r-display-console console))))
-  (let ((proc (and (boundp 'ess-local-process-name) ess-local-process-name
-                   (get-process ess-local-process-name))))
-    (if (glassmacs-sessions--process-live-p proc)
-        (glassmacs-session-id (glassmacs-sessions-register proc))
-      (user-error "R started but no live ESS process was found"))))
+    (let* ((console (current-buffer))
+           (proc (and (boundp 'ess-local-process-name)
+                      ess-local-process-name
+                      (get-process ess-local-process-name))))
+      (unless (glassmacs-sessions--process-live-p proc)
+        (user-error "R started but no live ESS process was found"))
+      (let ((id (glassmacs-session-id (glassmacs-sessions-register proc))))
+        (when (and (eq system-type 'darwin)
+                   (display-graphic-p)
+                   (eq glassmacs-r-console-placement 'separate-window))
+          (with-selected-frame origin-frame
+            (when (buffer-live-p origin-buffer)
+              (delete-other-windows)
+              (switch-to-buffer origin-buffer)))
+          (glassmacs-r-display-console console))
+        id))))
 
 (defun glassmacs-r-start-and-target-session ()
   "Start R and target the new session from the current source buffer.
