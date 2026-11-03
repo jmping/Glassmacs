@@ -36,7 +36,9 @@ POLICY must be `new-frame', `new-tab', or `reuse-current'."
 (defun glassmacs-open-document-preferences ()
   "Open the dedicated document and window opening preferences."
   (interactive)
-  (customize-group 'glassmacs-frames))
+  (let ((display-buffer-overriding-action
+         '((display-buffer-pop-up-frame) (inhibit-same-window . t))))
+    (customize-group 'glassmacs-frames)))
 
 (defun glassmacs--ordinary-document-buffer-p (buffer)
   "Return non-nil when BUFFER is an ordinary document buffer."
