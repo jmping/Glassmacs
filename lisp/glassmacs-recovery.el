@@ -150,14 +150,15 @@ Never snapshot process buffers, remote files, or special buffers."
   "Return the durable in-flight recovery transaction path."
   (expand-file-name "transaction.eldata" glassmacs-recovery-directory))
 
-(defun glassmacs-recovery--write-index-transaction (index records)
+(defun glassmacs-recovery--write-index-transaction (index records &optional windows)
   "Publish RECORDS to INDEX with an in-flight transaction marker.
 A failed publication retains the marker, preventing reclamation."
   (glassmacs-recovery--require-clean-transaction)
   (let* ((target (expand-file-name index glassmacs-recovery-directory))
          (marker (glassmacs-recovery--transaction-path))
          (old (glassmacs-recovery--read-index index))
-         (new (list :version 1 :buffers records)))
+         (new (append (list :version 1 :buffers records)
+                      (when windows (list :windows windows)))))
     (glassmacs-recovery--write-private
      marker (prin1-to-string
              (list :version 1 :index index :old old :new new)))
@@ -740,19 +741,48 @@ ORIGINAL and ARGS are used only for the guarded, already-reviewed quit."
             #'glassmacs-recovery--reviewed-quit-advice)
 (add-hook 'kill-emacs-query-functions #'glassmacs-recovery--quit-safety-check)
 
+(defun glassmacs-recovery--open-window-records ()
+  "Record visible document frames for crash recovery, without process buffers.
+Only durable document IDs and bounded geometry are stored; window contents
+and arbitrary frame parameters are never evaluated from recovery files."
+  (let (records)
+    (dolist (frame (frame-list))
+      (when (and (frame-live-p frame) (frame-visible-p frame)
+                 (not (frame-parameter frame 'minibuffer-only)))
+        (let ((buffers (cl-remove-duplicates
+                        (cl-loop for window in (window-list frame 'never)
+                                 for buffer = (window-buffer window)
+                                 when (glassmacs-recovery--eligible-p buffer)
+                                 collect (with-current-buffer buffer
+                                           (glassmacs-recovery--id)))
+                        :test #'equal)))
+          (when buffers
+            (push (list :buffers buffers
+                        :left (frame-parameter frame 'left)
+                        :top (frame-parameter frame 'top)
+                        :width (frame-width frame)
+                        :height (frame-height frame))
+                  records)))))
+    (nreverse records)))
+
 (defun glassmacs-recovery--periodic-snapshot ()
   "Best-effort snapshots for crash recovery; do not replace quit manifest."
   (unless glassmacs-recovery--restoring
     (condition-case err
         (progn
           (glassmacs-recovery--ensure-directory)
-          (let ((records nil))
+          (let ((records nil)
+                (windows (glassmacs-recovery--open-window-records)))
+            ;; Include clean, file-backed documents so a forced quit can
+            ;; reconstruct visible source windows, not just dirty snapshots.
             (dolist (buffer (glassmacs-recovery--documents))
-              (when (buffer-modified-p buffer)
+              (when (or (buffer-modified-p buffer)
+                        (and (buffer-file-name buffer)
+                             (not (file-remote-p (buffer-file-name buffer)))))
                 (push (glassmacs-recovery--snapshot buffer) records)))
-            (when records
+            (when (or records windows)
               (glassmacs-recovery--write-index-transaction
-               "crash.eldata" (nreverse records)))))
+               "crash.eldata" (nreverse records) windows))))
       (error (display-warning 'glassmacs-recovery
                               (error-message-string err) :warning)))))
 
