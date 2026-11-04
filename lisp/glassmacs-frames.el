@@ -567,6 +567,58 @@ A buffer without a visible view is opened using its document policy."
       (user-error "No document selected"))
     (glassmacs-present-buffer (cdr (assoc selection choices)) 'focus)))
 
+(defun glassmacs--window-navigation-choices ()
+  "Return visible, live application windows with stable descriptive labels.
+Do not include hidden minibuffer windows or manufacture buffer views."
+  (let (choices)
+    (dolist (frame (frame-list))
+      (when (and (frame-live-p frame)
+                 (frame-visible-p frame))
+        (dolist (window (window-list frame 'no-minibuffer))
+          (let ((buffer (window-buffer window)))
+            (when (and (window-live-p window)
+                       (buffer-live-p buffer)
+                       (not (string-prefix-p " " (buffer-name buffer))))
+              (let* ((kind (cond
+                            ((buffer-file-name buffer) "Document")
+                            ((with-current-buffer buffer
+                               (derived-mode-p 'inferior-ess-r-mode)) "R Console")
+                            ((with-current-buffer buffer
+                               (derived-mode-p 'help-mode 'ess-help-mode)) "Help")
+                            ((string-match-p "\\*Customize" (buffer-name buffer))
+                             "Preferences")
+                            (t "Other")))
+                     (label (format "%s — %s [frame %s, window %s]"
+                                    kind (buffer-name buffer)
+                                    (frame-parameter frame 'name)
+                                    (or (window-parameter window 'window-id)
+                                        (cl-position window
+                                                     (window-list frame 'no-minibuffer))))))
+                (push (cons label window) choices)))))))
+    (nreverse choices)))
+
+(defun glassmacs-focus-open-window ()
+  "Focus an existing application window without changing its buffer.
+Unlike document opening, this never creates a frame or replaces a view."
+  (interactive)
+  (let* ((choices (glassmacs--window-navigation-choices))
+         (choice (completing-read "Focus window: " choices nil t))
+         (window (cdr (assoc choice choices))))
+    (unless (window-live-p window)
+      (user-error "Selected window is no longer available"))
+    (select-frame-set-input-focus (window-frame window))
+    (select-window window)
+    window))
+
+(defun glassmacs--install-window-navigation-menu ()
+  "Expose non-destructive native window navigation."
+  (when (eq system-type 'darwin)
+    (define-key global-map [menu-bar window glassmacs-focus-window]
+      '(menu-item "Focus Open Window…" glassmacs-focus-open-window))))
+
+(with-eval-after-load 'menu-bar
+  (glassmacs--install-window-navigation-menu))
+
 (defvar glassmacs--mode-line-original-mouse-1 nil)
 (defvar glassmacs--mode-line-original-mouse-3 nil)
 
