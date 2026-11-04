@@ -48,6 +48,9 @@
     (define-key menu [switch-console]
       '(menu-item "Switch R Console…" glassmacs-r-switch-console
                   :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [rename-console]
+      '(menu-item "Rename R Console…" glassmacs-r-rename-console
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [show-target]
       '(menu-item "Show Current R Target" glassmacs-r-show-target-session))
     (define-key menu [clear-target]
