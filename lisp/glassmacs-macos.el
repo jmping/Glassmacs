@@ -233,8 +233,6 @@ does not provide a native macOS print dialog."
                     :button (:toggle . glassmacs-preserve-open-buffers-on-quit)))
       (define-key glassmacs-menu [restore-buffers]
         '(menu-item "Restore Preserved Buffers…" glassmacs-recovery-restore))
-      (define-key glassmacs-menu [review-unsaved]
-        '(menu-item "Review Unsaved Documents…" glassmacs-review-unsaved-documents))
       (define-key glassmacs-menu [keyboard-profile] keyboard-menu)
       (define-key keyboard-menu [hybrid]
         '(menu-item "Hybrid macOS / Emacs"
@@ -258,8 +256,6 @@ does not provide a native macOS print dialog."
           '(menu-item "Reveal in Finder" glassmacs-reveal-in-finder
                       :enable (and buffer-file-name
                                    (not (file-remote-p buffer-file-name)))))
-        (define-key file-menu [glassmacs-quit]
-          '(menu-item "Quit Glassmacs" glassmacs-recovery-quit))
         (define-key file-menu [glassmacs-print-document]
           '(menu-item "Print Document…" glassmacs-print-document))
         (define-key file-menu [glassmacs-open-recent]
@@ -268,9 +264,11 @@ does not provide a native macOS print dialog."
           '(menu-item "Clear Recent Files…" glassmacs-clear-recent-files))
         (define-key file-menu [glassmacs-recent-preferences]
           '(menu-item "Recent Files Preferences…" glassmacs-recent-files-preferences))
-        (define-key file-menu [glassmacs-new-window]
-          '(menu-item "New Window" glassmacs-new-window
-                      :enable (display-graphic-p))))
+        ;; New Window belongs in Window; the File duplicate obscured the
+        ;; distinction between a blank window and a new document.
+        (define-key file-menu [glassmacs-new-window] nil)
+        ;; Quit is owned by the native application menu.
+        (define-key file-menu [glassmacs-quit] nil))
       (unless (keymapp window-menu)
         (setq window-menu (make-sparse-keymap "Window"))
         (define-key global-map [menu-bar window] window-menu))
