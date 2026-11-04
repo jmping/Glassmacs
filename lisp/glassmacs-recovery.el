@@ -555,52 +555,117 @@ A positive retain decision resets the review count for the item."
              (y-or-n-p "Glassmacs has crash-recovery snapshots. Review them? "))
         (glassmacs-recovery-restore-crash))))))
 
-(defun glassmacs-recovery--quit-choice ()
-  "Ask one compact question about unsaved documents."
-  (let ((count (cl-count-if #'buffer-modified-p
-                            (glassmacs-recovery--documents))))
-    (if (zerop count)
-        'save
-      (pcase (condition-case nil
-                 (car (read-multiple-choice
-                       (format "Quit with %d unsaved document%s? "
-                               count (if (= count 1) "" "s"))
-                       '((?s "Save All" "Save all documents before quitting")
-                         (?d "Don't Save" "Discard document changes and quit")
-                         (?c "Cancel" "Return to Glassmacs"))))
-               (quit ?c))
-        (?s 'save) (?d 'discard) (_ 'cancel)))))
+(defun glassmacs-recovery--native-quit-decision (buffer)
+  "Return (ACTION . APPLY-ALL) from a fresh macOS alert for BUFFER.
+The checkbox is created anew, with state explicitly set to zero.  If
+the native dialog cannot run, return nil and use the safe fallback."
+  (when (and (eq system-type 'darwin)
+             (display-graphic-p)
+             (executable-find "osascript"))
+    (let* ((name (buffer-name buffer))
+           (script
+            (concat
+             "ObjC.import('AppKit');"
+             "var app=$.NSApplication.sharedApplication;"
+             "var a=$.NSAlert.alloc.init;"
+             "a.setMessageText(" (json-encode (format "Save changes to %s?" name)) ");"
+             "a.setInformativeText('Choose what to do before quitting Glassmacs.');"
+             "a.addButtonWithTitle('Save');"
+             "a.addButtonWithTitle('Don\\'t Save');"
+             "a.addButtonWithTitle('Cancel');"
+             "var c=$.NSButton.alloc.initWithFrame($.NSMakeRect(0,0,340,28));"
+             "c.setButtonType($.NSSwitchButton);"
+             "c.setTitle('Apply this choice to all remaining modified documents');"
+             "c.setState(0);"
+             "a.setAccessoryView(c);"
+             "app.activateIgnoringOtherApps(true);"
+             "var r=a.runModal;"
+             "var action=(r==1000?'save':r==1001?'discard':'cancel');"
+             "JSON.stringify({action:action,all:(c.state==1)});"))
+           (output (generate-new-buffer " *glassmacs-native-quit*")))
+      (unwind-protect
+          (when (zerop (condition-case nil
+                          (process-file "osascript" nil output nil
+                                        "-l" "JavaScript" "-e" script)
+                        (error 1)))
+            (with-current-buffer output
+              (goto-char (point-min))
+              (let* ((response (json-read))
+                     (action (cdr (assq 'action response)))
+                     (all (cdr (assq 'all response))))
+                (when (member action '("save" "discard" "cancel"))
+                  (cons (intern action) (eq all t))))))
+        (kill-buffer output)))))
+
+(defun glassmacs-recovery--quit-decision (buffer)
+  "Ask about BUFFER; the scope checkbox defaults unchecked each time.
+A non-native fallback asks scope separately, defaulting to current file."
+  (or (glassmacs-recovery--native-quit-decision buffer)
+      (let* ((action
+              (pcase (condition-case nil
+                         (car (read-multiple-choice
+                               (format "Save changes to %s? " (buffer-name buffer))
+                               '((?s "Save" "Save this document")
+                                 (?d "Don't Save" "Discard changes on quit")
+                                 (?c "Cancel" "Keep Glassmacs open"))))
+                       (quit ?c))
+                (?s 'save) (?d 'discard) (_ 'cancel)))
+             (all (and (not (eq action 'cancel))
+                       (eq (car (read-multiple-choice
+                                 "Apply this choice to all remaining documents? "
+                                 '((?n "No" "Only this document")
+                                   (?y "Yes" "All remaining documents"))))
+                           ?y))))
+        (cons action all))))
 
 (defun glassmacs-recovery--quit-reviewed ()
-  "Quit using Save All, Don't Save, or Cancel rather than Emacs's large menu."
-  (let* ((choice (glassmacs-recovery--quit-choice))
-         (dirty (cl-remove-if-not #'buffer-modified-p
-                                  (glassmacs-recovery--documents))))
-    (pcase choice
-      ('cancel (message "Quit canceled") nil)
-      ('save
-       (condition-case err
-           (progn
-             (dolist (buffer dirty)
-               (when (buffer-live-p buffer)
-                 (with-current-buffer buffer (save-buffer))))
-             (if (cl-some #'buffer-modified-p
-                          (glassmacs-recovery--documents))
-                 (progn (message "Quit canceled: documents remain unsaved") nil)
-               (save-buffers-kill-emacs)))
-         (error (message "Quit canceled: %s" (error-message-string err)) nil)
-         (quit (message "Quit canceled") nil)))
-      ('discard
-       (unwind-protect
-           (progn
-             (dolist (buffer dirty)
-               (when (buffer-live-p buffer)
-                 (with-current-buffer buffer (set-buffer-modified-p nil))))
-             (save-buffers-kill-emacs))
-         ;; A vetoed quit must not silently mark documents clean.
-         (dolist (buffer dirty)
-           (when (buffer-live-p buffer)
-             (with-current-buffer buffer (set-buffer-modified-p t)))))))))
+  "Review modified documents individually; never reuse checkbox state.
+Discard decisions are staged until quit, and restored if quit is vetoed."
+  (let ((dirty (cl-remove-if-not #'buffer-modified-p
+                                  (glassmacs-recovery--documents)))
+        (discard nil)
+        (apply-action nil)
+        (cancelled nil))
+    (catch 'cancel
+      (dolist (buffer dirty)
+        (when (and (buffer-live-p buffer) (buffer-modified-p buffer))
+          (let* ((decision (if apply-action
+                               (cons apply-action nil)
+                             (glassmacs-recovery--quit-decision buffer)))
+                 (action (car decision)))
+            (when (eq action 'cancel)
+              (setq cancelled t)
+              (throw 'cancel nil))
+            (when (cdr decision)
+              (setq apply-action action))
+            (pcase action
+              ('save
+               (condition-case err
+                   (with-current-buffer buffer
+                     (save-buffer)
+                     (when (buffer-modified-p)
+                       (error "Document remains modified")))
+                 ((error quit)
+                  (message "Quit canceled: %s" (error-message-string err))
+                  (setq cancelled t)
+                  (throw 'cancel nil))))
+              ('discard (push buffer discard))
+              (_ (setq cancelled t) (throw 'cancel nil)))))))
+    (if cancelled
+        (progn (message "Quit canceled") nil)
+      (unwind-protect
+          (progn
+            (dolist (buffer discard)
+              (when (buffer-live-p buffer)
+                (with-current-buffer buffer (set-buffer-modified-p nil))))
+            ;; Suppress Emacs's nine-choice prompt only after every document
+            ;; has been reviewed; other quit hooks still run.
+            (cl-letf (((symbol-function 'save-some-buffers)
+                       (lambda (&rest _) nil)))
+              (save-buffers-kill-emacs)))
+        (dolist (buffer discard)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p t))))))))
 
 (defun glassmacs-recovery-quit ()
   "Quit without per-document prompts only after successful preservation.
