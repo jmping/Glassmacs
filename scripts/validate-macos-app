@@ -8,12 +8,15 @@ contents="$app/Contents"
 plist="$contents/Info.plist"
 bootstrap="$contents/MacOS/GlassmacsBootstrap"
 emacs="$contents/MacOS/Emacs"
+quit_alert="$contents/Helpers/GlassmacsQuitAlert.app/Contents"
 plutil=${GLASSMACS_PLUTIL:-/usr/bin/plutil}
 plist_buddy=${GLASSMACS_PLISTBUDDY:-/usr/libexec/PlistBuddy}
 
 test -f "$plist"
 test -x "$bootstrap"
 test -x "$emacs"
+test -x "$quit_alert/MacOS/GlassmacsQuitAlert"
+test -f "$quit_alert/Info.plist"
 test -f "$contents/Resources/Glassmacs/init.el"
 test -f "$contents/Resources/Glassmacs/lisp/glassmacs.el"
 test -f "$contents/Resources/Glassmacs/scripts/bootstrap"
@@ -32,6 +35,11 @@ test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundleIdentifier' "$plist")" = 
 test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundleExecutable' "$plist")" = GlassmacsBootstrap
 test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundleIconFile' "$plist")" = Glassmacs
 test "$(/usr/bin/env "$plist_buddy" -c 'Print :LSMinimumSystemVersion' "$plist")" = 13.0
+/usr/bin/env "$plutil" -lint "$quit_alert/Info.plist"
+test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundlePackageType' "$quit_alert/Info.plist")" = APPL
+test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundleIdentifier' "$quit_alert/Info.plist")" = org.glassmacs.Glassmacs.QuitAlert
+test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundleExecutable' "$quit_alert/Info.plist")" = GlassmacsQuitAlert
+test "$(/usr/bin/env "$plist_buddy" -c 'Print :LSUIElement' "$quit_alert/Info.plist")" = true
 
 
 # Static packaged-app checks (acceptance matrix DIST-001 to DIST-004,
@@ -70,6 +78,7 @@ if bundle_plist.get("LSMultipleInstancesProhibited") is not True:
 # Glassmacs's own binaries and Emacs must contain every supported architecture.
 required = set(os.environ["GLASSMACS_REQUIRED_ARCHITECTURES"].split())
 own = [contents / "MacOS/GlassmacsBootstrap",
+       contents / "Helpers/GlassmacsQuitAlert.app/Contents/MacOS/GlassmacsQuitAlert",
        contents / "Resources/Glassmacs/macos/libglassmacs-lifecycle.dylib"]
 for binary in own + [contents / "MacOS/Emacs"]:
     try:
@@ -128,7 +137,8 @@ for directory, directories, files in os.walk(contents.parent):
             fail(f"world-writable: {path.relative_to(contents.parent)}")
         if mode & (stat.S_ISUID | stat.S_ISGID):
             fail(f"set-user or set-group ID: {path.relative_to(contents.parent)}")
-for path in (contents / "MacOS").iterdir():
+for path in [contents / "MacOS/GlassmacsBootstrap",
+             contents / "Helpers/GlassmacsQuitAlert.app/Contents/MacOS/GlassmacsQuitAlert"]:
     if path.resolve() in set(binaries) and not os.access(path, os.X_OK):
         fail(f"not executable: {path.relative_to(contents)}")
 print(f"Checked document types, architectures ({' '.join(sorted(required))}), "

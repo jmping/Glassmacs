@@ -560,43 +560,31 @@ A positive retain decision resets the review count for the item."
   "Return (ACTION . APPLY-ALL) from a fresh macOS alert for BUFFER.
 The checkbox is created anew, with state explicitly set to zero.  If
 the native dialog cannot run, return nil and use the safe fallback."
-  (when (and (eq system-type 'darwin)
-             (display-graphic-p)
-             (executable-find "osascript"))
-    (let* ((name (buffer-name buffer))
-           (script
-            (concat
-             "ObjC.import('AppKit');"
-             "var app=$.NSApplication.sharedApplication;"
-             "var a=$.NSAlert.alloc.init;"
-             "a.setMessageText(" (json-encode (format "Save changes to %s?" name)) ");"
-             "a.setInformativeText('Choose what to do before quitting Glassmacs.');"
-             "a.addButtonWithTitle('Save');"
-             "a.addButtonWithTitle(\"Don't Save\");"
-             "a.addButtonWithTitle('Cancel');"
-             "var c=$.NSButton.alloc.initWithFrame($.NSMakeRect(0,0,340,28));"
-             "c.setButtonType($.NSSwitchButton);"
-             "c.setTitle('Apply this choice to all remaining modified documents');"
-             "c.setState(0);"
-             "a.setAccessoryView(c);"
-             "app.activateIgnoringOtherApps(true);"
-             "var r=a.runModal;"
-             "var action=(r==1000?'save':r==1001?'discard':'cancel');"
-             "JSON.stringify({action:action,all:(c.state==1)});"))
-           (output (generate-new-buffer " *glassmacs-native-quit*")))
-      (unwind-protect
-          (when (zerop (condition-case nil
-                          (process-file "osascript" nil output nil
-                                        "-l" "JavaScript" "-e" script)
-                        (error 1)))
-            (with-current-buffer output
-              (goto-char (point-min))
-              (let* ((response (json-read))
-                     (action (cdr (assq 'action response)))
-                     (all (cdr (assq 'all response))))
-                (when (member action '("save" "discard" "cancel"))
-                  (cons (intern action) (eq all t))))))
-        (kill-buffer output)))))
+  (let* ((open (executable-find "open"))
+         (helper-app (expand-file-name
+                      "../Helpers/GlassmacsQuitAlert.app" invocation-directory))
+         (helper (expand-file-name "Contents/MacOS/GlassmacsQuitAlert"
+                                   helper-app)))
+    (when (and (eq system-type 'darwin)
+               (display-graphic-p)
+               open (file-executable-p helper))
+      (let ((response-file (make-temp-file "glassmacs-quit-response-")))
+        (unwind-protect
+            (condition-case nil
+                (when (zerop (process-file open nil nil nil "-n" "-W" "-a"
+                                           helper-app "--args" response-file
+                                           (buffer-name buffer)))
+                  (with-temp-buffer
+                    (let ((json-object-type 'alist))
+                      (insert-file-contents response-file)
+                      (goto-char (point-min))
+                      (let* ((response (json-read))
+                             (action (cdr (assq 'action response)))
+                             (all (cdr (assq 'all response))))
+                        (when (member action '("save" "discard" "cancel"))
+                          (cons (intern action) (eq all t)))))))
+              (error nil))
+          (ignore-errors (delete-file response-file)))))))
 
 (defun glassmacs-recovery--quit-decision (buffer)
   "Ask about BUFFER; the scope checkbox defaults unchecked each time.

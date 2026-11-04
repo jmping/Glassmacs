@@ -68,16 +68,28 @@ for architecture in arm64 x86_64; do
     -Xswiftc -file-prefix-map -Xswiftc "$root=." --show-bin-path)"
   cp "$bin_path/GlassmacsLauncher" \
     "$tmp/GlassmacsLauncher-$architecture"
+  cp "$bin_path/GlassmacsQuitAlert" \
+    "$tmp/GlassmacsQuitAlert-$architecture"
 done
 /usr/bin/lipo -create \
   "$tmp/GlassmacsLauncher-arm64" \
   "$tmp/GlassmacsLauncher-x86_64" \
   -output "$tmp/GlassmacsLauncher"
 /usr/bin/strip -S -x "$tmp/GlassmacsLauncher"
+/usr/bin/lipo -create \
+  "$tmp/GlassmacsQuitAlert-arm64" \
+  "$tmp/GlassmacsQuitAlert-x86_64" \
+  -output "$tmp/GlassmacsQuitAlert"
+/usr/bin/strip -S -x "$tmp/GlassmacsQuitAlert"
 ditto --rsrc --extattr --acl "$upstream_app" "$output"
 cp "$tmp/GlassmacsLauncher" \
   "$output/Contents/MacOS/GlassmacsBootstrap"
 chmod 755 "$output/Contents/MacOS/GlassmacsBootstrap"
+quit_alert="$output/Contents/Helpers/GlassmacsQuitAlert.app/Contents"
+mkdir -p "$quit_alert/MacOS"
+cp "$tmp/GlassmacsQuitAlert" "$quit_alert/MacOS/GlassmacsQuitAlert"
+chmod 755 "$quit_alert/MacOS/GlassmacsQuitAlert"
+cp "$root/macos/GlassmacsQuitAlert-Info.plist" "$quit_alert/Info.plist"
 glassmacs_resources="$output/Contents/Resources/Glassmacs"
 mkdir -p "$glassmacs_resources/scripts"
 cp "$root/init.el" "$glassmacs_resources/init.el"

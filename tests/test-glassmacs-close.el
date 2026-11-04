@@ -23,6 +23,33 @@ The extra window means closing deletes a window rather than the frame."
                 (lambda (&rest _) (cl-incf prompts) (list ,answer))))
        ,@body)))
 
+(ert-deftest glassmacs-native-quit-helper-returns-alert-decision ()
+  (let* ((system-type 'darwin)
+         (invocation-directory "/Applications/Glassmacs.app/Contents/MacOS/")
+         (buffer (get-buffer-create "glassmacs-native-quit-test"))
+         (called-with nil)
+         (response-file nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+                  ((symbol-function 'executable-find)
+                   (lambda (program) (and (equal program "open") "/usr/bin/open")))
+                  ((symbol-function 'file-executable-p) (lambda (_) t))
+                  ((symbol-function 'process-file)
+                   (lambda (program _infile _destination _display &rest args)
+                     (setq called-with (cons program args)
+                           response-file (nth 5 args))
+                     (with-temp-file response-file
+                       (insert "{\"action\":\"discard\",\"all\":true}"))
+                     0)))
+          (should (equal (glassmacs-recovery--native-quit-decision buffer)
+                         '(discard . t)))
+          (should (equal (car called-with) "/usr/bin/open"))
+          (should (member "-W" (cdr called-with)))
+          (should (equal (nth 3 (cdr called-with))
+                         "/Applications/Glassmacs.app/Contents/Helpers/GlassmacsQuitAlert.app"))
+          (should-not (file-exists-p response-file)))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (ert-deftest glassmacs-close-unmodified-document-kills-buffer-and-window ()
   (let ((buffer (generate-new-buffer "glassmacs-close-clean")))
     (glassmacs-close-test--with-split buffer
