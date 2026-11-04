@@ -16,11 +16,10 @@
   :group 'glassmacs-r-ui)
 
 (defun glassmacs-r-open-preferences ()
-  "Open Glassmacs R preferences, including ESS and console controls."
+  "Open R preferences without displacing the source document."
   (interactive)
-  (let ((display-buffer-overriding-action
-         '((display-buffer-pop-up-frame) (inhibit-same-window . t))))
-    (customize-group 'glassmacs-r)))
+  (require 'glassmacs-frames)
+  (glassmacs-open-preferences-group 'glassmacs-r))
 
 (defcustom glassmacs-r-show-toolbar t
   "Whether R buffers show contextual toolbar actions."
