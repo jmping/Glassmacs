@@ -61,12 +61,31 @@ On macOS, preserve the source document by opening a new frame."
              '(glassmacs--preferences-buffer-p
                glassmacs--display-preferences))
 
+(defun glassmacs-open-preferences-group (group)
+  "Open Customize GROUP in its own frame on graphical macOS.
+Customize can switch buffers directly, bypassing display-buffer rules;
+selecting a dedicated frame first protects the source document."
+  (let* ((separate (and (display-graphic-p)
+                        (eq glassmacs-preferences-opening-policy 'new-frame)))
+         (existing (and separate
+                        (cl-find-if
+                         (lambda (frame)
+                           (let ((window (frame-selected-window frame)))
+                             (and (window-live-p window)
+                                  (with-current-buffer (window-buffer window)
+                                    (derived-mode-p 'custom-mode)))))
+                         (frame-list))))
+         (target (or existing (and separate (make-frame)))))
+    (if target
+        (progn
+          (select-frame-set-input-focus target)
+          (with-selected-frame target (customize-group group)))
+      (customize-group group))))
+
 (defun glassmacs-open-document-preferences ()
   "Open the dedicated document and window opening preferences."
   (interactive)
-  (let ((display-buffer-overriding-action
-         '((display-buffer-pop-up-frame) (inhibit-same-window . t))))
-    (customize-group 'glassmacs-frames)))
+  (glassmacs-open-preferences-group 'glassmacs-frames))
 
 (defun glassmacs--ordinary-document-buffer-p (buffer)
   "Return non-nil when BUFFER is an ordinary document buffer."
@@ -84,30 +103,63 @@ On macOS, preserve the source document by opening a new frame."
              (glassmacs--ordinary-document-buffer-p buffer))
     glassmacs-document-opening-policy))
 
-(defun glassmacs--show-document-buffer (buffer action)
-  "Display BUFFER according to ACTION.
-With no visible frame, BUFFER is shown in the retained frame instead of
-creating an additional one."
-  (let ((visible-window (get-buffer-window buffer t)))
+(defun glassmacs-present-buffer (buffer &optional intent placement destination)
+  "Present BUFFER according to INTENT and PLACEMENT, returning its window.
+INTENT is one of open, focus, move, split, tab, or replace.  An open
+or focus operation first reuses a visible view of BUFFER.  PLACEMENT
+defaults to the document opening policy; DESTINATION is an explicit frame
+for intentional consolidation.  This API does not advise Emacs primitives."
+  (unless (buffer-live-p buffer)
+    (user-error "Cannot present a dead buffer"))
+  (let* ((intent (or intent 'open))
+         (existing (get-buffer-window buffer t))
+         (placement (or placement
+                        (and (eq intent 'open)
+                             (glassmacs--document-opening-action buffer))
+                        'reuse-current)))
     (cond
-     ((and (fboundp 'glassmacs--ensure-visible-frame)
+     ((and (memq intent '(open focus)) existing)
+      (select-frame-set-input-focus (window-frame existing))
+      (select-window existing)
+      existing)
+     ((eq intent 'focus)
+      (glassmacs-present-buffer buffer 'open placement destination))
+     ((and (memq intent '(open focus))
+           (fboundp 'glassmacs--ensure-visible-frame)
            (glassmacs--ensure-visible-frame))
-      (switch-to-buffer buffer))
-     (visible-window
-      (select-frame-set-input-focus (window-frame visible-window))
-      (select-window visible-window))
-     ((eq action 'new-frame)
+      (switch-to-buffer buffer)
+      (selected-window))
+     ((or (eq intent 'move) (eq intent 'split)
+          (eq intent 'tab) (eq intent 'replace))
+      (unless (fboundp 'glassmacs-buffer-placement--display)
+        (require 'glassmacs-buffer-placement))
+      (glassmacs-buffer-placement--display
+       buffer (pcase intent
+                ('split (if (memq placement '(split-right split-below))
+                            placement 'split-below))
+                ('tab 'new-tab)
+                ('replace 'replace)
+                (_ placement))
+       destination))
+     ((eq placement 'new-frame)
       (let ((frame (make-frame)))
         (with-selected-frame frame
           (switch-to-buffer buffer))
-        (select-frame-set-input-focus frame)))
-     ((eq action 'new-tab)
+        (select-frame-set-input-focus frame)
+        (frame-selected-window frame)))
+     ((eq placement 'new-tab)
       (require 'tab-bar)
       (tab-bar-mode 1)
       (tab-bar-new-tab)
-      (switch-to-buffer buffer))
+      (switch-to-buffer buffer)
+      (selected-window))
      (t
-      (switch-to-buffer buffer)))))
+      (switch-to-buffer buffer)
+      (selected-window)))))
+
+(defun glassmacs--show-document-buffer (buffer action)
+  "Compatibility wrapper for presenting document BUFFER using ACTION."
+  (glassmacs-present-buffer buffer 'open action))
 
 (defun glassmacs-open-file (filename &optional wildcards)
   "Open FILENAME interactively using Glassmacs' document policy."
@@ -115,6 +167,21 @@ creating an additional one."
                                     confirm-nonexistent-file-or-buffer))
   (glassmacs--open-file-with-policy
    filename wildcards (called-interactively-p 'interactive)))
+
+(defun glassmacs-find-file (filename &optional wildcards)
+  "Visit FILENAME using the native document-opening policy.
+This is the interactive counterpart of Emacs `find-file'; Lisp callers
+of `find-file' retain upstream semantics."
+  (interactive (find-file-read-args "Find file: "
+                                    confirm-nonexistent-file-or-buffer))
+  (glassmacs--open-file-with-policy filename wildcards t))
+
+(defun glassmacs--install-file-keybindings ()
+  "Route ordinary interactive file visits through the document policy.
+Do not advise `find-file' globally: packages depend on its semantics."
+  (when (eq system-type 'darwin)
+    (define-key global-map [remap find-file] #'glassmacs-find-file)
+    (global-set-key (kbd "C-x C-f") #'glassmacs-find-file)))
 
 (defun glassmacs--open-file-with-policy (filename &optional wildcards apply-policy)
   "Open FILENAME with Glassmacs document policy when APPLY-POLICY is non-nil."
@@ -468,6 +535,71 @@ FROM-MENU applies the graphical document-opening policy for menu selection."
     map)
   "Selectable major modes for File → New Buffer in Mode.")
 
+(defcustom glassmacs-mode-line-buffer-navigation 'documents
+  "How clicking the mode-line buffer name navigates.
+The `documents' setting focuses an existing document frame rather than
+cycling unrelated buffers into the current document window.  Choose
+`emacs' to retain the upstream mode-line mouse actions."
+  :type '(choice (const :tag "Focus open documents" documents)
+                 (const :tag "Standard Emacs buffer cycling" emacs))
+  :group 'glassmacs-frames)
+
+(defun glassmacs-focus-open-document ()
+  "Choose an open document or R console and focus its existing frame.
+A buffer without a visible view is opened using its document policy."
+  (interactive)
+  (let* ((buffers (cl-remove-if-not
+                   (lambda (buffer)
+                     (or (glassmacs--ordinary-document-buffer-p buffer)
+                         (with-current-buffer buffer
+                           (derived-mode-p 'inferior-ess-r-mode))))
+                   (buffer-list)))
+         (choices (mapcar (lambda (buffer)
+                            (cons (format "%s%s" (buffer-name buffer)
+                                          (if (buffer-file-name buffer)
+                                              (format " — %s" (abbreviate-file-name
+                                                                 (buffer-file-name buffer)))
+                                            ""))
+                                  buffer))
+                          buffers))
+         (selection (completing-read "Open document/window: " choices nil t)))
+    (unless (assoc selection choices)
+      (user-error "No document selected"))
+    (glassmacs-present-buffer (cdr (assoc selection choices)) 'focus)))
+
+(defvar glassmacs--mode-line-original-mouse-1 nil)
+(defvar glassmacs--mode-line-original-mouse-3 nil)
+
+(defun glassmacs--mode-line-document-click (event)
+  "Focus an open document after clicking the mode-line name at EVENT."
+  (interactive "e")
+  (if (eq glassmacs-mode-line-buffer-navigation 'emacs)
+      (let ((original (if (eq (event-basic-type event) 'mouse-3)
+                          glassmacs--mode-line-original-mouse-3
+                        glassmacs--mode-line-original-mouse-1)))
+        (when (commandp original)
+          (call-interactively original)))
+    (let ((window (posn-window (event-start event))))
+      (when (window-live-p window)
+        (select-window window)))
+    (glassmacs-focus-open-document)))
+
+(defun glassmacs--install-mode-line-document-navigation ()
+  "Install document-centric mode-line navigation without disabling Emacs opt-in."
+  (when (and (eq system-type 'darwin)
+             (boundp 'mode-line-buffer-identification-keymap)
+             (keymapp mode-line-buffer-identification-keymap))
+    (setq glassmacs--mode-line-original-mouse-1
+          (lookup-key mode-line-buffer-identification-keymap
+                      [mode-line mouse-1])
+          glassmacs--mode-line-original-mouse-3
+          (lookup-key mode-line-buffer-identification-keymap
+                      [mode-line mouse-3]))
+    (define-key mode-line-buffer-identification-keymap [mode-line mouse-1]
+      #'glassmacs--mode-line-document-click)
+    (define-key mode-line-buffer-identification-keymap [mode-line mouse-3]
+      #'glassmacs--mode-line-document-click)))
+
 (defun glassmacs--install-document-menu ()
   "Route macOS File menu open commands through Glassmacs' document policy."
   (when (and (eq system-type 'darwin) (display-graphic-p))
@@ -493,6 +625,9 @@ FROM-MENU applies the graphical document-opening policy for menu selection."
 
 (with-eval-after-load 'menu-bar
   (glassmacs--install-document-menu))
+
+(glassmacs--install-file-keybindings)
+(glassmacs--install-mode-line-document-navigation)
 
 (require 'glassmacs-buffer-placement)
 

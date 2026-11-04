@@ -509,35 +509,50 @@ In a document with R chunks, the target is cleared for the whole document."
   (message "Cleared this buffer's R session target"))
 
 (defcustom glassmacs-r-help-placement 'separate-window
-  "Where ESS R Help buffers appear without replacing the source document."
-  :type '(choice (const :tag "Separate graphical window" separate-window)
+  "Placement of ESS R Help buffers.
+The graphical macOS default is a separate native frame; explicit side
+placements remain available for users who prefer Emacs pane layouts."
+  :type '(choice (const :tag "Separate native window" separate-window)
                  (const :tag "Right side pane" side-right)
                  (const :tag "Bottom side pane" side-bottom))
   :group 'glassmacs-r)
 
 (defun glassmacs-r--help-buffer-p (buffer _action)
-  "Recognize an ESS Help BUFFER for `display-buffer-alist'."
-  (and (buffer-live-p buffer)
-       (with-current-buffer buffer
-         (derived-mode-p 'ess-help-mode))))
+  "Recognize ESS R Help BUFFER, including before ESS sets its major mode."
+  (let ((buffer (if (bufferp buffer) buffer (get-buffer buffer))))
+    (and (buffer-live-p buffer)
+         (or (with-current-buffer buffer
+               (derived-mode-p 'ess-help-mode))
+             (string-prefix-p "*help[R]" (buffer-name buffer))
+             (string-prefix-p "*R Help" (buffer-name buffer))))))
 
 (defun glassmacs-r--display-help (buffer _alist)
-  "Display ESS Help BUFFER without replacing the source window."
+  "Present ESS R Help BUFFER according to the single Help policy."
   (let ((existing (get-buffer-window buffer t)))
     (cond
      (existing existing)
      ((and (display-graphic-p)
            (eq glassmacs-r-help-placement 'separate-window))
-      (display-buffer-pop-up-frame buffer nil))
+      (display-buffer-pop-up-frame
+       buffer '((inhibit-same-window . t) (reusable-frames . nil))))
      (t (display-buffer-in-side-window
          buffer (list (cons 'side
                             (if (eq glassmacs-r-help-placement 'side-bottom)
                                 'bottom 'right))
                       (cons 'slot 0)))))))
 
-;; This rule precedes generic display actions but only matches ESS Help mode.
-(add-to-list 'display-buffer-alist
-             '(glassmacs-r--help-buffer-p glassmacs-r--display-help))
+(defun glassmacs-r-install-help-display ()
+  "Install one authoritative ESS Help rule, ahead of generic display rules."
+  (setq display-buffer-alist
+        (cl-remove-if
+         (lambda (entry)
+           (or (eq (car-safe entry) 'glassmacs-r--help-buffer-p)
+               (eq (car-safe entry) 'glassmacs-r-ui--ess-help-buffer-p)))
+         display-buffer-alist))
+  (push '(glassmacs-r--help-buffer-p glassmacs-r--display-help)
+        display-buffer-alist))
+
+(glassmacs-r-install-help-display)
 
 (defcustom glassmacs-r-console-placement
   (if (eq system-type 'darwin) 'separate-window 'split-below)
@@ -666,7 +681,9 @@ This command does not query R or contact a remote host."
    (list :buffer (buffer-name) :operation 'working-directory)))
 
 (defun glassmacs-r-start-session ()
-  "Start and register an ESS R session, showing a native console frame."
+  "Start and register an independent ESS R process.
+The originating document window is restored only if ESS replaced its
+buffer; existing splits and other windows are never deleted."
   (interactive)
   (unless (locate-library "ess-site")
     (user-error "ESS is unavailable; install the ess package first"))
@@ -676,8 +693,9 @@ This command does not query R or contact a remote host."
                                     inferior-ess-r-program)
                                "R"))
     (user-error "R executable not found; install R or set glassmacs-r-executable"))
-  (let ((origin-frame (selected-frame))
-        (origin-buffer (current-buffer)))
+  (let* ((origin-window (selected-window))
+         (origin-buffer (window-buffer origin-window))
+         (origin-frame (selected-frame)))
     (call-interactively (intern "R"))
     (let* ((console (current-buffer))
            (proc (and (boundp 'ess-local-process-name)
@@ -689,12 +707,33 @@ This command does not query R or contact a remote host."
         (when (and (eq system-type 'darwin)
                    (display-graphic-p)
                    (eq glassmacs-r-console-placement 'separate-window))
-          (with-selected-frame origin-frame
-            (when (buffer-live-p origin-buffer)
-              (delete-other-windows)
-              (switch-to-buffer origin-buffer)))
-          (glassmacs-r-display-console console))
+          ;; ESS can replace the source in its original window while
+          ;; starting R.  Restore only that window, not the entire layout.
+          (when (and (window-live-p origin-window)
+                     (buffer-live-p origin-buffer)
+                     (eq (window-buffer origin-window) console))
+            (set-window-buffer origin-window origin-buffer))
+          (glassmacs-r-display-console console)
+          ;; If ESS selected another frame, retain the document frame's
+          ;; layout and never collapse its splits as a side effect.
+          (when (and (frame-live-p origin-frame)
+                     (window-live-p origin-window))
+            (set-window-prev-buffers
+             origin-window (window-prev-buffers origin-window))))
         id))))
+
+(defun glassmacs-r-new-console ()
+  "Start a new independent R console, even when one already exists."
+  (interactive)
+  (glassmacs-r-start-and-target-session))
+
+(defun glassmacs-r-switch-console ()
+  "Choose a live R console and focus its existing native window."
+  (interactive)
+  (let ((live (glassmacs-sessions-refresh)))
+    (unless live (user-error "No live R console"))
+    (glassmacs-r-display-console
+     (glassmacs-session-buffer (glassmacs-sessions--prompt live)))))
 
 (defun glassmacs-r-start-and-target-session ()
   "Start R and target the new session from the current source buffer.

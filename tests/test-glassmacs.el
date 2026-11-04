@@ -2772,3 +2772,84 @@ example) can run first and delay the sentinel."
       (when (buffer-live-p buffer)
         (with-current-buffer buffer (set-buffer-modified-p nil))
         (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-alpha3-help-recognizes-uninitialized-ess-buffer ()
+  "The unified Help rule recognizes buffers before ESS installs help mode."
+  (let ((buffer (generate-new-buffer "*help[R] glm")))
+    (unwind-protect
+        (progn
+          (should (glassmacs-r--help-buffer-p buffer nil))
+          (should (glassmacs-r--help-buffer-p (buffer-name buffer) nil)))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-alpha3-help-installs-only-one-rule ()
+  "Repeated R Help initialization never installs competing display rules."
+  (let ((display-buffer-alist
+         (copy-tree display-buffer-alist)))
+    (glassmacs-r-install-help-display)
+    (glassmacs-r-ui--install-help-display)
+    (should (= 1 (cl-count 'glassmacs-r--help-buffer-p
+                            display-buffer-alist :key #'car)))
+    (should-not (assq 'glassmacs-r-ui--ess-help-buffer-p
+                      display-buffer-alist))))
+
+(ert-deftest glassmacs-alpha3-presentation-reuses-visible-document ()
+  "Opening a visible buffer must not replace another buffer or make a frame."
+  (let ((buffer (window-buffer (selected-window)))
+        (created nil))
+    (cl-letf (((symbol-function 'make-frame)
+               (lambda (&rest _) (setq created t)
+                 (error "Unexpected frame creation")))
+              ((symbol-function 'select-frame-set-input-focus)
+               (lambda (&rest _) nil)))
+      (should (eq (glassmacs-present-buffer buffer 'open 'new-frame)
+                  (selected-window)))
+      (should-not created))))
+
+(ert-deftest glassmacs-alpha3-interactive-find-file-is-remapped ()
+  "Document-centric file visits are bound without advising Lisp find-file."
+  (when (eq system-type 'darwin)
+    (should (eq (lookup-key global-map [remap find-file])
+                'glassmacs-find-file))
+    (should (eq (lookup-key global-map (kbd "C-x C-f"))
+                'glassmacs-find-file))))
+
+(ert-deftest glassmacs-alpha3-document-chooser-focuses-existing ()
+  "The document chooser delegates to focus intent, never replacement."
+  (let ((buffer (generate-new-buffer "Glassmacs Chooser Fixture"))
+        (seen nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (_prompt choices &rest _)
+                     (caar choices)))
+                  ((symbol-function 'glassmacs-present-buffer)
+                   (lambda (candidate intent &rest _)
+                     (setq seen (list candidate intent)))))
+          (cl-letf (((symbol-function 'glassmacs--ordinary-document-buffer-p)
+                     (lambda (candidate) (eq candidate buffer))))
+            (glassmacs-focus-open-document))
+          (should (equal seen (list buffer 'focus))))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-alpha3-r-new-console-delegates-to-targeting ()
+  "A new R console always invokes a new session, never resolves an old one."
+  (let ((called nil))
+    (cl-letf (((symbol-function 'glassmacs-r-start-and-target-session)
+               (lambda () (setq called t) "new-session")))
+      (should (equal (glassmacs-r-new-console) "new-session"))
+      (should called))))
+
+(ert-deftest glassmacs-alpha3-r-switch-console-prompts-with-multiple-sessions ()
+  "Console switching selects from live sessions without creating a process."
+  (let ((chosen nil)
+        (session (progn (require 'glassmacs-sessions)
+                        (glassmacs-session--make :id "alpha3-test"
+                                                :buffer (current-buffer)))))
+    (cl-letf (((symbol-function 'glassmacs-sessions-refresh)
+               (lambda () (list session)))
+              ((symbol-function 'glassmacs-sessions--prompt)
+               (lambda (live) (setq chosen live) session))
+              ((symbol-function 'glassmacs-r-display-console)
+               (lambda (buffer) buffer)))
+      (glassmacs-r-switch-console)
+      (should (equal chosen (list session))))))
