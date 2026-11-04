@@ -308,6 +308,25 @@ Return the number of recorded buffers.  Never write original documents."
             (unless (eobp) (error "Trailing recovery manifest data"))
             data))))))
 
+(defun glassmacs-recovery--restore-window-layout (manifest)
+  "Reopen document frames from the trusted, data-only MANIFEST.
+Never evaluate stored frame parameters or overwrite existing document
+contents.  Split layouts and tabs are not yet reconstructed."
+  (when (and (display-graphic-p)
+             (fboundp 'glassmacs-present-buffer))
+    (dolist (record (plist-get manifest :windows))
+      (when (and (listp record) (listp (plist-get record :buffers)))
+        (dolist (id (plist-get record :buffers))
+          (when (stringp id)
+            (let ((buffer (cl-find-if
+                           (lambda (candidate)
+                             (and (buffer-live-p candidate)
+                                  (equal (buffer-local-value
+                                          'glassmacs-recovery--id candidate) id)))
+                           (buffer-list))))
+              (when buffer
+                (glassmacs-present-buffer buffer 'open 'new-frame)))))))))
+
 (defun glassmacs-recovery-restore-crash ()
   "Restore the crash index without modifying the preserved-buffer index."
   (interactive)
@@ -367,14 +386,16 @@ never overwritten.  Calling this repeatedly does not duplicate buffers."
                   (setq-local glassmacs-recovery--id id))
                 (push buffer restored)
                 (cl-incf count))))))))
-    ;; Recovery is deliberately non-displaying in noninteractive startup
-    ;; paths.  A user-requested restore presents each recovered document
-    ;; independently, without replacing the currently visible document.
-    (when (and (called-interactively-p 'interactive)
-               (display-graphic-p)
-               (fboundp 'glassmacs-present-buffer))
-      (dolist (buffer (nreverse restored))
-        (glassmacs-present-buffer buffer 'open 'new-frame)))
+    ;; On confirmed startup recovery, reconstruct visible document frames.
+    ;; Older manifests have no :windows metadata and retain the original
+    ;; interactive-only presentation behavior.
+    (if (plist-get manifest :windows)
+        (glassmacs-recovery--restore-window-layout manifest)
+      (when (and (called-interactively-p 'interactive)
+                 (display-graphic-p)
+                 (fboundp 'glassmacs-present-buffer))
+        (dolist (buffer (nreverse restored))
+          (glassmacs-present-buffer buffer 'open 'new-frame))))
     (when (called-interactively-p 'interactive)
       (message "Restored %d preserved document buffers" count))
     count))
