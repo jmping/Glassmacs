@@ -555,12 +555,59 @@ A positive retain decision resets the review count for the item."
              (y-or-n-p "Glassmacs has crash-recovery snapshots. Review them? "))
         (glassmacs-recovery-restore-crash))))))
 
+(defun glassmacs-recovery--quit-choice ()
+  "Ask one compact question about unsaved documents."
+  (let ((count (cl-count-if #'buffer-modified-p
+                            (glassmacs-recovery--documents))))
+    (if (zerop count)
+        'save
+      (pcase (condition-case nil
+                 (car (read-multiple-choice
+                       (format "Quit with %d unsaved document%s? "
+                               count (if (= count 1) "" "s"))
+                       '((?s "Save All" "Save all documents before quitting")
+                         (?d "Don't Save" "Discard document changes and quit")
+                         (?c "Cancel" "Return to Glassmacs"))))
+               (quit ?c))
+        (?s 'save) (?d 'discard) (_ 'cancel)))))
+
+(defun glassmacs-recovery--quit-reviewed ()
+  "Quit using Save All, Don't Save, or Cancel rather than Emacs's large menu."
+  (let* ((choice (glassmacs-recovery--quit-choice))
+         (dirty (cl-remove-if-not #'buffer-modified-p
+                                  (glassmacs-recovery--documents))))
+    (pcase choice
+      ('cancel (message "Quit canceled") nil)
+      ('save
+       (condition-case err
+           (progn
+             (dolist (buffer dirty)
+               (when (buffer-live-p buffer)
+                 (with-current-buffer buffer (save-buffer))))
+             (if (cl-some #'buffer-modified-p
+                          (glassmacs-recovery--documents))
+                 (progn (message "Quit canceled: documents remain unsaved") nil)
+               (save-buffers-kill-emacs)))
+         (error (message "Quit canceled: %s" (error-message-string err)) nil)
+         (quit (message "Quit canceled") nil)))
+      ('discard
+       (unwind-protect
+           (progn
+             (dolist (buffer dirty)
+               (when (buffer-live-p buffer)
+                 (with-current-buffer buffer (set-buffer-modified-p nil))))
+             (save-buffers-kill-emacs))
+         ;; A vetoed quit must not silently mark documents clean.
+         (dolist (buffer dirty)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p t)))))))))
+
 (defun glassmacs-recovery-quit ()
   "Quit without per-document prompts only after successful preservation.
 If preservation fails, remain in Emacs and display the error."
   (interactive)
   (if (not glassmacs-preserve-open-buffers-on-quit)
-      (save-buffers-kill-emacs)
+      (glassmacs-recovery--quit-reviewed)
     (condition-case err
         (progn
           (glassmacs-recovery-preserve)
