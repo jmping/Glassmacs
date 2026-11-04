@@ -44,7 +44,10 @@
     (define-key menu [start]
       '(menu-item "Start R and Target This Buffer" glassmacs-r-start-and-target-session))
     (define-key menu [start-unbound]
-      '(menu-item "Start Another R Session" glassmacs-r-start-session))
+      '(menu-item "New R Console (Target This Source)" glassmacs-r-new-console))
+    (define-key menu [switch-console]
+      '(menu-item "Switch R Console…" glassmacs-r-switch-console
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [show-target]
       '(menu-item "Show Current R Target" glassmacs-r-show-target-session))
     (define-key menu [clear-target]
