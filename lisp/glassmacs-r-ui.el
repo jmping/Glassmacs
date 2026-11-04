@@ -224,8 +224,12 @@ If SVG support is missing, retain the existing built-in XPM artwork."
                                    :file (concat name ".xpm")
                                    :ascent 'center))))))
       (when image
-        (plist-put image :margin
-                   (max 0 (min 12 glassmacs-r-ui-toolbar-icon-margin)))))))
+        ;; Image specifications begin with the marker symbol `image'; the
+        ;; remaining tail is the property list accepted by plist-put.
+        (setcdr image
+                (plist-put (cdr image) :margin
+                           (max 0 (min 12 glassmacs-r-ui-toolbar-icon-margin))))
+        image))))
 
 (defun glassmacs-r-ui--toolbar-map ()
   "Build a contextual toolbar using the same R commands as the menus."
