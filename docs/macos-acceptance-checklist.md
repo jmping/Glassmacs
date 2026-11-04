@@ -142,6 +142,12 @@ Before starting: install the app in /Applications on the Mac under test, and run
 
 - [ ] With German and French layouts, type @, {, [ and é with Option; with Japanese or Chinese input, compose and commit text in a document and the minibuffer.
 
+## KEY-003
+
+**Glassmacs menu shortcuts follow active keymaps** (P2). Result: **NOT RUN**
+
+- [ ] On macOS, switch Hybrid / Traditional profiles and change among an R source buffer, ESS console and ordinary text buffer; open Glassmacs menus and verify each Glassmacs-owned shortcut matches the active binding, updates on the next menu invocation, and disappears when unbound. Confirm Cocoa-owned and upstream menu items retain their behavior.
+
 ## ASSOC-002
 
 **Documents open by type through LaunchServices** (P1). Result: **NOT RUN**

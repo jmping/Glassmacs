@@ -279,6 +279,9 @@ commands cannot accidentally inherit an earlier right-click target."
     '(menu-item "Undo Last Buffer Move" glassmacs-undo-last-buffer-move))
   (define-key global-map [menu-bar window glassmacs-show-buffer]
     '(menu-item "Show Buffer In…" glassmacs-show-buffer-in))
+  (glassmacs-menu-install-dynamic-keys
+   (lookup-key global-map [menu-bar window])
+   '(glassmacs-move-buffer glassmacs-undo-move glassmacs-show-buffer))
   (with-eval-after-load 'context-menu
     (add-hook 'context-menu-functions
               #'glassmacs-buffer-placement--context-menu)))

@@ -276,7 +276,14 @@ does not provide a native macOS print dialog."
         (define-key global-map [menu-bar window] window-menu))
       (define-key-after window-menu [glassmacs-new-window]
         '(menu-item "New Window" glassmacs-new-window
-                    :enable (display-graphic-p))))))
+                    :enable (display-graphic-p)))
+      (glassmacs-menu-install-dynamic-keys glassmacs-menu)
+      (glassmacs-menu-install-dynamic-keys recent-menu)
+      (glassmacs-menu-install-dynamic-keys
+       window-menu '(glassmacs-new-window))
+      (when (keymapp file-menu)
+        (glassmacs-menu-install-dynamic-keys
+         file-menu '(glassmacs-reveal-in-finder glassmacs-print-document))))))
 
 (defun glassmacs--install-macos-menus-for-frame (&optional frame)
   "Install macOS menu entries when FRAME is graphical."

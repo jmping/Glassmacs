@@ -488,6 +488,20 @@ clean_machine = "NOT RUN"
 manual = ["With German and French layouts, type @, {, [ and é with Option; with Japanese or Chinese input, compose and commit text in a document and the minibuffer."]
 
 [[check]]
+id = "KEY-003"
+title = "Glassmacs menu shortcuts follow active keymaps"
+severity = "P2"
+evidence = ["glassmacs:issue-90-key-003"]
+exposure = "A static accelerator can mislead users after a keyboard-profile, mode-map or user-override change."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-menu-keys-follow-active-profile-and-mode-map", "ert:glassmacs-menu-keys-respect-user-override-and-unbound-state", "ert:glassmacs-menu-keys-refresh-without-touching-upstream-menus", "ert:glassmacs-menu-keeps-ess-mode-bindings-authoritative"]
+implemented = "partial"
+automated = "yes"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["On macOS, switch Hybrid / Traditional profiles and change among an R source buffer, ESS console and ordinary text buffer; open Glassmacs menus and verify each Glassmacs-owned shortcut matches the active binding, updates on the next menu invocation, and disappears when unbound. Confirm Cocoa-owned and upstream menu items retain their behavior."]
+
+[[check]]
 id = "CLIP-001"
 title = "Clipboard round trip with other apps"
 severity = "P1"

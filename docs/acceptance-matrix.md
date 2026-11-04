@@ -52,6 +52,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 | [RECOVER-001](#recover-001) | Crash recovery is offered and never overwrites data | P0 | `glassmacs:issue-34-scenario-2` | A C | yes | yes | ci | NOT RUN |
 | [TEXT-001](#text-001) | Typed text stays literal in code, consoles and mixed documents | P0 | `policy:literal-text-entry` | A C D | yes | partial | ci | NOT RUN |
 | [KEY-001](#key-001) | International keyboards, input methods and Option keys | P1 | `policy:literal-text-entry` | A D | yes | partial | NOT RUN | NOT RUN |
+| [KEY-003](#key-003) | Glassmacs menu shortcuts follow active keymaps | P2 | `glassmacs:issue-90-key-003` | A D | partial | yes | NOT RUN | NOT RUN |
 | [CLIP-001](#clip-001) | Clipboard round trip with other apps | P1 | `policy:literal-text-entry` | C | yes | yes | ci | NOT RUN |
 | [ENC-001](#enc-001) | File encodings and line endings round trip | P2 | `glassmacs:issue-34-other-risks` | A | yes | yes | NOT RUN | NOT RUN |
 | [PATH-001](#path-001) | Finder launches find tools on the login-shell PATH | P1 | `glassmacs:issue-34-other-risks` | A C | yes | yes | ci | NOT RUN |
@@ -363,6 +364,15 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 - Layers: A (batch), D (manual)
 - Tests: `ert:glassmacs-editing-right-option-types-characters-on-macos`
 - Manual: see [checklist](macos-acceptance-checklist.md#key-001)
+
+## KEY-003
+
+**Glassmacs menu shortcuts follow active keymaps** (P2). A static accelerator can mislead users after a keyboard-profile, mode-map or user-override change.
+
+- Evidence: `glassmacs:issue-90-key-003`
+- Layers: A (batch), D (manual)
+- Tests: `ert:glassmacs-menu-keys-follow-active-profile-and-mode-map`, `ert:glassmacs-menu-keys-respect-user-override-and-unbound-state`, `ert:glassmacs-menu-keys-refresh-without-touching-upstream-menus`, `ert:glassmacs-menu-keeps-ess-mode-bindings-authoritative`
+- Manual: see [checklist](macos-acceptance-checklist.md#key-003)
 
 ## CLIP-001
 

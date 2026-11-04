@@ -6,6 +6,7 @@
 (require 'glassmacs-editing)
 (require 'glassmacs-recovery)
 (require 'glassmacs-keys)
+(require 'glassmacs-menu)
 (require 'glassmacs-r)
 (require 'glassmacs-sessions)
 (require 'glassmacs-r-graphics)
