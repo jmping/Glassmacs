@@ -99,13 +99,14 @@
   (require 'ess-r-mode)
   (with-temp-buffer
     (ess-r-mode)
-    (let ((region-binding (key-binding (kbd "C-c C-r")))
+    (let* ((region-binding (key-binding (kbd "C-c C-r")))
+           (region-command (glassmacs-menu--command-from-item region-binding))
           (menu (make-sparse-keymap "Glassmacs test")))
       (define-key menu [run-region]
         '(menu-item "Run Region" ess-eval-region))
       (glassmacs-menu-install-dynamic-keys menu)
       (should (eq (key-binding (kbd "C-c C-r")) region-binding))
-      (let ((expected (car (where-is-internal region-binding
+      (let ((expected (car (where-is-internal region-command
                                              (current-active-maps)))))
         (should expected)
         (should (equal
