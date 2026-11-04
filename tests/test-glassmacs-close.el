@@ -320,5 +320,39 @@ The extra window means closing deletes a window rather than the frame."
         (with-current-buffer buffer (set-buffer-modified-p nil))
         (kill-buffer buffer)))))
 
+(ert-deftest glassmacs-untitled-close-cancel-preserves-edits ()
+  "An edited untitled document cannot disappear on canceled Command-W."
+  (let ((buffer (generate-new-buffer "Untitled P0 Close")))
+    (unwind-protect
+        (glassmacs-close-test--with-split buffer
+          (with-current-buffer buffer (insert "unsaved untitled content"))
+          (glassmacs-close-test--answering ?c
+            (glassmacs-close-document)
+            (should (= prompts 1))
+            (should (buffer-live-p buffer))
+            (should (buffer-modified-p buffer))
+            (should (window-live-p window))))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-untitled-close-save-error-preserves-edits ()
+  "Failed save of an untitled document must veto window closure."
+  (let ((buffer (generate-new-buffer "Untitled P0 Save Failure")))
+    (unwind-protect
+        (glassmacs-close-test--with-split buffer
+          (with-current-buffer buffer (insert "must survive"))
+          (cl-letf (((symbol-function 'read-multiple-choice)
+                     (lambda (&rest _) '(?s "save")))
+                    ((symbol-function 'save-buffer)
+                     (lambda (&rest _) (error "Simulated save failure"))))
+            (glassmacs-close-document)
+            (should (buffer-live-p buffer))
+            (should (buffer-modified-p buffer))
+            (should (window-live-p window))))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)))))
+
 (provide 'test-glassmacs-close)
 ;;; test-glassmacs-close.el ends here
