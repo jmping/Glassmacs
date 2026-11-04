@@ -607,6 +607,30 @@ placements remain available for users who prefer Emacs pane layouts."
         (select-window window)))
      (t (switch-to-buffer buffer)))))
 
+(defun glassmacs-r-hide-console (&optional session)
+  "Close SESSION's console view without terminating its R process.
+Only the selected console window is affected.  A dedicated console frame
+may be deleted when another live frame exists; otherwise the window
+returns to its previous buffer.  Other views of the console are retained."
+  (interactive)
+  (let* ((session (glassmacs-sessions-resolve session))
+         (buffer (glassmacs-session-buffer session))
+         (window (and (buffer-live-p buffer) (get-buffer-window buffer t))))
+    (unless (window-live-p window)
+      (user-error "R console has no visible window"))
+    (let* ((frame (window-frame window))
+           (dedicated-frame (and (eq window (frame-root-window frame))
+                                 (> (length (frame-list)) 1))))
+      (if dedicated-frame
+          (delete-frame frame)
+        (with-selected-window window
+          (switch-to-prev-buffer window))
+        (when (eq (window-buffer window) buffer)
+          (set-window-buffer window (get-buffer-create "*scratch*")))))
+    (message "Closed R console view; session %s remains running"
+             (glassmacs-session-id session))
+    session))
+
 (defun glassmacs-r-move-console-to-new-frame ()
   "Move the current live R console to a separate graphical frame.
 The process and buffer are retained; only the display window changes."
