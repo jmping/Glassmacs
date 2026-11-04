@@ -2973,3 +2973,43 @@ example) can run first and delay the sentinel."
     (should (eq (lookup-key global-map [menu-bar window glassmacs-new-window])
                 'glassmacs-new-window))))
 
+
+(ert-deftest glassmacs-quit-review-offers-three-clear-choices ()
+  "Quit review presents only Save All, Don't Save, and Cancel."
+  (with-temp-buffer
+    (set-buffer-modified-p t)
+    (cl-letf (((symbol-function 'glassmacs-recovery--documents)
+               (lambda () (list (current-buffer))))
+              ((symbol-function 'read-multiple-choice)
+               (lambda (_prompt choices)
+                 (should (equal (mapcar #'cadr choices)
+                                '("Save All" "Don't Save" "Cancel")))
+                 (cons ?c "Cancel"))))
+      (should (eq (glassmacs-recovery--quit-choice) 'cancel)))))
+
+(ert-deftest glassmacs-quit-review-cancel-never-saves-or-exits ()
+  "Cancel leaves document modifications and application state intact."
+  (with-temp-buffer
+    (set-buffer-modified-p t)
+    (cl-letf (((symbol-function 'glassmacs-recovery--documents)
+               (lambda () (list (current-buffer))))
+              ((symbol-function 'glassmacs-recovery--quit-choice)
+               (lambda () 'cancel))
+              ((symbol-function 'save-buffers-kill-emacs)
+               (lambda (&rest _) (error "Unexpected quit"))))
+      (should-not (glassmacs-recovery--quit-reviewed))
+      (should (buffer-modified-p)))))
+
+(ert-deftest glassmacs-quit-review-discard-restores-flags-on-veto ()
+  "An unsuccessful quit must not silently clear unsaved document state."
+  (with-temp-buffer
+    (set-buffer-modified-p t)
+    (cl-letf (((symbol-function 'glassmacs-recovery--documents)
+               (lambda () (list (current-buffer))))
+              ((symbol-function 'glassmacs-recovery--quit-choice)
+               (lambda () 'discard))
+              ((symbol-function 'save-buffers-kill-emacs)
+               (lambda (&rest _) nil)))
+      (glassmacs-recovery--quit-reviewed)
+      (should (buffer-modified-p)))))
+
