@@ -3092,3 +3092,22 @@ example) can run first and delay the sentinel."
       (delete-file file)
       (delete-directory glassmacs-recovery-directory t))))
 
+
+(ert-deftest glassmacs-crash-restore-rejects-unbounded-frame-geometry ()
+  "Malformed recovery data must not create enormous or invalid windows."
+  (should-not (glassmacs-recovery--safe-frame-dimension -1 20 500))
+  (should-not (glassmacs-recovery--safe-frame-dimension 100000 20 500))
+  (should-not (glassmacs-recovery--safe-frame-dimension "500" 20 500))
+  (should (= 100 (glassmacs-recovery--safe-frame-dimension 100 20 500))))
+
+(ert-deftest glassmacs-crash-restore-skips-unavailable-document-ids ()
+  "A missing recovery buffer ID must not create an empty frame."
+  (let ((created 0))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+              ((symbol-function 'make-frame)
+               (lambda (&rest _) (cl-incf created) (error "Unexpected frame"))))
+      (glassmacs-recovery--restore-window-layout
+       '(:windows ((:buffers ("nonexistent-recovery-document-id")
+                    :width 100 :height 40))))
+      (should (= created 0)))))
+
