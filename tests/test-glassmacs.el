@@ -3066,3 +3066,29 @@ example) can run first and delay the sentinel."
           (should (= prompts 2)))
       (kill-buffer buffer))))
 
+
+(ert-deftest glassmacs-crash-index-records-visible-clean-document ()
+  "Crash recovery tracks open clean files as well as dirty snapshots."
+  (let* ((file (make-temp-file "glassmacs-crash-window-" nil ".txt" "clean"))
+         (buffer (find-file-noselect file))
+         (glassmacs-recovery-directory (make-temp-file "glassmacs-crash-index-" t))
+         (glassmacs-recovery--last-snapshots (make-hash-table :test 'equal)))
+    (unwind-protect
+        (save-window-excursion
+          (set-window-buffer (selected-window) buffer)
+          (cl-letf (((symbol-function 'glassmacs-recovery--documents)
+                     (lambda () (list buffer)))
+                    ((symbol-function 'glassmacs-recovery--open-window-records)
+                     (lambda () (list (list :buffers (list
+                                                        (with-current-buffer buffer
+                                                          (glassmacs-recovery--id))))))))
+            (glassmacs-recovery--periodic-snapshot)
+            (let* ((index (glassmacs-recovery--read-index "crash.eldata"))
+                   (record (car (plist-get index :buffers))))
+              (should (equal (plist-get record :file) file))
+              (should-not (plist-get record :modified))
+              (should (plist-get index :windows)))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (delete-file file)
+      (delete-directory glassmacs-recovery-directory t))))
+
