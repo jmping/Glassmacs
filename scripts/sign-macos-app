@@ -39,6 +39,10 @@ done < <(/usr/bin/find "$app/Contents" -type f -print0)
 
 /usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
   "$emacs"
+while IFS= read -r -d '' nested_app; do
+  /usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
+    "$nested_app"
+done < <(/usr/bin/find "$app/Contents" -depth -type d -name '*.app' -print0)
 /usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
   "$app"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"

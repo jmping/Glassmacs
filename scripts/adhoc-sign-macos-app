@@ -21,6 +21,12 @@ while IFS= read -r -d '' path; do
   esac
 done < <(/usr/bin/find "$app/Contents" -type f -print0)
 
+# A nested .app needs its own bundle seal after its executable and before the
+# enclosing Glassmacs.app is sealed.
+while IFS= read -r -d '' nested_app; do
+  /usr/bin/codesign --force --sign - "$nested_app"
+done < <(/usr/bin/find "$app/Contents" -depth -type d -name '*.app' -print0)
+
 /usr/bin/codesign --force --sign - "$app"
 /usr/bin/codesign --verify --deep --strict "$app"
 printf 'Ad-hoc sealed %s (%s nested Mach-O files)\n' "$app" "$count"

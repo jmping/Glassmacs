@@ -448,6 +448,22 @@ open(binary, "wb").write(data[:32] + text.encode())
         self.assertLess(relocator_call, seal_call)
         self.assertLess(seal_call, validator_call)
         self.assertIn("--sign -", (ROOT / "scripts/adhoc-sign-macos-app").read_text())
+        adhoc_signing = (ROOT / "scripts/adhoc-sign-macos-app").read_text()
+        nested_bundle_loop = adhoc_signing.index(
+            "while IFS= read -r -d '' nested_app; do"
+        )
+        nested_bundle_sign = adhoc_signing.index(
+            '/usr/bin/codesign --force --sign - "$nested_app"'
+        )
+        nested_bundle_find = adhoc_signing.index(
+            "done < <(/usr/bin/find \"$app/Contents\" -depth -type d -name '*.app' -print0)"
+        )
+        outer_bundle_sign = adhoc_signing.index(
+            '/usr/bin/codesign --force --sign - "$app"'
+        )
+        self.assertLess(nested_bundle_loop, nested_bundle_sign)
+        self.assertLess(nested_bundle_sign, nested_bundle_find)
+        self.assertLess(nested_bundle_sign, outer_bundle_sign)
         self.assertIn("install_name_tool", (ROOT / "scripts/sanitize-macos-rpaths").read_text())
         self.assertNotIn('"/usr/bin/file"', validator)
         self.assertIn("discover_macho_binaries", validator)
@@ -803,12 +819,22 @@ open(binary, "w").write("\\n".join(lines))
         self.assertIn("--options runtime", signing)
         nested_sign = signing.index('/usr/bin/codesign --force --sign "$identity"')
         emacs_sign = signing.index('--options runtime --timestamp \\\n  "$emacs"')
+        nested_bundle_loop = signing.index(
+            "while IFS= read -r -d '' nested_app; do"
+        )
+        nested_bundle_sign = signing.index('    "$nested_app"')
+        nested_bundle_find = signing.index(
+            "done < <(/usr/bin/find \"$app/Contents\" -depth -type d -name '*.app' -print0)"
+        )
         outer_sign = signing.index('--options runtime --timestamp \\\n  "$app"')
         verification = signing.index(
             '/usr/bin/codesign --verify --deep --strict --verbose=2 "$app"'
         )
         self.assertLess(nested_sign, emacs_sign)
-        self.assertLess(emacs_sign, outer_sign)
+        self.assertLess(emacs_sign, nested_bundle_loop)
+        self.assertLess(nested_bundle_loop, nested_bundle_sign)
+        self.assertLess(nested_bundle_sign, nested_bundle_find)
+        self.assertLess(nested_bundle_sign, outer_sign)
         self.assertLess(outer_sign, verification)
         self.assertIn('--options runtime --timestamp', signing)
 
