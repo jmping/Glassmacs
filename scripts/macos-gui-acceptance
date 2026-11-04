@@ -553,7 +553,7 @@ class Harness:
         operation = {
             "read": 'return value of c as text',
             "toggle": 'click c\n                return value of c as text',
-            "button": (f'click button "{button}" of w\n'
+            "button": (f'click first button of entire contents of w whose name is "{button}"\n'
                        '                return "clicked"'),
         }[action]
         script = (
@@ -562,8 +562,22 @@ class Harness:
             '    try\n'
             '      repeat with w in windows of p\n'
             '        try\n'
-            '          repeat with c in checkboxes of w\n'
-            f'            if (name of c as text) is "{applescript_label}" then\n'
+            '          repeat with c in checkboxes of entire contents of w\n'
+            '            set checkboxName to ""\n'
+            '            set checkboxTitle to ""\n'
+            '            set checkboxDescription to ""\n'
+            '            try\n'
+            '              set checkboxName to name of c as text\n'
+            '            end try\n'
+            '            try\n'
+            '              set checkboxTitle to value of attribute "AXTitle" of c as text\n'
+            '            end try\n'
+            '            try\n'
+            '              set checkboxDescription to value of attribute "AXDescription" of c as text\n'
+            '            end try\n'
+            f'            if checkboxName contains "{applescript_label}" or '
+            f'checkboxTitle contains "{applescript_label}" or '
+            f'checkboxDescription contains "{applescript_label}" then\n'
             f'              {operation}\n'
             '            end if\n'
             '          end repeat\n'
@@ -582,6 +596,55 @@ class Harness:
             return None
         return value
 
+    def native_quit_accessibility_dump(self):
+        """Describe visible checkbox/button names once when discovery fails."""
+        script = (
+            'tell application "System Events"\n'
+            '  set report to ""\n'
+            '  repeat with p in application processes\n'
+            '    try\n'
+            '      repeat with w in windows of p\n'
+            '        try\n'
+            '          repeat with c in checkboxes of entire contents of w\n'
+            '            set n to ""\n'
+            '            set t to ""\n'
+            '            set d to ""\n'
+            '            try\n'
+            '              set n to name of c as text\n'
+            '            end try\n'
+            '            try\n'
+            '              set t to value of attribute "AXTitle" of c as text\n'
+            '            end try\n'
+            '            try\n'
+            '              set d to value of attribute "AXDescription" of c as text\n'
+            '            end try\n'
+            '            set report to report & (name of p as text) & "|" & '
+            '(name of w as text) & "|checkbox|" & n & "|" & t & "|" & d & linefeed\n'
+            '          end repeat\n'
+            '        end try\n'
+            '        try\n'
+            '          repeat with b in buttons of entire contents of w\n'
+            '            set n to ""\n'
+            '            set t to ""\n'
+            '            try\n'
+            '              set n to name of b as text\n'
+            '            end try\n'
+            '            try\n'
+            '              set t to value of attribute "AXTitle" of b as text\n'
+            '            end try\n'
+            '            set report to report & (name of p as text) & "|" & '
+            '(name of w as text) & "|button|" & n & "|" & t & linefeed\n'
+            '          end repeat\n'
+            '        end try\n'
+            '      end repeat\n'
+            '    end try\n'
+            '  end repeat\n'
+            '  if report is "" then return "no accessible checkbox or button controls"\n'
+            '  return report\n'
+            'end tell')
+        result = run(["osascript", "-e", script], timeout=15, check=False)
+        return (result.stdout + result.stderr).strip()[:4000]
+
     def wait_for_native_quit_checkbox(self, pid, timeout=15):
         """Wait until the native quit alert exposes its real checkbox."""
         deadline = time.monotonic() + timeout
@@ -590,8 +653,10 @@ class Harness:
             if value in {"0", "1"}:
                 return value
             time.sleep(0.25)
+        details = self.native_quit_accessibility_dump()
         raise Failure("The native quit alert checkbox did not appear within "
-                      f"{timeout}s (Glassmacs PID {pid})")
+                      f"{timeout}s (Glassmacs PID {pid}); accessibility controls: "
+                      f"{details or 'unavailable'}")
 
     def crash_reports(self):
         directory = Path.home() / "Library/Logs/DiagnosticReports"
