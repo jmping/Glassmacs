@@ -676,7 +676,8 @@ Discard decisions are staged until quit, and restored if quit is vetoed."
             ;; has been reviewed; other quit hooks still run.
             (cl-letf (((symbol-function 'save-some-buffers)
                        (lambda (&rest _) nil)))
-              (save-buffers-kill-emacs)))
+              (let ((glassmacs-recovery--save-reviewed-quit t))
+                (save-buffers-kill-emacs))))
         (dolist (buffer discard)
           (when (buffer-live-p buffer)
             (with-current-buffer buffer (set-buffer-modified-p t))))))))
@@ -694,7 +695,8 @@ If preservation fails, remain in Emacs and display the error."
           ;; After a durable snapshot, suppress only that document prompt;
           ;; preserve other kill-emacs queries.
           (let ((buffer-offer-save nil)
-                (save-silently t))
+                (save-silently t)
+                (glassmacs-recovery--save-reviewed-quit t))
             (cl-letf (((symbol-function 'save-some-buffers)
                        (lambda (&rest _) nil)))
               (save-buffers-kill-emacs))))
@@ -722,9 +724,11 @@ termination; when disabled, refuse a direct dirty-buffer termination."
       nil))))
 
 (defun glassmacs-recovery--reviewed-quit-advice (original &rest args)
-  "Mark the ordinary Emacs save/review quit path for ORIGINAL and ARGS."
-  (let ((glassmacs-recovery--save-reviewed-quit t))
-    (apply original args)))
+  "Route native direct quit calls through Glassmacs review.
+ORIGINAL and ARGS are used only for the guarded, already-reviewed quit."
+  (if glassmacs-recovery--save-reviewed-quit
+      (apply original args)
+    (glassmacs-recovery-quit)))
 
 (advice-add 'save-buffers-kill-emacs :around
             #'glassmacs-recovery--reviewed-quit-advice)

@@ -73,6 +73,23 @@ The extra window means closing deletes a window rather than the frame."
                          "Glassmacs native quit helper failed: test launch failure")))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
+(ert-deftest glassmacs-native-quit-command-routes-through-review ()
+  (let ((routed nil)
+        (original-called nil))
+    (cl-letf (((symbol-function 'glassmacs-recovery-quit)
+               (lambda () (setq routed t))))
+      (glassmacs-recovery--reviewed-quit-advice
+       (lambda (&rest _) (setq original-called t)))
+      (should routed)
+      (should-not original-called))))
+
+(ert-deftest glassmacs-reviewed-quit-command-calls-original ()
+  (let ((glassmacs-recovery--save-reviewed-quit t)
+        (original-called nil))
+    (glassmacs-recovery--reviewed-quit-advice
+     (lambda (&rest _) (setq original-called t)))
+    (should original-called)))
+
 (ert-deftest glassmacs-close-unmodified-document-kills-buffer-and-window ()
   (let ((buffer (generate-new-buffer "glassmacs-close-clean")))
     (glassmacs-close-test--with-split buffer
