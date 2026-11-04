@@ -567,19 +567,34 @@ A buffer without a visible view is opened using its document policy."
       (user-error "No document selected"))
     (glassmacs-present-buffer (cdr (assoc selection choices)) 'focus)))
 
+(defvar glassmacs--mode-line-original-mouse-1 nil)
+(defvar glassmacs--mode-line-original-mouse-3 nil)
+
 (defun glassmacs--mode-line-document-click (event)
   "Focus an open document after clicking the mode-line name at EVENT."
   (interactive "e")
-  (let ((window (posn-window (event-start event))))
-    (when (window-live-p window)
-      (select-window window)))
-  (glassmacs-focus-open-document))
+  (if (eq glassmacs-mode-line-buffer-navigation 'emacs)
+      (let ((original (if (eq (event-basic-type event) 'mouse-3)
+                          glassmacs--mode-line-original-mouse-3
+                        glassmacs--mode-line-original-mouse-1)))
+        (when (commandp original)
+          (call-interactively original)))
+    (let ((window (posn-window (event-start event))))
+      (when (window-live-p window)
+        (select-window window)))
+    (glassmacs-focus-open-document)))
 
 (defun glassmacs--install-mode-line-document-navigation ()
   "Install document-centric mode-line navigation without disabling Emacs opt-in."
   (when (and (eq system-type 'darwin)
              (boundp 'mode-line-buffer-identification-keymap)
              (keymapp mode-line-buffer-identification-keymap))
+    (setq glassmacs--mode-line-original-mouse-1
+          (lookup-key mode-line-buffer-identification-keymap
+                      [mode-line mouse-1])
+          glassmacs--mode-line-original-mouse-3
+          (lookup-key mode-line-buffer-identification-keymap
+                      [mode-line mouse-3]))
     (define-key mode-line-buffer-identification-keymap [mode-line mouse-1]
       #'glassmacs--mode-line-document-click)
     (define-key mode-line-buffer-identification-keymap [mode-line mouse-3]
