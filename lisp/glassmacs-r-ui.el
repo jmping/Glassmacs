@@ -159,10 +159,8 @@ Closing that help frame must not close or discard the source document."
         (call-interactively #'ess-display-help-on-object))
     (user-error "R help requires ESS")))
 
-;; ICON names must be images that GNU Emacs itself ships in `etc/images'
-;; (for example right-arrow, jump-to, next-page, cancel); `find-image'
-;; returns nil for a name that does not exist, and the button then has no
-;; image.  `glassmacs-r-ui-toolbar-icons-are-bundled-with-emacs' checks this.
+;; Keep the Emacs built-in ICON names as a portable fallback when SVG
+;; rendering is unavailable.  Glassmacs ships its own light/dark SVGs.
 (defconst glassmacs-r-ui--toolbar-actions
   '((glassmacs-run-line "Run Line" glassmacs-r-send-line "right-arrow")
     (glassmacs-run-selection "Run Selection" glassmacs-r-send-region "copy")
@@ -207,12 +205,18 @@ If SVG support is missing, retain the existing built-in XPM artwork."
     (let* ((symbol-name (or (cdr (assq (intern name)
                                      glassmacs-r-ui--icon-aliases))
                             name))
+           (base (or action symbol-name))
+           (dark (eq (frame-parameter nil 'background-mode) 'dark))
            (svg (expand-file-name
-                 (concat (or action symbol-name) ".svg")
+                 (concat base (if dark "-dark" "") ".svg")
                  glassmacs-r-ui--icon-directory))
+           (fallback-svg (expand-file-name
+                          (concat base ".svg")
+                          glassmacs-r-ui--icon-directory))
+           (chosen-svg (if (file-readable-p svg) svg fallback-svg))
            (vector-image (and (image-type-available-p 'svg)
-                              (file-readable-p svg)
-                              (find-image (list (list :type 'svg :file svg
+                              (file-readable-p chosen-svg)
+                              (find-image (list (list :type 'svg :file chosen-svg
                                                       :ascent 'center)))))
            (image (or vector-image
                       (find-image
