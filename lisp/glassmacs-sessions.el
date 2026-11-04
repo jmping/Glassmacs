@@ -509,35 +509,50 @@ In a document with R chunks, the target is cleared for the whole document."
   (message "Cleared this buffer's R session target"))
 
 (defcustom glassmacs-r-help-placement 'separate-window
-  "Where ESS R Help buffers appear without replacing the source document."
-  :type '(choice (const :tag "Separate graphical window" separate-window)
+  "Placement of ESS R Help buffers.
+The graphical macOS default is a separate native frame; explicit side
+placements remain available for users who prefer Emacs pane layouts."
+  :type '(choice (const :tag "Separate native window" separate-window)
                  (const :tag "Right side pane" side-right)
                  (const :tag "Bottom side pane" side-bottom))
   :group 'glassmacs-r)
 
 (defun glassmacs-r--help-buffer-p (buffer _action)
-  "Recognize an ESS Help BUFFER for `display-buffer-alist'."
-  (and (buffer-live-p buffer)
-       (with-current-buffer buffer
-         (derived-mode-p 'ess-help-mode))))
+  "Recognize ESS R Help BUFFER, including before ESS sets its major mode."
+  (let ((buffer (if (bufferp buffer) buffer (get-buffer buffer))))
+    (and (buffer-live-p buffer)
+         (or (with-current-buffer buffer
+               (derived-mode-p 'ess-help-mode))
+             (string-prefix-p "*help[R]" (buffer-name buffer))
+             (string-prefix-p "*R Help" (buffer-name buffer))))))
 
 (defun glassmacs-r--display-help (buffer _alist)
-  "Display ESS Help BUFFER without replacing the source window."
+  "Present ESS R Help BUFFER according to the single Help policy."
   (let ((existing (get-buffer-window buffer t)))
     (cond
      (existing existing)
      ((and (display-graphic-p)
            (eq glassmacs-r-help-placement 'separate-window))
-      (display-buffer-pop-up-frame buffer nil))
+      (display-buffer-pop-up-frame
+       buffer '((inhibit-same-window . t) (reusable-frames . nil))))
      (t (display-buffer-in-side-window
          buffer (list (cons 'side
                             (if (eq glassmacs-r-help-placement 'side-bottom)
                                 'bottom 'right))
                       (cons 'slot 0)))))))
 
-;; This rule precedes generic display actions but only matches ESS Help mode.
-(add-to-list 'display-buffer-alist
-             '(glassmacs-r--help-buffer-p glassmacs-r--display-help))
+(defun glassmacs-r-install-help-display ()
+  "Install one authoritative ESS Help rule, ahead of generic display rules."
+  (setq display-buffer-alist
+        (cl-remove-if
+         (lambda (entry)
+           (or (eq (car-safe entry) 'glassmacs-r--help-buffer-p)
+               (eq (car-safe entry) 'glassmacs-r-ui--ess-help-buffer-p)))
+         display-buffer-alist))
+  (push '(glassmacs-r--help-buffer-p glassmacs-r--display-help)
+        display-buffer-alist))
+
+(glassmacs-r-install-help-display)
 
 (defcustom glassmacs-r-console-placement
   (if (eq system-type 'darwin) 'separate-window 'split-below)
