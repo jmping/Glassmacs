@@ -2795,7 +2795,7 @@ example) can run first and delay the sentinel."
 
 (ert-deftest glassmacs-alpha3-presentation-reuses-visible-document ()
   "Opening a visible buffer must not replace another buffer or make a frame."
-  (let ((buffer (current-buffer))
+  (let ((buffer (window-buffer (selected-window)))
         (created nil))
     (cl-letf (((symbol-function 'make-frame)
                (lambda (&rest _) (setq created t)
@@ -2825,7 +2825,9 @@ example) can run first and delay the sentinel."
                   ((symbol-function 'glassmacs-present-buffer)
                    (lambda (candidate intent &rest _)
                      (setq seen (list candidate intent)))))
-          (glassmacs-focus-open-document)
+          (cl-letf (((symbol-function 'glassmacs--ordinary-document-buffer-p)
+                     (lambda (candidate) (eq candidate buffer))))
+            (glassmacs-focus-open-document))
           (should (equal seen (list buffer 'focus))))
       (kill-buffer buffer))))
 
@@ -2840,7 +2842,9 @@ example) can run first and delay the sentinel."
 (ert-deftest glassmacs-alpha3-r-switch-console-prompts-with-multiple-sessions ()
   "Console switching selects from live sessions without creating a process."
   (let ((chosen nil)
-        (session (make-glassmacs-session :id "alpha3-test")))
+        (session (progn (require 'glassmacs-sessions)
+                        (make-glassmacs-session :id "alpha3-test"
+                                                :buffer (current-buffer)))))
     (cl-letf (((symbol-function 'glassmacs-sessions-refresh)
                (lambda () (list session)))
               ((symbol-function 'glassmacs-sessions--prompt)
