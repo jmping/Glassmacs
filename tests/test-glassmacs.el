@@ -2772,3 +2772,36 @@ example) can run first and delay the sentinel."
       (when (buffer-live-p buffer)
         (with-current-buffer buffer (set-buffer-modified-p nil))
         (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-alpha3-help-recognizes-uninitialized-ess-buffer ()
+  "The unified Help rule recognizes buffers before ESS installs help mode."
+  (let ((buffer (generate-new-buffer "*help[R] glm")))
+    (unwind-protect
+        (progn
+          (should (glassmacs-r--help-buffer-p buffer nil))
+          (should (glassmacs-r--help-buffer-p (buffer-name buffer) nil)))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-alpha3-help-installs-only-one-rule ()
+  "Repeated R Help initialization never installs competing display rules."
+  (let ((display-buffer-alist
+         (copy-tree display-buffer-alist)))
+    (glassmacs-r-install-help-display)
+    (glassmacs-r-ui--install-help-display)
+    (should (= 1 (cl-count 'glassmacs-r--help-buffer-p
+                            display-buffer-alist :key #'car)))
+    (should-not (assq 'glassmacs-r-ui--ess-help-buffer-p
+                      display-buffer-alist))))
+
+(ert-deftest glassmacs-alpha3-presentation-reuses-visible-document ()
+  "Opening a visible buffer must not replace another buffer or make a frame."
+  (let ((buffer (current-buffer))
+        (created nil))
+    (cl-letf (((symbol-function 'make-frame)
+               (lambda (&rest _) (setq created t)
+                 (error "Unexpected frame creation")))
+              ((symbol-function 'select-frame-set-input-focus)
+               (lambda (&rest _) nil)))
+      (should (eq (glassmacs-present-buffer buffer 'open 'new-frame)
+                  (selected-window)))
+      (should-not created))))
