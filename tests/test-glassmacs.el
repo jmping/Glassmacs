@@ -3111,3 +3111,19 @@ example) can run first and delay the sentinel."
                     :width 100 :height 40))))
       (should (= created 0)))))
 
+
+(ert-deftest glassmacs-crash-restore-view-rejects-invalid-positions ()
+  "Corrupt cursor and scroll offsets cannot escape the buffer bounds."
+  (with-temp-buffer
+    (insert "first\nsecond\nthird\n")
+    (let ((window (selected-window)))
+      (save-window-excursion
+        (set-window-buffer window (current-buffer))
+        (set-window-point window 3)
+        (glassmacs-recovery--restore-view
+         window '(:point -50 :start 999999))
+        (should (= (window-point window) 3))
+        (glassmacs-recovery--restore-view
+         window '(:point 8 :start 1))
+        (should (= (window-point window) 8))))))
+
