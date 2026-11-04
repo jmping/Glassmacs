@@ -2868,3 +2868,33 @@ example) can run first and delay the sentinel."
       (glassmacs-r-rename-console session " ")
       (should-not (glassmacs-session-display-label session)))))
 
+
+(ert-deftest glassmacs-alpha4-window-chooser-focuses-without-replacing ()
+  "Window navigation selects an existing view, never presenting a buffer."
+  (let ((window (selected-window))
+        (seen nil))
+    (cl-letf (((symbol-function 'glassmacs--window-navigation-choices)
+               (lambda () (list (cons "Document — fixture" window))))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _) "Document — fixture"))
+              ((symbol-function 'select-frame-set-input-focus)
+               (lambda (frame) (setq seen frame)))
+              ((symbol-function 'glassmacs-present-buffer)
+               (lambda (&rest _) (error "Unexpected buffer presentation"))))
+      (should (eq (glassmacs-focus-open-window) window))
+      (should (eq seen (window-frame window))))))
+
+(ert-deftest glassmacs-alpha4-window-chooser-excludes-internal-buffers ()
+  "Visible internal buffers are not user-facing window destinations."
+  (with-temp-buffer
+    (rename-buffer " *glassmacs-internal-window*" t)
+    (let ((window (selected-window))
+          (original (window-buffer (selected-window))))
+      (unwind-protect
+          (progn
+            (set-window-buffer window (current-buffer))
+            (should-not (cl-find-if
+                         (lambda (entry) (eq (cdr entry) window))
+                         (glassmacs--window-navigation-choices))))
+        (set-window-buffer window original)))))
+
