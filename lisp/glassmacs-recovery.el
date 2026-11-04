@@ -625,10 +625,14 @@ A non-native fallback asks scope separately, defaulting to current file."
                        (quit ?c))
                 (?s 'save) (?d 'discard) (_ 'cancel)))
              (all (and (not (eq action 'cancel))
-                       (eq (car (read-multiple-choice
-                                 "Apply this choice to all remaining documents? "
-                                 '((?n "No" "Only this document")
-                                   (?y "Yes" "All remaining documents"))))
+                       (eq (condition-case nil
+                               (car (read-multiple-choice
+                                     "Apply this choice to all remaining documents? "
+                                     '((?n "No" "Only this document")
+                                       (?y "Yes" "All remaining documents"))))
+                             ;; Never broaden the decision on a dismissed or
+                             ;; failed scope prompt.
+                             ((quit error) ?n))
                            ?y))))
         (cons action all))))
 
