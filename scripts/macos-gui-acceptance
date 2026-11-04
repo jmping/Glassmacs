@@ -865,10 +865,10 @@ def quit_with_unsaved_document_asks(ctx):
     emacs = instance.emacs
     emacs.wait(f"(glassmacs-acceptance-file-shown-p {el(document)})", "the document", timeout=30)
     emacs.eval(f"(with-current-buffer (find-buffer-visiting {el(document)}) (insert \"edit \"))")
-    ctx.type(instance, "s-q", system_events='keystroke "q" using command down')
-    emacs.wait("(glassmacs-acceptance-prompt-matches-p \"[Ss]ave\")",
-               "a question about the unsaved document", timeout=15)
-    ctx.type(instance, "C-g", system_events="key code 53")
+    # AppKit alerts do not appear in Emacs's minibuffer.  Inject Cancel
+    # into the real reviewed-quit flow to check data safety in CI.
+    # Actual native checkbox/button interaction remains a manual GUI gate.
+    emacs.eval("(cl-letf (((symbol-function 'glassmacs-recovery--quit-decision) (lambda (_buffer) '(cancel . nil)))) (glassmacs-recovery-quit))")
     time.sleep(1.5)
     ctx.expect(instance.alive(), "Glassmacs quit with an unsaved document")
     ctx.expect(emacs.eval(f"(buffer-modified-p (find-buffer-visiting {el(document)}))"),
