@@ -405,3 +405,40 @@
 
 (provide 'test-glassmacs-r-ui)
 ;;; test-glassmacs-r-ui.el ends here
+
+(ert-deftest glassmacs-r-ui-vector-toolbar-assets-are-complete ()
+  "Every source and console toolbar action has both contrast variants."
+  (dolist (entry (append glassmacs-r-ui--toolbar-actions
+                         glassmacs-r-ui--console-toolbar-actions))
+    (let* ((key (nth 0 entry))
+           (name (pcase key
+                   ('glassmacs-run-line "run")
+                   ('glassmacs-run-selection "selection")
+                   ('glassmacs-run-paragraph "paragraph")
+                   ('glassmacs-run-function "function")
+                   ('glassmacs-run-buffer "buffer")
+                   ('glassmacs-show-console "console")
+                   ('glassmacs-help "help")
+                   ('glassmacs-interrupt "interrupt")
+                   ('glassmacs-history "history")
+                   ('glassmacs-session "session"))))
+      (should name)
+      (dolist (suffix '("" "-dark"))
+        (should (file-readable-p
+                 (expand-file-name (concat name suffix ".svg")
+                                   glassmacs-r-ui--icon-directory)))))))
+
+(ert-deftest glassmacs-r-ui-toolbar-chooses-dark-contrast-vector ()
+  "A dark frame selects the bright SVG rather than the light-frame icon."
+  (let (chosen)
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
+              ((symbol-function 'frame-parameter)
+               (lambda (_frame parameter)
+                 (and (eq parameter 'background-mode) 'dark)))
+              ((symbol-function 'image-type-available-p) (lambda (_) t))
+              ((symbol-function 'find-image)
+               (lambda (spec) (setq chosen (plist-get (car spec) :file))
+                 (list 'image :type 'svg))))
+      (glassmacs-r-ui--toolbar-image "right-arrow")
+      (should (string-suffix-p "/run-dark.svg" chosen)))))
+
