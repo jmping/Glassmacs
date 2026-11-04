@@ -187,12 +187,38 @@ displays without changing their commands or hit targets."
   :type '(integer 0 12)
   :group 'glassmacs)
 
-(defun glassmacs-r-ui--toolbar-image (name)
-  "Find built-in toolbar image NAME with consistent visual padding."
+(defconst glassmacs-r-ui--icon-directory
+  (expand-file-name "../assets/r-toolbar/"
+                    (file-name-directory (or load-file-name
+                                             (locate-library "glassmacs-r-ui"))))
+  "Location of the bundled, consistent 24-point R toolbar symbols.")
+
+(defconst glassmacs-r-ui--icon-aliases
+  '((right-arrow . "run") (copy . "selection")
+    (next-page . "paragraph") (jump-to . "function")
+    (open . "console") (help . "help")
+    (cancel . "interrupt") (undo . "history"))
+  "Fallback mappings from built-in Emacs image names to vector symbols.")
+
+(defun glassmacs-r-ui--toolbar-image (name &optional action)
+  "Return a bundled SVG for ACTION, falling back to Emacs image NAME.
+If SVG support is missing, retain the existing built-in XPM artwork."
   (when (display-graphic-p)
-    (let ((image (find-image
-                  (list (list :type 'xpm :file (concat name ".xpm")
-                              :ascent 'center)))))
+    (let* ((symbol-name (or (cdr (assq (intern name)
+                                     glassmacs-r-ui--icon-aliases))
+                            name))
+           (svg (expand-file-name
+                 (concat (or action symbol-name) ".svg")
+                 glassmacs-r-ui--icon-directory))
+           (vector-image (and (image-type-available-p 'svg)
+                              (file-readable-p svg)
+                              (find-image (list (list :type 'svg :file svg
+                                                      :ascent 'center)))))
+           (image (or vector-image
+                      (find-image
+                       (list (list :type 'xpm
+                                   :file (concat name ".xpm")
+                                   :ascent 'center))))))
       (when image
         (plist-put image :margin
                    (max 0 (min 12 glassmacs-r-ui-toolbar-icon-margin)))))))
@@ -207,7 +233,12 @@ displays without changing their commands or hit targets."
       (pcase-let ((`(,key ,label ,command ,icon) entry))
         (define-key-after map (vector key)
           `(menu-item ,label ,command
-                      :image (glassmacs-r-ui--toolbar-image ,icon)
+                      :image (glassmacs-r-ui--toolbar-image ,icon
+                                                         ,(pcase key
+                                                            ('glassmacs-run-buffer "buffer")
+                                                            ('glassmacs-show-console "console")
+                                                            ('glassmacs-session "session")
+                                                            (_ nil)))
                       :help ,label
                       :enable ,(cond
                                 ((eq command 'glassmacs-r-send-region)
