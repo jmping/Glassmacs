@@ -198,6 +198,7 @@ does not provide a native macOS print dialog."
     (let ((glassmacs-menu (make-sparse-keymap "Glassmacs"))
           (keyboard-menu (make-sparse-keymap "Keyboard Profile"))
           (opening-menu (make-sparse-keymap "Document Opening"))
+          (recent-menu (make-sparse-keymap "Recent Files"))
           (file-menu (lookup-key global-map [menu-bar file]))
           (window-menu (lookup-key global-map [menu-bar window])))
       (define-key glassmacs-menu [document-opening] opening-menu)
@@ -258,17 +259,18 @@ does not provide a native macOS print dialog."
                                    (not (file-remote-p buffer-file-name)))))
         (define-key file-menu [glassmacs-print-document]
           '(menu-item "Print Document…" glassmacs-print-document))
-        (define-key file-menu [glassmacs-open-recent]
+        ;; Recent-file commands belong to one submenu; New Window belongs
+        ;; in Window, not alongside document creation in File.
+        (define-key recent-menu [open]
           '(menu-item "Open Recent…" glassmacs-open-recent-file))
-        (define-key file-menu [glassmacs-clear-recent]
+        (define-key recent-menu [clear]
           '(menu-item "Clear Recent Files…" glassmacs-clear-recent-files))
-        (define-key file-menu [glassmacs-recent-preferences]
+        (define-key recent-menu [preferences]
           '(menu-item "Recent Files Preferences…" glassmacs-recent-files-preferences))
-        ;; New Window belongs in Window; the File duplicate obscured the
-        ;; distinction between a blank window and a new document.
-        (define-key file-menu [glassmacs-new-window] nil)
-        ;; Quit is owned by the native application menu.
-        (define-key file-menu [glassmacs-quit] nil))
+        (define-key file-menu [glassmacs-recent-files] recent-menu)
+        (dolist (obsolete '(glassmacs-open-recent glassmacs-clear-recent
+                             glassmacs-recent-preferences glassmacs-new-window))
+          (define-key file-menu (vector obsolete) nil)))
       (unless (keymapp window-menu)
         (setq window-menu (make-sparse-keymap "Window"))
         (define-key global-map [menu-bar window] window-menu))
