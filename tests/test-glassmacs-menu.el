@@ -115,8 +115,8 @@
         (should (equal
                  (funcall (plist-get
                            (nthcdr 3 (glassmacs-menu--raw-binding menu 'run-region))
-                           :keys)
-                 (key-description expected))))))))
+                           :keys))
+                 (key-description expected)))))))
 
 (provide 'test-glassmacs-menu)
 ;;; test-glassmacs-menu.el ends here
