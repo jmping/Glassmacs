@@ -313,6 +313,18 @@ Return the number of recorded buffers.  Never write original documents."
   (when (and (integerp value) (<= minimum value) (<= value maximum))
     value))
 
+(defun glassmacs-recovery--restore-view (window record)
+  "Restore WINDOW's point and scroll start from bounded data-only RECORD."
+  (when (and (window-live-p window) (listp record))
+    (let* ((buffer (window-buffer window))
+           (limit (with-current-buffer buffer (point-max)))
+           (point (plist-get record :point))
+           (start (plist-get record :start)))
+      (when (and (integerp point) (<= 1 point limit))
+        (set-window-point window point))
+      (when (and (integerp start) (<= 1 start limit))
+        (set-window-start window start t)))))
+
 (defun glassmacs-recovery--restore-window-layout (manifest)
   "Recreate one frame per saved frame, preserving document splits and size.
 Only data-only buffer IDs and bounded geometry are read.  Missing documents
@@ -350,7 +362,27 @@ are skipped; no process is launched and no original file is overwritten."
                      ;; small display cannot accommodate another split.
                      (display-buffer buffer))))
                 (when (and width height)
-                  (set-frame-size frame width height))))))))))
+                  (set-frame-size frame width height))
+                (dolist (window (window-list frame 'never))
+                  (let* ((buffer (window-buffer window))
+                         (id (and (buffer-live-p buffer)
+                                  (buffer-local-value
+                                   'glassmacs-recovery--id buffer)))
+                         (view (cl-find id (plist-get record :views)
+                                        :key (lambda (entry)
+                                               (plist-get entry :id))
+                                        :test #'equal)))
+                    (glassmacs-recovery--restore-view window view)))
+                (let* ((selected-id (plist-get record :selected))
+                       (selected (cl-find-if
+                                  (lambda (window)
+                                    (equal (buffer-local-value
+                                            'glassmacs-recovery--id
+                                            (window-buffer window))
+                                           selected-id))
+                                  (window-list frame 'never))))
+                  (when (and (stringp selected-id) selected)
+                    (select-window selected)))))))))))
 
 (defun glassmacs-recovery-restore-crash ()
   "Restore the crash index without modifying the preserved-buffer index."
@@ -807,7 +839,20 @@ and arbitrary frame parameters are never evaluated from recovery files."
                         :left (frame-parameter frame 'left)
                         :top (frame-parameter frame 'top)
                         :width (frame-width frame)
-                        :height (frame-height frame))
+                        :height (frame-height frame)
+                        :selected (let ((selected (window-buffer
+                                                   (frame-selected-window frame))))
+                                    (when (glassmacs-recovery--eligible-p selected)
+                                      (with-current-buffer selected
+                                        (glassmacs-recovery--id))))
+                        :views (cl-loop for window in (window-list frame 'never)
+                                        for buffer = (window-buffer window)
+                                        when (glassmacs-recovery--eligible-p buffer)
+                                        collect (list
+                                                 :id (with-current-buffer buffer
+                                                       (glassmacs-recovery--id))
+                                                 :point (window-point window)
+                                                 :start (window-start window))))
                   records)))))
     (nreverse records)))
 
