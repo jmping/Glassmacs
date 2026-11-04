@@ -346,7 +346,11 @@ are skipped; no process is launched and no original file is overwritten."
                (width (glassmacs-recovery--safe-frame-dimension
                        (plist-get record :width) 20 500))
                (height (glassmacs-recovery--safe-frame-dimension
-                        (plist-get record :height) 8 300)))
+                        (plist-get record :height) 8 300))
+               (left (glassmacs-recovery--safe-frame-dimension
+                      (plist-get record :left) -10000 10000))
+               (top (glassmacs-recovery--safe-frame-dimension
+                     (plist-get record :top) -10000 10000)))
           (when buffers
             (let ((frame (make-frame)))
               (with-selected-frame frame
@@ -362,7 +366,15 @@ are skipped; no process is launched and no original file is overwritten."
                      ;; small display cannot accommodate another split.
                      (display-buffer buffer))))
                 (when (and width height)
-                  (set-frame-size frame width height))
+                  (condition-case nil
+                      (set-frame-size frame width height)
+                    (error nil)))
+                ;; Window-manager placement is best-effort.  Never accept
+                ;; arbitrary Lisp forms from an on-disk recovery index.
+                (when (and left top)
+                  (condition-case nil
+                      (set-frame-position frame left top)
+                    (error nil)))
                 (dolist (window (window-list frame 'never))
                   (let* ((buffer (window-buffer window))
                          (id (and (buffer-live-p buffer)
