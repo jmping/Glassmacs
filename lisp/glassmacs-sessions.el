@@ -422,20 +422,23 @@ console buffer's `default-directory'.  It is not a claim about R's getwd()."
             "(unknown)")
           (if (glassmacs-session-paused session) " (paused)" "")))
 
-(defun glassmacs-r-rename-console (label)
-  "Give an existing R session a descriptive display LABEL.
-This changes Glassmacs navigation only, never ESS process identity."
+(defun glassmacs-r-rename-console (session label)
+  "Set SESSION's descriptive display LABEL without renaming its ESS process.
+An empty LABEL clears the custom name."
   (interactive
-   (let* ((session (glassmacs-sessions--prompt (or (glassmacs-sessions-live)
-                                                 (user-error "No live R console"))))
+   (let* ((live (glassmacs-sessions-live))
+          (session (glassmacs-sessions--prompt
+                    (or live (user-error "No live R console"))))
           (current (or (glassmacs-session-display-label session) "")))
-     (list (read-string "R console label (empty clears): " current))))
-  (let ((session (glassmacs-sessions-resolve)))
-    (setf (glassmacs-session-display-label session)
-          (unless (string-empty-p (string-trim label))
-            (string-trim label)))
-    (message "R console: %s" (glassmacs-sessions--describe session))
-    session))
+     (list session (read-string "R console label (empty clears): " current))))
+  (unless (and (glassmacs-session-p session)
+               (memq session (glassmacs-sessions-live)))
+    (user-error "R console is no longer live"))
+  (setf (glassmacs-session-display-label session)
+        (unless (string-empty-p (string-trim label))
+          (string-trim label)))
+  (message "R console: %s" (glassmacs-sessions--describe session))
+  session)
 
 (defun glassmacs-sessions-resolve (&optional session)
   "Return the session commands should go to, never guessing among several.
