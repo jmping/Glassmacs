@@ -322,6 +322,7 @@ never overwritten.  Calling this repeatedly does not duplicate buffers."
   (let* ((manifest (or glassmacs-recovery--restoring-index
                        (glassmacs-recovery--read-manifest)))
          (records (plist-get manifest :buffers))
+         (restored nil)
          (count 0))
     (unless (or (null manifest) (eq (plist-get manifest :version) 1))
       (user-error "Unsupported Glassmacs recovery manifest"))
@@ -356,12 +357,22 @@ never overwritten.  Calling this repeatedly does not duplicate buffers."
                   (setq-local buffer-file-name nil)
                   (setq-local glassmacs-recovery-source-file file)
                   (set-buffer-modified-p t))
+                (push buffer restored)
                 (cl-incf count)))
              ((and (not dirty) file (file-readable-p file))
               (let ((buffer (find-file-noselect file)))
                 (with-current-buffer buffer
                   (setq-local glassmacs-recovery--id id))
+                (push buffer restored)
                 (cl-incf count))))))))
+    ;; Recovery is deliberately non-displaying in noninteractive startup
+    ;; paths.  A user-requested restore presents each recovered document
+    ;; independently, without replacing the currently visible document.
+    (when (and (called-interactively-p 'interactive)
+               (display-graphic-p)
+               (fboundp 'glassmacs-present-buffer))
+      (dolist (buffer (nreverse restored))
+        (glassmacs-present-buffer buffer 'open 'new-frame)))
     (when (called-interactively-p 'interactive)
       (message "Restored %d preserved document buffers" count))
     count))
