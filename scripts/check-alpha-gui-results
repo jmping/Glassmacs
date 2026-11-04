@@ -15,6 +15,7 @@ REQUIRED = {
     "command-w-never-loses-changes",
     "quit-with-unsaved-document-asks",
     "preferences-persist-across-relaunch",
+    "dynamic-menu-shortcut-labels",
 }
 
 

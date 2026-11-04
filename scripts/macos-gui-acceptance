@@ -846,6 +846,56 @@ class Harness:
             raise Failure(f"Could not resolve GlassmacsQuitAlert process for PID {pid}")
         self.native_quit_ax_action(helper_pid, "close")
 
+    def menu_item_shortcut(self, pid, menu_title, item_title):
+        """Read the displayed shortcut attributes for a native menu item."""
+        process_name = self.system_events_process_name(pid)
+        if not process_name:
+            raise Failure(f"Could not resolve application process name for PID {pid}")
+        def quote(value):
+            return value.replace("\\", "\\\\").replace('"', '\\"')
+        menu_title = quote(menu_title)
+        item_title = quote(item_title)
+        process_name = quote(process_name)
+        script = (
+            'tell application "System Events"\n'
+            f'  tell first process whose name is "{process_name}"\n'
+            '    set frontmost to true\n'
+            f'    set targetMenu to menu bar item "{menu_title}" of menu bar 1\n'
+            '    click targetMenu\n'
+            '    delay 0.25\n'
+            '    set response to "missing"\n'
+            '    repeat with itemRef in menu items of menu 1 of targetMenu\n'
+            f'      if name of itemRef is "{item_title}" then\n'
+            '        set commandCharacter to ""\n'
+            '        set commandModifiers to ""\n'
+            '        try\n'
+            '          set commandCharacter to value of attribute '
+            '"AXMenuItemCmdChar" of itemRef as text\n'
+            '        end try\n'
+            '        try\n'
+            '          set commandModifiers to value of attribute '
+            '"AXMenuItemCmdModifiers" of itemRef as text\n'
+            '        end try\n'
+            '        set response to commandCharacter & "|" & commandModifiers\n'
+            '        exit repeat\n'
+            '      end if\n'
+            '    end repeat\n'
+            '    click targetMenu\n'
+            '    return response\n'
+            '  end tell\n'
+            'end tell')
+        result = run(["osascript", "-e", script], timeout=20, check=False)
+        if result.returncode:
+            raise Failure("Could not inspect the native menu shortcut: "
+                          f"{(result.stdout + result.stderr).strip()}")
+        value = result.stdout.strip()
+        if value == "missing":
+            return None
+        character, separator, modifiers = value.partition("|")
+        if not separator:
+            raise Failure(f"Unexpected native menu shortcut response: {value!r}")
+        return character, modifiers
+
     def crash_reports(self):
         directory = Path.home() / "Library/Logs/DiagnosticReports"
         if not directory.is_dir():
