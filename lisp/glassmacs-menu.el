@@ -54,11 +54,8 @@ menu `:keys' functions, which Emacs calls whenever it computes a menu."
          (symbolp (cdr command)))
     (cdr command))
    ((and (consp command)
-         (null (cdr command))
-         (consp (car command))
-         (eq (caar command) 'command)
-         (symbolp (cdar command)))
-    (cdar command))
+         (null (cdr command)))
+    (glassmacs-menu--command-from-item (car command)))
    (t command)))
 
 (defun glassmacs-menu--raw-binding (keymap event)

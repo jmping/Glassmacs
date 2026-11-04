@@ -90,6 +90,9 @@
                '((command . glassmacs-menu-test-command)))
               #'glassmacs-menu-test-command))
   (should (eq (glassmacs-menu--command-from-item
+               '(((command . glassmacs-menu-test-command))))
+              #'glassmacs-menu-test-command))
+  (should (eq (glassmacs-menu--command-from-item
                #'glassmacs-menu-test-command)
               #'glassmacs-menu-test-command)))
 
@@ -101,7 +104,7 @@
     (ess-r-mode)
     (let* ((region-binding (key-binding (kbd "C-c C-r")))
            (region-command (glassmacs-menu--command-from-item region-binding))
-          (menu (make-sparse-keymap "Glassmacs test")))
+           (menu (make-sparse-keymap "Glassmacs test")))
       (define-key menu [run-region]
         '(menu-item "Run Region" ess-eval-region))
       (glassmacs-menu-install-dynamic-keys menu)
