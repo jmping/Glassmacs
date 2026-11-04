@@ -2951,3 +2951,25 @@ example) can run first and delay the sentinel."
     (should (lookup-key global-map [menu-bar window glassmacs-new-window]))
     (should-not (lookup-key global-map [menu-bar file glassmacs-quit]))))
 
+
+(ert-deftest glassmacs-alpha4-file-menu-groups-recent-actions ()
+  "Recent-file maintenance belongs in one submenu, not the File root."
+  (let ((global-map (copy-keymap global-map))
+        (system-type 'darwin))
+    (cl-letf (((symbol-function 'display-graphic-p)
+               (lambda (&optional _) t)))
+      (glassmacs--install-macos-menus)
+      (glassmacs--install-macos-menus))
+    (should (keymapp (lookup-key global-map
+                                 [menu-bar file glassmacs-recent-files])))
+    (should (eq (lookup-key global-map
+                            [menu-bar file glassmacs-recent-files open])
+                'glassmacs-open-recent-file))
+    (should (eq (lookup-key global-map
+                            [menu-bar file glassmacs-recent-files clear])
+                'glassmacs-clear-recent-files))
+    (should-not (lookup-key global-map [menu-bar file glassmacs-open-recent]))
+    (should-not (lookup-key global-map [menu-bar file glassmacs-new-window]))
+    (should (eq (lookup-key global-map [menu-bar window glassmacs-new-window])
+                'glassmacs-new-window))))
+
