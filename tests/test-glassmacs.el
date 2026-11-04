@@ -3127,3 +3127,10 @@ example) can run first and delay the sentinel."
          window '(:point 8 :start 1))
         (should (= (window-point window) 8))))))
 
+
+(ert-deftest glassmacs-window-content-inset-is-configurable ()
+  "The macOS content inset is modest and remains user-adjustable."
+  (should (custom-variable-p 'glassmacs-window-content-inset))
+  (should (integerp glassmacs-window-content-inset))
+  (should (<= 0 glassmacs-window-content-inset 40)))
+
