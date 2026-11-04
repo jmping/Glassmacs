@@ -295,5 +295,30 @@ The extra window means closing deletes a window rather than the frame."
         (erase-buffer)
         (set-buffer-modified-p nil)))))
 
+(ert-deftest glassmacs-console-close-dismissed-dialog-preserves-live-session ()
+  "A quit or UI failure during the hide prompt must never close R's view."
+  (let ((buffer (generate-new-buffer " *live-r-close-test*"))
+        (window nil))
+    (unwind-protect
+        (glassmacs-close-test--with-split buffer
+          (setq window (selected-window))
+          (cl-letf (((symbol-function 'glassmacs--live-r-console-p)
+                     (lambda (candidate) (eq candidate buffer)))
+                    ((symbol-function 'read-multiple-choice)
+                     (lambda (&rest _) (signal 'quit nil))))
+            (should-not (glassmacs--confirm-console-windows-close
+                         (list window)))
+            (should (window-live-p window)))
+          (cl-letf (((symbol-function 'glassmacs--live-r-console-p)
+                     (lambda (candidate) (eq candidate buffer)))
+                    ((symbol-function 'read-multiple-choice)
+                     (lambda (&rest _) (error "Dialog unavailable"))))
+            (should-not (glassmacs--confirm-console-windows-close
+                         (list window)))
+            (should (window-live-p window))))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)))))
+
 (provide 'test-glassmacs-close)
 ;;; test-glassmacs-close.el ends here
