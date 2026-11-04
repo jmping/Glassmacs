@@ -574,7 +574,7 @@ Do not include hidden minibuffer windows or manufacture buffer views."
     (dolist (frame (frame-list))
       (when (and (frame-live-p frame)
                  (frame-visible-p frame))
-        (dolist (window (window-list frame 'no-minibuffer))
+        (dolist (window (window-list frame 'never))
           (let ((buffer (window-buffer window)))
             (when (and (window-live-p window)
                        (buffer-live-p buffer)
@@ -593,7 +593,7 @@ Do not include hidden minibuffer windows or manufacture buffer views."
                                     (frame-parameter frame 'name)
                                     (or (window-parameter window 'window-id)
                                         (cl-position window
-                                                     (window-list frame 'no-minibuffer))))))
+                                                     (window-list frame 'never))))))
                 (push (cons label window) choices)))))))
     (nreverse choices)))
 
