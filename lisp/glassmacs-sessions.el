@@ -681,7 +681,9 @@ This command does not query R or contact a remote host."
    (list :buffer (buffer-name) :operation 'working-directory)))
 
 (defun glassmacs-r-start-session ()
-  "Start and register an ESS R session, showing a native console frame."
+  "Start and register an independent ESS R process.
+The originating document window is restored only if ESS replaced its
+buffer; existing splits and other windows are never deleted."
   (interactive)
   (unless (locate-library "ess-site")
     (user-error "ESS is unavailable; install the ess package first"))
@@ -691,8 +693,9 @@ This command does not query R or contact a remote host."
                                     inferior-ess-r-program)
                                "R"))
     (user-error "R executable not found; install R or set glassmacs-r-executable"))
-  (let ((origin-frame (selected-frame))
-        (origin-buffer (current-buffer)))
+  (let* ((origin-window (selected-window))
+         (origin-buffer (window-buffer origin-window))
+         (origin-frame (selected-frame)))
     (call-interactively (intern "R"))
     (let* ((console (current-buffer))
            (proc (and (boundp 'ess-local-process-name)
@@ -704,12 +707,33 @@ This command does not query R or contact a remote host."
         (when (and (eq system-type 'darwin)
                    (display-graphic-p)
                    (eq glassmacs-r-console-placement 'separate-window))
-          (with-selected-frame origin-frame
-            (when (buffer-live-p origin-buffer)
-              (delete-other-windows)
-              (switch-to-buffer origin-buffer)))
-          (glassmacs-r-display-console console))
+          ;; ESS can replace the source in its original window while
+          ;; starting R.  Restore only that window, not the entire layout.
+          (when (and (window-live-p origin-window)
+                     (buffer-live-p origin-buffer)
+                     (eq (window-buffer origin-window) console))
+            (set-window-buffer origin-window origin-buffer))
+          (glassmacs-r-display-console console)
+          ;; If ESS selected another frame, retain the document frame's
+          ;; layout and never collapse its splits as a side effect.
+          (when (and (frame-live-p origin-frame)
+                     (window-live-p origin-window))
+            (set-window-prev-buffers
+             origin-window (window-prev-buffers origin-window))))
         id))))
+
+(defun glassmacs-r-new-console ()
+  "Start a new independent R console, even when one already exists."
+  (interactive)
+  (glassmacs-r-start-and-target-session))
+
+(defun glassmacs-r-switch-console ()
+  "Choose a live R console and focus its existing native window."
+  (interactive)
+  (let ((live (glassmacs-sessions-refresh)))
+    (unless live (user-error "No live R console"))
+    (glassmacs-r-display-console
+     (glassmacs-session-buffer (glassmacs-sessions--prompt live)))))
 
 (defun glassmacs-r-start-and-target-session ()
   "Start R and target the new session from the current source buffer.
