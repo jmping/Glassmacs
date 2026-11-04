@@ -2843,7 +2843,7 @@ example) can run first and delay the sentinel."
   "Console switching selects from live sessions without creating a process."
   (let ((chosen nil)
         (session (progn (require 'glassmacs-sessions)
-                        (make-glassmacs-session :id "alpha3-test"
+                        (glassmacs-session--make :id "alpha3-test"
                                                 :buffer (current-buffer)))))
     (cl-letf (((symbol-function 'glassmacs-sessions-refresh)
                (lambda () (list session)))
