@@ -2828,3 +2828,24 @@ example) can run first and delay the sentinel."
           (glassmacs-focus-open-document)
           (should (equal seen (list buffer 'focus))))
       (kill-buffer buffer))))
+
+(ert-deftest glassmacs-alpha3-r-new-console-delegates-to-targeting ()
+  "A new R console always invokes a new session, never resolves an old one."
+  (let ((called nil))
+    (cl-letf (((symbol-function 'glassmacs-r-start-and-target-session)
+               (lambda () (setq called t) "new-session")))
+      (should (equal (glassmacs-r-new-console) "new-session"))
+      (should called))))
+
+(ert-deftest glassmacs-alpha3-r-switch-console-prompts-with-multiple-sessions ()
+  "Console switching selects from live sessions without creating a process."
+  (let ((chosen nil)
+        (session (make-glassmacs-session :id "alpha3-test")))
+    (cl-letf (((symbol-function 'glassmacs-sessions-refresh)
+               (lambda () (list session)))
+              ((symbol-function 'glassmacs-sessions--prompt)
+               (lambda (live) (setq chosen live) session))
+              ((symbol-function 'glassmacs-r-display-console)
+               (lambda (buffer) buffer)))
+      (glassmacs-r-switch-console)
+      (should (equal chosen (list session))))))
