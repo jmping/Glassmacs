@@ -3134,3 +3134,15 @@ example) can run first and delay the sentinel."
   (should (integerp glassmacs-window-content-inset))
   (should (<= 0 glassmacs-window-content-inset 40)))
 
+
+(ert-deftest glassmacs-crash-frame-position-is-bounded ()
+  "Restoration rejects malicious or nonsensical screen coordinates."
+  (should (= -120 (glassmacs-recovery--safe-frame-dimension
+                    -120 -10000 10000)))
+  (should (= 400 (glassmacs-recovery--safe-frame-dimension
+                   400 -10000 10000)))
+  (should-not (glassmacs-recovery--safe-frame-dimension
+               '(eval (delete-directory "/")) -10000 10000))
+  (should-not (glassmacs-recovery--safe-frame-dimension
+               1000000000 -10000 10000)))
+
