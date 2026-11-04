@@ -168,6 +168,21 @@ for intentional consolidation.  This API does not advise Emacs primitives."
   (glassmacs--open-file-with-policy
    filename wildcards (called-interactively-p 'interactive)))
 
+(defun glassmacs-find-file (filename &optional wildcards)
+  "Visit FILENAME using the native document-opening policy.
+This is the interactive counterpart of Emacs `find-file'; Lisp callers
+of `find-file' retain upstream semantics."
+  (interactive (find-file-read-args "Find file: "
+                                    confirm-nonexistent-file-or-buffer))
+  (glassmacs--open-file-with-policy filename wildcards t))
+
+(defun glassmacs--install-file-keybindings ()
+  "Route ordinary interactive file visits through the document policy.
+Do not advise `find-file' globally: packages depend on its semantics."
+  (when (eq system-type 'darwin)
+    (define-key global-map [remap find-file] #'glassmacs-find-file)
+    (global-set-key (kbd "C-x C-f") #'glassmacs-find-file)))
+
 (defun glassmacs--open-file-with-policy (filename &optional wildcards apply-policy)
   "Open FILENAME with Glassmacs document policy when APPLY-POLICY is non-nil."
   (if (or (not apply-policy) wildcards (not (display-graphic-p)))
@@ -545,6 +560,8 @@ FROM-MENU applies the graphical document-opening policy for menu selection."
 
 (with-eval-after-load 'menu-bar
   (glassmacs--install-document-menu))
+
+(glassmacs--install-file-keybindings)
 
 (require 'glassmacs-buffer-placement)
 
