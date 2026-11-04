@@ -615,19 +615,30 @@ class Harness:
             return None
         return value
 
-    def native_quit_accessibility_dump(self):
-        """Describe visible processes, windows, and controls after discovery fails."""
+    def native_quit_accessibility_dump(self, pid):
+        """Describe Glassmacs and alert-helper windows after discovery fails."""
+        target_pid = str(pid)
         script = (
             'tell application "System Events"\n'
             '  set report to ""\n'
             '  repeat with p in application processes\n'
+            '    set processName to "unknown"\n'
+            '    set processId to "unknown"\n'
+            '    set processFrontmost to false\n'
             '    try\n'
             '      set processName to name of p as text\n'
+            '    end try\n'
+            '    try\n'
             '      set processId to unix id of p as text\n'
-            '      set processVisible to visible of p as text\n'
-            '      set processFrontmost to frontmost of p as text\n'
-            '      repeat with w in windows of p\n'
-            '        try\n'
+            '    end try\n'
+            '    try\n'
+            '      set processFrontmost to frontmost of p\n'
+            '    end try\n'
+            '    if processId is "' + target_pid + '" or '
+            'processName contains "Glassmacs" or processName is "osascript" '
+            'or processFrontmost then\n'
+            '      try\n'
+            '        repeat with w in windows of p\n'
             '          set windowName to ""\n'
             '          set windowRole to ""\n'
             '          try\n'
@@ -637,8 +648,9 @@ class Harness:
             '            set windowRole to value of attribute "AXRole" of w as text\n'
             '          end try\n'
             '          set report to report & "window|" & processName & "|pid=" & '
-            'processId & "|visible=" & processVisible & "|frontmost=" & '
-            'processFrontmost & "|role=" & windowRole & "|title=" & windowName & linefeed\n'
+            'processId & "|frontmost=" & processFrontmost & "|role=" & '
+            'windowRole & "|title=" & windowName & linefeed\n'
+            '          try\n'
             '          repeat with c in entire contents of w\n'
             '            set controlRole to ""\n'
             '            set controlName to ""\n'
@@ -663,14 +675,21 @@ class Harness:
             'controlTitle & "|" & controlDescription & linefeed\n'
             '            end if\n'
             '          end repeat\n'
-            '        end try\n'
-            '      end repeat\n'
-            '    end try\n'
+            '          on error messageText\n'
+            '            set report to report & "controls-error|" & processName & '
+            '"|" & windowName & "|" & messageText & linefeed\n'
+            '          end try\n'
+            '        end repeat\n'
+            '      on error messageText\n'
+            '        set report to report & "windows-error|" & processName & '
+            '"|pid=" & processId & "|" & messageText & linefeed\n'
+            '      end try\n'
+            '    end if\n'
             '  end repeat\n'
-            '  if report is "" then return "System Events exposed no application windows"\n'
+            '  if report is "" then return "No windows exposed for Glassmacs, osascript, or frontmost process"\n'
             '  return report\n'
             'end tell')
-        result = run(["osascript", "-e", script], timeout=20, check=False)
+        result = run(["osascript", "-e", script], timeout=12, check=False)
         return (result.stdout + result.stderr).strip()[:6000]
 
     def wait_for_native_quit_checkbox(self, pid, timeout=15):
@@ -681,7 +700,7 @@ class Harness:
             if value in {"0", "1"}:
                 return value
             time.sleep(0.25)
-        details = self.native_quit_accessibility_dump()
+        details = self.native_quit_accessibility_dump(pid)
         raise Failure("The native quit alert checkbox did not appear within "
                       f"{timeout}s (Glassmacs PID {pid}); accessibility controls: "
                       f"{details or 'unavailable'}")
