@@ -442,3 +442,15 @@
       (glassmacs-r-ui--toolbar-image "right-arrow")
       (should (string-suffix-p "/run-dark.svg" chosen)))))
 
+
+(ert-deftest glassmacs-r-ui-toolbar-groups-source-actions ()
+  "Source execution, console and help controls have distinct groups."
+  (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
+             (lambda () t)))
+    (let ((map (glassmacs-r-ui--toolbar-map)))
+      (should (lookup-key map [glassmacs-run-line]))
+      (should (lookup-key map [glassmacs-show-console]))
+      (should (lookup-key map [glassmacs-help]))
+      (should (lookup-key map [glassmacs-divider-glassmacs-show-console]))
+      (should (lookup-key map [glassmacs-divider-glassmacs-help])))))
+
