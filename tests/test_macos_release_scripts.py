@@ -479,6 +479,16 @@ open(binary, "wb").write(data[:32] + text.encode())
             bootstrap = contents / "MacOS/GlassmacsBootstrap"
             bootstrap.write_bytes(make_universal_macho(2))
             bootstrap.chmod(0o755)
+            quit_alert_contents = (
+                contents / "Helpers/GlassmacsQuitAlert.app/Contents"
+            )
+            (quit_alert_contents / "MacOS").mkdir(parents=True)
+            quit_alert = quit_alert_contents / "MacOS/GlassmacsQuitAlert"
+            quit_alert.write_bytes(make_universal_macho(2))
+            quit_alert.chmod(0o755)
+            (quit_alert_contents / "Info.plist").write_bytes(
+                (ROOT / "macos/GlassmacsQuitAlert-Info.plist").read_bytes()
+            )
             emacs = contents / "MacOS/Emacs"
             emacs.write_bytes(make_universal_macho(2))
             emacs.chmod(0o755)
@@ -527,7 +537,7 @@ else:
     value = plist
     for component in key.split(":"):
         value = value[int(component)] if isinstance(value, list) else value[component]
-    print(value)
+    print(str(value).lower() if isinstance(value, bool) else value)
 """)
             plist_buddy.chmod(0o755)
             otool = root / "otool"
@@ -581,6 +591,10 @@ if sys.argv[1] == "-L" and os.environ.get("OTool_BAD_DEP") == "1":
                 "architecture": failure_after(
                     lambda: bootstrap.write_bytes(make_universal_macho(2, (CPU_X86_64,))),
                     lambda: bootstrap.write_bytes(make_universal_macho(2))),
+                "quit helper architecture": failure_after(
+                    lambda: quit_alert.write_bytes(
+                        make_universal_macho(2, (CPU_X86_64,))),
+                    lambda: quit_alert.write_bytes(make_universal_macho(2))),
                 "own location": failure_after(
                     lambda: emacs.write_bytes(make_universal_macho(2) + str(app).encode()),
                     lambda: emacs.write_bytes(make_universal_macho(2))),
@@ -611,13 +625,17 @@ if sys.argv[1] == "-L" and os.environ.get("OTool_BAD_DEP") == "1":
             )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("Mach-O architectures: arm64 x86_64: 3", result.stdout)
+        self.assertIn("Mach-O architectures: arm64 x86_64: 4", result.stdout)
         self.assertEqual(upstream_strings.returncode, 0,
                          upstream_strings.stdout + upstream_strings.stderr)
         self.assertIn("/nix/store/ 1, /opt/homebrew/ 1", upstream_strings.stdout)
         expected_messages = {
             "document type": "document types missing from Info.plist: ['Rd']",
             "architecture": "MacOS/GlassmacsBootstrap lacks ['arm64']",
+            "quit helper architecture": (
+                "Helpers/GlassmacsQuitAlert.app/Contents/MacOS/GlassmacsQuitAlert "
+                "lacks ['arm64']"
+            ),
             "own location": "refers to the app's own location",
             "build path": "refers to the build machine path",
             "world-writable": "world-writable: Contents/Resources/Glassmacs/init.el",
