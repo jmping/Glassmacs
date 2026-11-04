@@ -430,17 +430,22 @@
 
 (ert-deftest glassmacs-r-ui-toolbar-chooses-dark-contrast-vector ()
   "A dark frame selects the bright SVG rather than the light-frame icon."
-  (let (chosen)
+  (let (chosen image-spec)
     (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
               ((symbol-function 'frame-parameter)
                (lambda (_frame parameter)
                  (and (eq parameter 'background-mode) 'dark)))
               ((symbol-function 'image-type-available-p) (lambda (_) t))
               ((symbol-function 'find-image)
-               (lambda (spec) (setq chosen (plist-get (car spec) :file))
-                 (list 'image :type 'svg))))
-      (glassmacs-r-ui--toolbar-image "right-arrow")
-      (should (string-suffix-p "/run-dark.svg" chosen)))))
+               (lambda (spec)
+                 (setq chosen (plist-get (car spec) :file)
+                       image-spec (list 'image :type 'svg))
+                 image-spec)))
+      (let ((result (glassmacs-r-ui--toolbar-image "right-arrow")))
+        (should (string-suffix-p "/run-dark.svg" chosen))
+        (should (eq result image-spec))
+        (should (= (plist-get (cdr image-spec) :margin)
+                   glassmacs-r-ui-toolbar-icon-margin))))))
 
 
 (ert-deftest glassmacs-r-ui-toolbar-groups-source-actions ()
