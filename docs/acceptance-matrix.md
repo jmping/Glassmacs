@@ -371,7 +371,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 
 - Evidence: `glassmacs:issue-90-key-003`
 - Layers: A (batch), D (manual)
-- Tests: `ert:glassmacs-menu-keys-follow-active-profile-and-mode-map`, `ert:glassmacs-menu-keys-respect-user-override-and-unbound-state`, `ert:glassmacs-menu-keys-refresh-without-touching-upstream-menus`, `ert:glassmacs-menu-keeps-ess-mode-bindings-authoritative`
+- Tests: `ert:glassmacs-menu-keys-follow-active-profile-and-mode-map`, `ert:glassmacs-menu-keys-respect-user-override-and-unbound-state`, `ert:glassmacs-menu-keys-refresh-without-touching-upstream-menus`, `ert:glassmacs-menu-command-field-unwraps-emacs-command-form`, `ert:glassmacs-menu-keeps-ess-mode-bindings-authoritative`
 - Manual: see [checklist](macos-acceptance-checklist.md#key-003)
 
 ## CLIP-001

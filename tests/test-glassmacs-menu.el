@@ -82,6 +82,17 @@
                      "upstream"))
       (use-global-map original-global-map))))
 
+(ert-deftest glassmacs-menu-command-field-unwraps-emacs-command-form ()
+  (should (eq (glassmacs-menu--command-from-item
+               '(command . glassmacs-menu-test-command))
+              #'glassmacs-menu-test-command))
+  (should (eq (glassmacs-menu--command-from-item
+               '((command . glassmacs-menu-test-command)))
+              #'glassmacs-menu-test-command))
+  (should (eq (glassmacs-menu--command-from-item
+               #'glassmacs-menu-test-command)
+              #'glassmacs-menu-test-command)))
+
 (ert-deftest glassmacs-menu-keeps-ess-mode-bindings-authoritative ()
   (unless (locate-library "ess-r-mode")
     (ert-skip "ESS is not installed"))

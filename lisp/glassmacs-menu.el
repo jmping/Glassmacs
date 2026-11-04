@@ -32,18 +32,34 @@ menu `:keys' functions, which Emacs calls whenever it computes a menu."
                     (setq binding candidate-binding)))
                 keymap)
     (when (and (consp binding)
-               (eq (car binding) 'menu-item)
-               (commandp (nth 2 binding)))
+               (eq (car binding) 'menu-item))
       (let* ((copy (copy-tree binding))
-             (command (nth 2 copy))
+             (command (glassmacs-menu--command-from-item (nth 2 copy)))
              (properties (nthcdr 3 copy)))
-        (setcdr (nthcdr 2 copy)
-                (plist-put properties :keys
-                           (let ((command command))
-                             (lambda ()
-                               (glassmacs-menu-effective-key-description
-                                command)))))
-        (define-key keymap (vector event) copy)))))
+        (when (commandp command)
+          (setcdr (nthcdr 2 copy)
+                  (plist-put properties :keys
+                             (let ((command command))
+                               (lambda ()
+                                 (glassmacs-menu-effective-key-description
+                                  command))))))
+        (when (commandp command)
+          (define-key keymap (vector event) copy))))))
+
+(defun glassmacs-menu--command-from-item (command)
+  "Return the command symbol from a raw menu-item COMMAND field."
+  (cond
+   ((and (consp command)
+         (eq (car command) 'command)
+         (symbolp (cdr command)))
+    (cdr command))
+   ((and (consp command)
+         (null (cdr command))
+         (consp (car command))
+         (eq (caar command) 'command)
+         (symbolp (cdar command)))
+    (cdar command))
+   (t command)))
 
 (defun glassmacs-menu--raw-binding (keymap event)
   "Return the raw KEYMAP binding for EVENT, retaining menu-item properties."
