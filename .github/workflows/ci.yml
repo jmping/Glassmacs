@@ -1,8 +1,16 @@
 name: CI
 
 on:
+  # PR events validate feature branches. The push trigger is only for the
+  # integrated branch so each feature-branch commit does not queue a duplicate
+  # macOS build and GUI acceptance run.
   push:
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
