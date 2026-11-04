@@ -2898,3 +2898,27 @@ example) can run first and delay the sentinel."
                          (glassmacs--window-navigation-choices))))
         (set-window-buffer window original)))))
 
+
+(ert-deftest glassmacs-alpha4-hide-console-never-terminates-process ()
+  "Hiding a console must not kill its process or terminate its session."
+  (require 'glassmacs-sessions)
+  (let* ((console (generate-new-buffer " *alpha4-console*"))
+         (session (glassmacs-session--make :id "alpha4" :buffer console))
+         (window (selected-window))
+         (original (window-buffer window))
+         (glassmacs-r-console-placement 'current-window))
+    (unwind-protect
+        (progn
+          (set-window-buffer window console)
+          (cl-letf (((symbol-function 'glassmacs-sessions-resolve)
+                     (lambda (&optional _) session))
+                    ((symbol-function 'delete-process)
+                     (lambda (&rest _) (error "Console process was terminated")))
+                    ((symbol-function 'delete-frame)
+                     (lambda (&rest _) (error "Unexpected frame deletion"))))
+            (should (eq (glassmacs-r-hide-console) session))
+            (should-not (eq (window-buffer window) console))
+            (should (buffer-live-p console))))
+      (set-window-buffer window original)
+      (kill-buffer console))))
+
