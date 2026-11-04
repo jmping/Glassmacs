@@ -864,8 +864,30 @@ class Harness:
             '    click targetMenu\n'
             '    delay 0.25\n'
             '    set response to "missing"\n'
-            '    repeat with itemRef in menu items of menu 1 of targetMenu\n'
-            f'      if name of itemRef is "{item_title}" then\n'
+            '    set inventory to ""\n'
+            '    repeat with itemRef in entire contents of menu 1 of targetMenu\n'
+            '      set itemRole to ""\n'
+            '      set itemName to ""\n'
+            '      set itemCharacter to ""\n'
+            '      set itemModifiers to ""\n'
+            '      try\n'
+            '        set itemRole to value of attribute "AXRole" of itemRef as text\n'
+            '      end try\n'
+            '      try\n'
+            '        set itemName to name of itemRef as text\n'
+            '      end try\n'
+            '      try\n'
+            '        set itemCharacter to value of attribute "AXMenuItemCmdChar" '
+            'of itemRef as text\n'
+            '      end try\n'
+            '      try\n'
+            '        set itemModifiers to value of attribute "AXMenuItemCmdModifiers" '
+            'of itemRef as text\n'
+            '      end try\n'
+            '      set inventory to inventory & itemRole & "|" & itemName & "|" & '
+            'itemCharacter & "|" & itemModifiers & "; "\n'
+            f'      if (itemRole is "AXMenuItem" or itemRole is "") and '
+            f'(itemName is "{item_title}" or itemName begins with "{item_title}") then\n'
             '        set commandCharacter to ""\n'
             '        set commandModifiers to ""\n'
             '        try\n'
@@ -881,6 +903,7 @@ class Harness:
             '      end if\n'
             '    end repeat\n'
             '    click targetMenu\n'
+            '    if response is "missing" then return response & linefeed & inventory\n'
             '    return response\n'
             '  end tell\n'
             'end tell')
@@ -889,8 +912,10 @@ class Harness:
             raise Failure("Could not inspect the native menu shortcut: "
                           f"{(result.stdout + result.stderr).strip()}")
         value = result.stdout.strip()
-        if value == "missing":
-            return None
+        if value.startswith("missing"):
+            details = value.partition("\n")[2].strip()
+            raise Failure(f"Native menu item {item_title!r} not found in "
+                          f"{menu_title!r}; Accessibility items: {details or 'none'}")
         character, separator, modifiers = value.partition("|")
         if not separator:
             raise Failure(f"Unexpected native menu shortcut response: {value!r}")
