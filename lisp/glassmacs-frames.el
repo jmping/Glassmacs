@@ -61,12 +61,31 @@ On macOS, preserve the source document by opening a new frame."
              '(glassmacs--preferences-buffer-p
                glassmacs--display-preferences))
 
+(defun glassmacs-open-preferences-group (group)
+  "Open Customize GROUP in its own frame on graphical macOS.
+Customize can switch buffers directly, bypassing display-buffer rules;
+selecting a dedicated frame first protects the source document."
+  (let* ((separate (and (display-graphic-p)
+                        (eq glassmacs-preferences-opening-policy 'new-frame)))
+         (existing (and separate
+                        (cl-find-if
+                         (lambda (frame)
+                           (let ((window (frame-selected-window frame)))
+                             (and (window-live-p window)
+                                  (with-current-buffer (window-buffer window)
+                                    (derived-mode-p 'custom-mode)))))
+                         (frame-list))))
+         (target (or existing (and separate (make-frame)))))
+    (if target
+        (progn
+          (select-frame-set-input-focus target)
+          (with-selected-frame target (customize-group group)))
+      (customize-group group))))
+
 (defun glassmacs-open-document-preferences ()
   "Open the dedicated document and window opening preferences."
   (interactive)
-  (let ((display-buffer-overriding-action
-         '((display-buffer-pop-up-frame) (inhibit-same-window . t))))
-    (customize-group 'glassmacs-frames)))
+  (glassmacs-open-preferences-group 'glassmacs-frames))
 
 (defun glassmacs--ordinary-document-buffer-p (buffer)
   "Return non-nil when BUFFER is an ordinary document buffer."
