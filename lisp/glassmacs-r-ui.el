@@ -180,12 +180,22 @@ ICON is the base name of an image shipped with GNU Emacs.")
     (glassmacs-session "Session" glassmacs-r-select-session "open"))
   "R console toolbar entries.")
 
+(defcustom glassmacs-r-ui-toolbar-icon-margin 3
+  "Padding in pixels around R toolbar images.
+A small margin keeps the action icons legible and separated on Retina
+displays without changing their commands or hit targets."
+  :type '(integer 0 12)
+  :group 'glassmacs)
+
 (defun glassmacs-r-ui--toolbar-image (name)
-  "Find built-in toolbar image NAME without requiring external artwork."
+  "Find built-in toolbar image NAME with consistent visual padding."
   (when (display-graphic-p)
-    (find-image
-     (list (list :type 'xpm :file (concat name ".xpm")
-                 :ascent 'center)))))
+    (let ((image (find-image
+                  (list (list :type 'xpm :file (concat name ".xpm")
+                              :ascent 'center)))))
+      (when image
+        (plist-put image :margin
+                   (max 0 (min 12 glassmacs-r-ui-toolbar-icon-margin)))))))
 
 (defun glassmacs-r-ui--toolbar-map ()
   "Build a contextual toolbar using the same R commands as the menus."
