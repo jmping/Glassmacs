@@ -671,9 +671,9 @@ Unlike document opening, this never creates a frame or replaces a view."
     (define-key global-map [menu-bar file open-file]
       '(menu-item "Open File..." glassmacs-open-file
                   :enable (menu-bar-non-minibuffer-window-p)))
-    (define-key global-map [menu-bar file new-file]
-      '(menu-item "Visit New File..." glassmacs-open-file
-                  :enable (menu-bar-non-minibuffer-window-p)))))
+    ;; "Visit New File" duplicated "Open File" exactly.  Keep one route
+    ;; through the document presentation policy; remove the obsolete entry.
+    (define-key global-map [menu-bar file new-file] nil)))
 
 (with-eval-after-load 'menu-bar
   (glassmacs--install-document-menu))
