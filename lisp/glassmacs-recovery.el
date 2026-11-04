@@ -322,14 +322,14 @@ are skipped; no process is launched and no original file is overwritten."
       (when (and (listp record) (listp (plist-get record :buffers)))
         (let* ((buffers
                 (cl-loop for id in (plist-get record :buffers)
-                         when (stringp id)
-                         for buffer = (cl-find-if
-                                       (lambda (candidate)
-                                         (and (buffer-live-p candidate)
-                                              (equal (buffer-local-value
-                                                      'glassmacs-recovery--id candidate)
-                                                     id)))
-                                       (buffer-list))
+                         for buffer = (and (stringp id)
+                                           (cl-find-if
+                                            (lambda (candidate)
+                                              (and (buffer-live-p candidate)
+                                                   (equal (buffer-local-value
+                                                           'glassmacs-recovery--id candidate)
+                                                          id)))
+                                            (buffer-list)))
                          when buffer collect buffer))
                (width (glassmacs-recovery--safe-frame-dimension
                        (plist-get record :width) 20 500))
