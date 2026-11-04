@@ -308,24 +308,49 @@ Return the number of recorded buffers.  Never write original documents."
             (unless (eobp) (error "Trailing recovery manifest data"))
             data))))))
 
+(defun glassmacs-recovery--safe-frame-dimension (value minimum maximum)
+  "Return bounded integer VALUE for a recovered frame, or nil."
+  (when (and (integerp value) (<= minimum value) (<= value maximum))
+    value))
+
 (defun glassmacs-recovery--restore-window-layout (manifest)
-  "Reopen document frames from the trusted, data-only MANIFEST.
-Never evaluate stored frame parameters or overwrite existing document
-contents.  Split layouts and tabs are not yet reconstructed."
-  (when (and (display-graphic-p)
-             (fboundp 'glassmacs-present-buffer))
+  "Recreate one frame per saved frame, preserving document splits and size.
+Only data-only buffer IDs and bounded geometry are read.  Missing documents
+are skipped; no process is launched and no original file is overwritten."
+  (when (display-graphic-p)
     (dolist (record (plist-get manifest :windows))
       (when (and (listp record) (listp (plist-get record :buffers)))
-        (dolist (id (plist-get record :buffers))
-          (when (stringp id)
-            (let ((buffer (cl-find-if
-                           (lambda (candidate)
-                             (and (buffer-live-p candidate)
-                                  (equal (buffer-local-value
-                                          'glassmacs-recovery--id candidate) id)))
-                           (buffer-list))))
-              (when buffer
-                (glassmacs-present-buffer buffer 'open 'new-frame)))))))))
+        (let* ((buffers
+                (cl-loop for id in (plist-get record :buffers)
+                         when (stringp id)
+                         for buffer = (cl-find-if
+                                       (lambda (candidate)
+                                         (and (buffer-live-p candidate)
+                                              (equal (buffer-local-value
+                                                      'glassmacs-recovery--id candidate)
+                                                     id)))
+                                       (buffer-list))
+                         when buffer collect buffer))
+               (width (glassmacs-recovery--safe-frame-dimension
+                       (plist-get record :width) 20 500))
+               (height (glassmacs-recovery--safe-frame-dimension
+                        (plist-get record :height) 8 300)))
+          (when buffers
+            (let ((frame (make-frame)))
+              (with-selected-frame frame
+                (delete-other-windows)
+                (set-window-buffer (selected-window) (car buffers))
+                (dolist (buffer (cdr buffers))
+                  (condition-case nil
+                      (let ((window (split-window (selected-window) nil 'right)))
+                        (set-window-buffer window buffer)
+                        (select-window window))
+                    (error
+                     ;; Keep the recovered buffer accessible even when a
+                     ;; small display cannot accommodate another split.
+                     (display-buffer buffer))))
+                (when (and width height)
+                  (set-frame-size frame width height))))))))))
 
 (defun glassmacs-recovery-restore-crash ()
   "Restore the crash index without modifying the preserved-buffer index."
