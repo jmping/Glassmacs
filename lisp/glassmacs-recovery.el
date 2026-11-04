@@ -2,6 +2,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'json)
 
 (defgroup glassmacs-recovery nil
   "Durable recovery for ordinary Glassmacs document buffers."
@@ -571,7 +572,7 @@ the native dialog cannot run, return nil and use the safe fallback."
              "a.setMessageText(" (json-encode (format "Save changes to %s?" name)) ");"
              "a.setInformativeText('Choose what to do before quitting Glassmacs.');"
              "a.addButtonWithTitle('Save');"
-             "a.addButtonWithTitle('Don\\'t Save');"
+             "a.addButtonWithTitle(\"Don't Save\");"
              "a.addButtonWithTitle('Cancel');"
              "var c=$.NSButton.alloc.initWithFrame($.NSMakeRect(0,0,340,28));"
              "c.setButtonType($.NSSwitchButton);"
