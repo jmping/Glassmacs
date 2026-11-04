@@ -2853,3 +2853,18 @@ example) can run first and delay the sentinel."
                (lambda (buffer) buffer)))
       (glassmacs-r-switch-console)
       (should (equal chosen (list session))))))
+
+(ert-deftest glassmacs-alpha4-console-label-does-not-rename-ess-process ()
+  "Friendly console labels must not alter ESS's process identity."
+  (require 'glassmacs-sessions)
+  (let* ((session (glassmacs-session--make :id "r-1" :name "R-ESS"))
+         (glassmacs-sessions--list (list session)))
+    (cl-letf (((symbol-function 'glassmacs-sessions-live)
+               (lambda () (list session))))
+      (glassmacs-r-rename-console session "Analysis")
+      (should (equal (glassmacs-session-display-label session) "Analysis"))
+      (should (equal (glassmacs-session-name session) "R-ESS"))
+      (should (string-match-p "Analysis" (glassmacs-sessions--describe session)))
+      (glassmacs-r-rename-console session " ")
+      (should-not (glassmacs-session-display-label session)))))
+
