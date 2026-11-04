@@ -120,7 +120,8 @@ Before starting: install the app in /Applications on the Mac under test, and run
 
 **Quitting with unsaved documents asks first** (P0). Result: **NOT RUN**
 
-- [ ] With an unsaved document, choose Quit from the Dock icon's menu and log out of macOS: both ask before quitting.
+- [ ] With two modified documents, verify the native checkbox starts unchecked for each prompt and after cancel or failed save; test Save, Don't Save and Cancel scope.
+- [ ] Choose Quit from the Dock icon's menu and log out of macOS with unsaved documents: both must use the same safeguards.
 
 ## RESTORE-001
 

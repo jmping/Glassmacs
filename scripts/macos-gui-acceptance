@@ -537,6 +537,62 @@ class Harness:
                   f'end tell')
         run(["osascript", "-e", script], timeout=30)
 
+    def native_quit_checkbox(self, pid, action="read", button=None):
+        """Read or operate the checkbox in Glassmacs' native quit alert.
+
+        The NSAlert currently runs in its osascript helper process, so find
+        the labelled Accessibility checkbox across GUI processes instead of
+        assuming the dialog belongs to the Emacs process.
+        """
+        if action not in {"read", "toggle", "button"}:
+            raise ValueError(f"Unknown native checkbox action: {action}")
+        if action == "button" and not button:
+            raise ValueError("A native alert button title is required")
+        label = "Apply this choice to all remaining modified documents"
+        applescript_label = label.replace("\\", "\\\\").replace('"', '\\"')
+        operation = {
+            "read": 'return value of c as text',
+            "toggle": 'click c\n                return value of c as text',
+            "button": (f'click button "{button}" of w\n'
+                       '                return "clicked"'),
+        }[action]
+        script = (
+            'tell application "System Events"\n'
+            '  repeat with p in application processes\n'
+            '    try\n'
+            '      repeat with w in windows of p\n'
+            '        try\n'
+            '          repeat with c in checkboxes of w\n'
+            f'            if (name of c as text) is "{applescript_label}" then\n'
+            f'              {operation}\n'
+            '            end if\n'
+            '          end repeat\n'
+            '        end try\n'
+            '      end repeat\n'
+            '    end try\n'
+            '  end repeat\n'
+            '  return "missing"\n'
+            'end tell')
+        result = run(["osascript", "-e", script], timeout=10, check=False)
+        if result.returncode:
+            raise Failure("Could not access the native quit alert checkbox: "
+                          f"{(result.stdout + result.stderr).strip()}")
+        value = result.stdout.strip()
+        if value == "missing":
+            return None
+        return value
+
+    def wait_for_native_quit_checkbox(self, pid, timeout=15):
+        """Wait until the native quit alert exposes its real checkbox."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            value = self.native_quit_checkbox(pid)
+            if value in {"0", "1"}:
+                return value
+            time.sleep(0.25)
+        raise Failure("The native quit alert checkbox did not appear within "
+                      f"{timeout}s (Glassmacs PID {pid})")
+
     def crash_reports(self):
         directory = Path.home() / "Library/Logs/DiagnosticReports"
         if not directory.is_dir():
@@ -856,24 +912,73 @@ def command_w_never_loses_changes(ctx):
 
 @scenario("quit-with-unsaved-document-asks", ["CLOSE-002"], macos_only=True)
 def quit_with_unsaved_document_asks(ctx):
-    """Command-Q with an unsaved document asks before quitting; declining
-    keeps Glassmacs and the edits."""
+    """Native quit review resets its checkbox and scopes each decision."""
     harness = ctx.harness
-    document = harness.document("unsaved.txt", "keep\n")
-    instance = harness.launch(harness.new_home("quit"), files=[document])
+    first = harness.document("first.txt", "first\n")
+    second = harness.document("second.txt", "second\n")
+    instance = harness.launch(harness.new_home("quit"), files=[first, second])
     ctx.ready(instance)
     emacs = instance.emacs
-    emacs.wait(f"(glassmacs-acceptance-file-shown-p {el(document)})", "the document", timeout=30)
-    emacs.eval(f"(with-current-buffer (find-buffer-visiting {el(document)}) (insert \"edit \"))")
-    # AppKit alerts do not appear in Emacs's minibuffer.  Inject Cancel
-    # into the real reviewed-quit flow to check data safety in CI.
-    # Actual native checkbox/button interaction remains a manual GUI gate.
-    emacs.eval("(cl-letf (((symbol-function 'glassmacs-recovery--quit-decision) (lambda (_buffer) '(cancel . nil)))) (glassmacs-recovery-quit))")
-    time.sleep(1.5)
-    ctx.expect(instance.alive(), "Glassmacs quit with an unsaved document")
-    ctx.expect(emacs.eval(f"(buffer-modified-p (find-buffer-visiting {el(document)}))"),
-               "The edits were lost")
-    ctx.expect(document.read_text() == "keep\n", "The file was written without asking")
+    for document in (first, second):
+        emacs.wait(f"(glassmacs-acceptance-file-shown-p {el(document)})",
+                   f"{document.name} to open", timeout=30)
+        emacs.eval(f"(with-current-buffer (find-buffer-visiting {el(document)}) "
+                   f"(goto-char (point-max)) (insert \"edited \"))")
+
+    if not harness.system_events_available():
+        instance.kill_quietly()
+        raise NotRun("native quit checkbox coverage needs System Events Accessibility")
+    ctx.method("native AppKit quit alert and checkbox (System Events Accessibility)")
+
+    # Save the first document with the checkbox left off. The second document
+    # must get its own unchecked alert; canceling it keeps its edits intact.
+    ctx.type(instance, "s-q", system_events='keystroke "q" using command down')
+    checkbox = harness.wait_for_native_quit_checkbox(instance.pid)
+    ctx.expect(checkbox == "0", f"First dialog checkbox started as {checkbox}")
+    harness.native_quit_checkbox(instance.pid, "button", "Save")
+    checkbox = harness.wait_for_native_quit_checkbox(instance.pid)
+    ctx.expect(checkbox == "0", f"Second document checkbox started as {checkbox}")
+    harness.native_quit_checkbox(instance.pid, "button", "Cancel")
+    time.sleep(0.5)
+    ctx.expect(instance.alive(), "Cancel on the second document quit Glassmacs")
+    ctx.expect(first.read_text() == "first\nedited ",
+               "Save on the first document did not write its changes")
+    state = emacs.eval(f"(buffer-modified-p (find-buffer-visiting {el(second)}))")
+    ctx.expect(state, "Cancel on the second document lost its edits")
+    ctx.expect(second.read_text() == "second\n", "The second file was written before Save")
+
+    # A checked decision canceled in one quit must not seed the next one.
+    ctx.type(instance, "M-x glassmacs-recovery-quit RET")
+    checkbox = harness.wait_for_native_quit_checkbox(instance.pid)
+    ctx.expect(checkbox == "0", f"New quit attempt checkbox started as {checkbox}")
+    harness.native_quit_checkbox(instance.pid, "toggle")
+    ctx.expect(harness.native_quit_checkbox(instance.pid) == "1",
+               "The native checkbox could not be checked")
+    harness.native_quit_checkbox(instance.pid, "button", "Cancel")
+    time.sleep(0.5)
+    ctx.expect(instance.alive(), "Cancel after checking the box quit Glassmacs")
+    ctx.expect(emacs.eval(f"(buffer-modified-p (find-buffer-visiting {el(second)}))"),
+               "Cancel after checking the box lost edits")
+
+    # A fresh dialog starts unchecked again; checked Save applies to both
+    # remaining dirty documents and then commits the quit.
+    emacs.eval(f"(with-current-buffer (find-buffer-visiting {el(first)}) "
+               f"(goto-char (point-max)) (insert \"again \"))")
+    ctx.type(instance, "s-q", system_events='keystroke "q" using command down')
+    checkbox = harness.wait_for_native_quit_checkbox(instance.pid)
+    ctx.expect(checkbox == "0", f"Checkbox carried into a later quit as {checkbox}")
+    harness.native_quit_checkbox(instance.pid, "toggle")
+    ctx.expect(harness.native_quit_checkbox(instance.pid) == "1",
+               "The native checkbox could not be checked before Save")
+    harness.native_quit_checkbox(instance.pid, "button", "Save")
+    deadline = time.monotonic() + 15
+    while instance.alive() and time.monotonic() < deadline:
+        time.sleep(0.25)
+    ctx.expect(not instance.alive(), "Checked Save did not complete the reviewed quit")
+    ctx.expect(first.read_text() == "first\nedited again ",
+               "Checked Save did not save the first document")
+    ctx.expect(second.read_text() == "second\nedited ",
+               "Checked Save did not apply to the remaining document")
     instance.kill_quietly()
 
 
