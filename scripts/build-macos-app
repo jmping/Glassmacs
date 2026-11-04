@@ -98,6 +98,7 @@ ditto "$root/lisp" "$glassmacs_resources/lisp"
 # Bundle independently drawn toolbar PNGs alongside the Lisp configuration.
 mkdir -p "$glassmacs_resources/assets"
 ditto "$root/assets/toolbar" "$glassmacs_resources/assets/toolbar"
+ditto "$root/assets/r-toolbar" "$glassmacs_resources/assets/r-toolbar"
 cp "$root/scripts/bootstrap" "$glassmacs_resources/scripts/bootstrap"
 "$root/scripts/build-macos-lifecycle" "$upstream_app" \
   "$glassmacs_resources/macos/libglassmacs-lifecycle.dylib"
