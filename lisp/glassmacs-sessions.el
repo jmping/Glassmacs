@@ -620,7 +620,12 @@ returns to its previous buffer.  Other views of the console are retained."
       (user-error "R console has no visible window"))
     (let* ((frame (window-frame window))
            (dedicated-frame (and (eq window (frame-root-window frame))
-                                 (> (length (frame-list)) 1))))
+                                 (display-graphic-p frame)
+                                 (cl-some (lambda (other)
+                                            (and (not (eq other frame))
+                                                 (frame-live-p other)
+                                                 (frame-visible-p other)))
+                                          (frame-list)))))
       (if dedicated-frame
           (delete-frame frame)
         (with-selected-window window
