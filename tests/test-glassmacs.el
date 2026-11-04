@@ -675,8 +675,7 @@
                 'glassmacs-open-file))
     (should (eq (lookup-key global-map [menu-bar file new-document])
                 'glassmacs-new-document))
-    (should (eq (lookup-key global-map [menu-bar file new-file])
-                'glassmacs-open-file))))
+    (should-not (lookup-key global-map [menu-bar file new-file]))))
 
 (ert-deftest glassmacs-macos-menus-install-without-duplicating-cocoa-items ()
   (let ((global-map (copy-keymap global-map))
@@ -690,11 +689,11 @@
           (file-menu (lookup-key global-map [menu-bar file]))
           (window-menu (lookup-key global-map [menu-bar window]))
           (count 0))
-      (map-keymap (lambda (event _binding)
-                    (when (eq event 'glassmacs-new-window)
+      (map-keymap (lambda (event binding)
+                    (when (and (eq event 'glassmacs-new-window) binding)
                       (setq count (1+ count))))
                   file-menu)
-      (should (= count 1))
+      (should (= count 0))
       (setq count 0)
       (map-keymap (lambda (event _binding)
                     (when (eq event 'glassmacs-new-window)
@@ -1496,7 +1495,8 @@ otherwise never build."
       (glassmacs--install-macos-menus))
     (should (eq (lookup-key global-map [menu-bar file new-document])
                 'glassmacs-new-document))
-    (should (eq (lookup-key global-map [menu-bar file glassmacs-new-window])
+    (should-not (lookup-key global-map [menu-bar file glassmacs-new-window]))
+    (should (eq (lookup-key global-map [menu-bar window glassmacs-new-window])
                 'glassmacs-new-window))))
 
 (ert-deftest glassmacs-new-document-creates-distinct-buffers ()
@@ -2853,3 +2853,123 @@ example) can run first and delay the sentinel."
                (lambda (buffer) buffer)))
       (glassmacs-r-switch-console)
       (should (equal chosen (list session))))))
+
+(ert-deftest glassmacs-alpha4-console-label-does-not-rename-ess-process ()
+  "Friendly console labels must not alter ESS's process identity."
+  (require 'glassmacs-sessions)
+  (let* ((session (glassmacs-session--make :id "r-1" :name "R-ESS"))
+         (glassmacs-sessions--list (list session)))
+    (cl-letf (((symbol-function 'glassmacs-sessions-live)
+               (lambda () (list session))))
+      (glassmacs-r-rename-console session "Analysis")
+      (should (equal (glassmacs-session-display-label session) "Analysis"))
+      (should (equal (glassmacs-session-name session) "R-ESS"))
+      (should (string-match-p "Analysis" (glassmacs-sessions--describe session)))
+      (glassmacs-r-rename-console session " ")
+      (should-not (glassmacs-session-display-label session)))))
+
+
+(ert-deftest glassmacs-alpha4-window-chooser-focuses-without-replacing ()
+  "Window navigation selects an existing view, never presenting a buffer."
+  (let ((window (selected-window))
+        (seen nil))
+    (cl-letf (((symbol-function 'glassmacs--window-navigation-choices)
+               (lambda () (list (cons "Document — fixture" window))))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _) "Document — fixture"))
+              ((symbol-function 'select-frame-set-input-focus)
+               (lambda (frame) (setq seen frame)))
+              ((symbol-function 'glassmacs-present-buffer)
+               (lambda (&rest _) (error "Unexpected buffer presentation"))))
+      (should (eq (glassmacs-focus-open-window) window))
+      (should (eq seen (window-frame window))))))
+
+(ert-deftest glassmacs-alpha4-window-chooser-excludes-internal-buffers ()
+  "Visible internal buffers are not user-facing window destinations."
+  (with-temp-buffer
+    (rename-buffer " *glassmacs-internal-window*" t)
+    (let ((window (selected-window))
+          (original (window-buffer (selected-window))))
+      (unwind-protect
+          (progn
+            (set-window-buffer window (current-buffer))
+            (should-not (cl-find-if
+                         (lambda (entry) (eq (cdr entry) window))
+                         (glassmacs--window-navigation-choices))))
+        (set-window-buffer window original)))))
+
+
+(ert-deftest glassmacs-alpha4-hide-console-never-terminates-process ()
+  "Hiding a console must not kill its process or terminate its session."
+  (require 'glassmacs-sessions)
+  (let* ((console (generate-new-buffer " *alpha4-console*"))
+         (session (glassmacs-session--make :id "alpha4" :buffer console))
+         (window (selected-window))
+         (original (window-buffer window))
+         (glassmacs-r-console-placement 'current-window))
+    (unwind-protect
+        (progn
+          (set-window-buffer window console)
+          (cl-letf (((symbol-function 'glassmacs-sessions-resolve)
+                     (lambda (&optional _) session))
+                    ((symbol-function 'delete-process)
+                     (lambda (&rest _) (error "Console process was terminated")))
+                    ((symbol-function 'delete-frame)
+                     (lambda (&rest _) (error "Unexpected frame deletion"))))
+            (should (eq (glassmacs-r-hide-console) session))
+            (should-not (eq (window-buffer window) console))
+            (should (buffer-live-p console))))
+      (set-window-buffer window original)
+      (kill-buffer console))))
+
+
+(ert-deftest glassmacs-alpha4-file-menu-dedup-is-idempotent ()
+  "Repeated installation must not reintroduce duplicate open commands."
+  (let ((global-map (copy-keymap global-map))
+        (system-type 'darwin))
+    (cl-letf (((symbol-function 'display-graphic-p)
+               (lambda (&optional _frame) t)))
+      (glassmacs--install-document-menu)
+      (glassmacs--install-document-menu))
+    (should (eq (lookup-key global-map [menu-bar file open-file])
+                'glassmacs-open-file))
+    (should-not (lookup-key global-map [menu-bar file new-file]))))
+
+
+(ert-deftest glassmacs-alpha4-file-menu-has-no-duplicate-native-actions ()
+  "Document review, new window and quit each have one canonical menu."
+  (let ((global-map (copy-keymap global-map))
+        (system-type 'darwin))
+    (cl-letf (((symbol-function 'display-graphic-p)
+               (lambda (&optional _) t)))
+      (glassmacs--install-document-menu)
+      (glassmacs--install-macos-menus)
+      (glassmacs--install-macos-menus))
+    (should (lookup-key global-map [menu-bar file glassmacs-review-unsaved]))
+    (should-not (lookup-key global-map [menu-bar glassmacs review-unsaved]))
+    (should-not (lookup-key global-map [menu-bar file glassmacs-new-window]))
+    (should (lookup-key global-map [menu-bar window glassmacs-new-window]))
+    (should-not (lookup-key global-map [menu-bar file glassmacs-quit]))))
+
+
+(ert-deftest glassmacs-alpha4-file-menu-groups-recent-actions ()
+  "Recent-file maintenance belongs in one submenu, not the File root."
+  (let ((global-map (copy-keymap global-map))
+        (system-type 'darwin))
+    (cl-letf (((symbol-function 'display-graphic-p)
+               (lambda (&optional _) t)))
+      (glassmacs--install-macos-menus)
+      (glassmacs--install-macos-menus))
+    (should (keymapp (lookup-key global-map
+                                 [menu-bar file glassmacs-recent-files])))
+    (should (eq (lookup-key global-map
+                            [menu-bar file glassmacs-recent-files open])
+                'glassmacs-open-recent-file))
+    (should (eq (lookup-key global-map
+                            [menu-bar file glassmacs-recent-files clear])
+                'glassmacs-clear-recent-files))
+    (should-not (lookup-key global-map [menu-bar file glassmacs-open-recent]))
+    (should-not (lookup-key global-map [menu-bar file glassmacs-new-window]))
+    (should (eq (lookup-key global-map [menu-bar window glassmacs-new-window])
+                'glassmacs-new-window))))
+

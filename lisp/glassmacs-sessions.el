@@ -36,7 +36,7 @@
 
 (cl-defstruct (glassmacs-session (:constructor glassmacs-session--make)
                                  (:copier nil))
-  id process buffer name directory
+  id process buffer name directory display-label
   (state 'ready)                        ; ready, terminated
   (paused nil)
   (entries nil)                         ; all entries, oldest first
@@ -414,12 +414,31 @@ console buffer's `default-directory'.  It is not a claim about R's getwd()."
 (defun glassmacs-sessions--describe (session)
   "Describe SESSION by identity and console directory, not just its number."
   (format "%s [%s] — Console: %s%s"
-          (glassmacs-session-id session)
+          (or (glassmacs-session-display-label session)
+              (glassmacs-session-id session))
           (glassmacs-session-name session)
           (if-let ((dir (glassmacs-sessions--console-directory session)))
               (abbreviate-file-name dir)
             "(unknown)")
           (if (glassmacs-session-paused session) " (paused)" "")))
+
+(defun glassmacs-r-rename-console (session label)
+  "Set SESSION's descriptive display LABEL without renaming its ESS process.
+An empty LABEL clears the custom name."
+  (interactive
+   (let* ((live (glassmacs-sessions-live))
+          (session (glassmacs-sessions--prompt
+                    (or live (user-error "No live R console"))))
+          (current (or (glassmacs-session-display-label session) "")))
+     (list session (read-string "R console label (empty clears): " current))))
+  (unless (and (glassmacs-session-p session)
+               (memq session (glassmacs-sessions-live)))
+    (user-error "R console is no longer live"))
+  (setf (glassmacs-session-display-label session)
+        (unless (string-empty-p (string-trim label))
+          (string-trim label)))
+  (message "R console: %s" (glassmacs-sessions--describe session))
+  session)
 
 (defun glassmacs-sessions-resolve (&optional session)
   "Return the session commands should go to, never guessing among several.
@@ -587,6 +606,35 @@ placements remain available for users who prefer Emacs pane layouts."
         (set-window-buffer window buffer)
         (select-window window)))
      (t (switch-to-buffer buffer)))))
+
+(defun glassmacs-r-hide-console (&optional session)
+  "Close SESSION's console view without terminating its R process.
+Only the selected console window is affected.  A dedicated console frame
+may be deleted when another live frame exists; otherwise the window
+returns to its previous buffer.  Other views of the console are retained."
+  (interactive)
+  (let* ((session (glassmacs-sessions-resolve session))
+         (buffer (glassmacs-session-buffer session))
+         (window (and (buffer-live-p buffer) (get-buffer-window buffer t))))
+    (unless (window-live-p window)
+      (user-error "R console has no visible window"))
+    (let* ((frame (window-frame window))
+           (dedicated-frame (and (eq window (frame-root-window frame))
+                                 (display-graphic-p frame)
+                                 (cl-some (lambda (other)
+                                            (and (not (eq other frame))
+                                                 (frame-live-p other)
+                                                 (frame-visible-p other)))
+                                          (frame-list)))))
+      (if dedicated-frame
+          (delete-frame frame)
+        (with-selected-window window
+          (switch-to-prev-buffer window))
+        (when (eq (window-buffer window) buffer)
+          (set-window-buffer window (get-buffer-create "*scratch*")))))
+    (message "Closed R console view; session %s remains running"
+             (glassmacs-session-id session))
+    session))
 
 (defun glassmacs-r-move-console-to-new-frame ()
   "Move the current live R console to a separate graphical frame.

@@ -198,6 +198,7 @@ does not provide a native macOS print dialog."
     (let ((glassmacs-menu (make-sparse-keymap "Glassmacs"))
           (keyboard-menu (make-sparse-keymap "Keyboard Profile"))
           (opening-menu (make-sparse-keymap "Document Opening"))
+          (recent-menu (make-sparse-keymap "Recent Files"))
           (file-menu (lookup-key global-map [menu-bar file]))
           (window-menu (lookup-key global-map [menu-bar window])))
       (define-key glassmacs-menu [document-opening] opening-menu)
@@ -233,8 +234,6 @@ does not provide a native macOS print dialog."
                     :button (:toggle . glassmacs-preserve-open-buffers-on-quit)))
       (define-key glassmacs-menu [restore-buffers]
         '(menu-item "Restore Preserved Buffers…" glassmacs-recovery-restore))
-      (define-key glassmacs-menu [review-unsaved]
-        '(menu-item "Review Unsaved Documents…" glassmacs-review-unsaved-documents))
       (define-key glassmacs-menu [keyboard-profile] keyboard-menu)
       (define-key keyboard-menu [hybrid]
         '(menu-item "Hybrid macOS / Emacs"
@@ -258,19 +257,20 @@ does not provide a native macOS print dialog."
           '(menu-item "Reveal in Finder" glassmacs-reveal-in-finder
                       :enable (and buffer-file-name
                                    (not (file-remote-p buffer-file-name)))))
-        (define-key file-menu [glassmacs-quit]
-          '(menu-item "Quit Glassmacs" glassmacs-recovery-quit))
         (define-key file-menu [glassmacs-print-document]
           '(menu-item "Print Document…" glassmacs-print-document))
-        (define-key file-menu [glassmacs-open-recent]
+        ;; Recent-file commands belong to one submenu; New Window belongs
+        ;; in Window, not alongside document creation in File.
+        (define-key recent-menu [open]
           '(menu-item "Open Recent…" glassmacs-open-recent-file))
-        (define-key file-menu [glassmacs-clear-recent]
+        (define-key recent-menu [clear]
           '(menu-item "Clear Recent Files…" glassmacs-clear-recent-files))
-        (define-key file-menu [glassmacs-recent-preferences]
+        (define-key recent-menu [preferences]
           '(menu-item "Recent Files Preferences…" glassmacs-recent-files-preferences))
-        (define-key file-menu [glassmacs-new-window]
-          '(menu-item "New Window" glassmacs-new-window
-                      :enable (display-graphic-p))))
+        (define-key file-menu [glassmacs-recent-files] recent-menu)
+        (dolist (obsolete '(glassmacs-open-recent glassmacs-clear-recent
+                             glassmacs-recent-preferences glassmacs-new-window))
+          (define-key file-menu (vector obsolete) nil)))
       (unless (keymapp window-menu)
         (setq window-menu (make-sparse-keymap "Window"))
         (define-key global-map [menu-bar window] window-menu))
