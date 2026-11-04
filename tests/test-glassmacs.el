@@ -675,8 +675,7 @@
                 'glassmacs-open-file))
     (should (eq (lookup-key global-map [menu-bar file new-document])
                 'glassmacs-new-document))
-    (should (eq (lookup-key global-map [menu-bar file new-file])
-                'glassmacs-open-file))))
+    (should-not (lookup-key global-map [menu-bar file new-file]))))
 
 (ert-deftest glassmacs-macos-menus-install-without-duplicating-cocoa-items ()
   (let ((global-map (copy-keymap global-map))
@@ -2921,4 +2920,17 @@ example) can run first and delay the sentinel."
             (should (buffer-live-p console))))
       (set-window-buffer window original)
       (kill-buffer console))))
+
+
+(ert-deftest glassmacs-alpha4-file-menu-dedup-is-idempotent ()
+  "Repeated installation must not reintroduce duplicate open commands."
+  (let ((global-map (copy-keymap global-map))
+        (system-type 'darwin))
+    (cl-letf (((symbol-function 'display-graphic-p)
+               (lambda (&optional _frame) t)))
+      (glassmacs--install-document-menu)
+      (glassmacs--install-document-menu))
+    (should (eq (lookup-key global-map [menu-bar file open-file])
+                'glassmacs-open-file))
+    (should-not (lookup-key global-map [menu-bar file new-file]))))
 
