@@ -50,6 +50,29 @@ The extra window means closing deletes a window rather than the frame."
           (should-not (file-exists-p response-file)))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
+(ert-deftest glassmacs-native-quit-helper-reports-helper-error ()
+  (let* ((system-type 'darwin)
+         (invocation-directory "/Applications/Glassmacs.app/Contents/MacOS/")
+         (buffer (get-buffer-create "glassmacs-native-quit-error-test"))
+         (reported nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+                  ((symbol-function 'executable-find)
+                   (lambda (program) (and (equal program "open") "/usr/bin/open")))
+                  ((symbol-function 'file-executable-p) (lambda (_) t))
+                  ((symbol-function 'process-file)
+                   (lambda (_program _infile _destination _display &rest args)
+                     (with-temp-file (nth 5 args)
+                       (insert "{\"error\":\"test launch failure\"}"))
+                     0))
+                  ((symbol-function 'message)
+                   (lambda (format-string &rest args)
+                     (setq reported (apply #'format format-string args)))))
+          (should-not (glassmacs-recovery--native-quit-decision buffer))
+          (should (equal reported
+                         "Glassmacs native quit helper failed: test launch failure")))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (ert-deftest glassmacs-close-unmodified-document-kills-buffer-and-window ()
   (let ((buffer (generate-new-buffer "glassmacs-close-clean")))
     (glassmacs-close-test--with-split buffer

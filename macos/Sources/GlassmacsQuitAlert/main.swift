@@ -13,8 +13,12 @@ enum GlassmacsQuitAlert {
         let responseURL = URL(fileURLWithPath: arguments[0])
         let documentName = arguments[1]
         let application = NSApplication.shared
-        guard application.setActivationPolicy(.accessory) else {
-            fail("Could not activate the Glassmacs quit alert")
+        if application.activationPolicy() == .prohibited &&
+            !application.setActivationPolicy(.accessory) {
+            fail("Could not switch to the accessory activation policy")
+        }
+        guard application.activationPolicy() == .accessory else {
+            fail("The Glassmacs quit alert is not running as an accessory app")
         }
 
         let alert = NSAlert()

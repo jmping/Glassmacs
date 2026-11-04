@@ -565,26 +565,51 @@ the native dialog cannot run, return nil and use the safe fallback."
                       "../Helpers/GlassmacsQuitAlert.app" invocation-directory))
          (helper (expand-file-name "Contents/MacOS/GlassmacsQuitAlert"
                                    helper-app)))
-    (when (and (eq system-type 'darwin)
-               (display-graphic-p)
-               open (file-executable-p helper))
-      (let ((response-file (make-temp-file "glassmacs-quit-response-")))
+    (when (and (eq system-type 'darwin) (display-graphic-p))
+      (cond
+       ((not open)
+        (message "Glassmacs native quit helper unavailable: `open' was not found")
+        nil)
+       ((not (file-executable-p helper))
+        (message "Glassmacs native quit helper is not executable: %s" helper)
+        nil)
+       (t
+        (let ((response-file (make-temp-file "glassmacs-quit-response-"))
+              (output (generate-new-buffer " *glassmacs-quit-helper*")))
         (unwind-protect
-            (condition-case nil
-                (when (zerop (process-file open nil nil nil "-n" "-W" "-a"
-                                           helper-app "--args" response-file
-                                           (buffer-name buffer)))
-                  (with-temp-buffer
-                    (let ((json-object-type 'alist))
-                      (insert-file-contents response-file)
-                      (goto-char (point-min))
-                      (let* ((response (json-read))
-                             (action (cdr (assq 'action response)))
-                             (all (cdr (assq 'all response))))
-                        (when (member action '("save" "discard" "cancel"))
-                          (cons (intern action) (eq all t)))))))
-              (error nil))
-          (ignore-errors (delete-file response-file)))))))
+            (condition-case err
+                (let ((status (process-file open nil output nil "-n" "-W" "-a"
+                                            helper-app "--args" response-file
+                                            (buffer-name buffer))))
+                  (if (and (zerop status) (file-readable-p response-file))
+                      (with-temp-buffer
+                        (let ((json-object-type 'alist))
+                          (insert-file-contents response-file)
+                          (goto-char (point-min))
+                          (let* ((response (json-read))
+                                 (error-text (cdr (assq 'error response)))
+                                 (action (cdr (assq 'action response)))
+                                 (all (cdr (assq 'all response))))
+                            (cond
+                             (error-text
+                              (message "Glassmacs native quit helper failed: %s" error-text)
+                              nil)
+                             ((member action '("save" "discard" "cancel"))
+                              (cons (intern action) (eq all t)))
+                             (t
+                              (message "Glassmacs native quit helper returned an invalid action")
+                              nil)))))
+                    (message "Glassmacs native quit helper failed (status %s): %s"
+                             status
+                             (with-current-buffer output
+                               (string-trim (buffer-string))))
+                    nil))
+              (error
+               (message "Glassmacs native quit helper failed: %s"
+                         (error-message-string err))
+               nil))
+          (ignore-errors (delete-file response-file))
+          (kill-buffer output))))))))
 
 (defun glassmacs-recovery--quit-decision (buffer)
   "Ask about BUFFER; the scope checkbox defaults unchecked each time.
