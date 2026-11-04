@@ -12,7 +12,18 @@ if [ ! -f "$app/Contents/Info.plist" ]; then
 fi
 
 count=0
+quit_alert_app="$app/Contents/Helpers/GlassmacsQuitAlert.app"
+quit_alert_binary="$quit_alert_app/Contents/MacOS/GlassmacsQuitAlert"
+if [ -d "$quit_alert_app" ]; then
+  /usr/bin/codesign --force --sign - "$quit_alert_binary"
+  count=$((count + 1))
+  /usr/bin/codesign --force --sign - "$quit_alert_app"
+fi
+
 while IFS= read -r -d '' path; do
+  case "$path" in
+    "$quit_alert_app"/*) continue ;;
+  esac
   case "$(/usr/bin/file -b "$path")" in
     *Mach-O*)
       /usr/bin/codesign --force --sign - "$path"
@@ -20,12 +31,6 @@ while IFS= read -r -d '' path; do
       ;;
   esac
 done < <(/usr/bin/find "$app/Contents" -type f -print0)
-
-# A nested .app needs its own bundle seal after its executable and before the
-# enclosing Glassmacs.app is sealed.
-while IFS= read -r -d '' nested_app; do
-  /usr/bin/codesign --force --sign - "$nested_app"
-done < <(/usr/bin/find "$app/Contents" -depth -type d -name '*.app' -print0)
 
 /usr/bin/codesign --force --sign - "$app"
 /usr/bin/codesign --verify --deep --strict "$app"

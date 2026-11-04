@@ -23,9 +23,23 @@ fi
 
 # A signed bundle is sealed: do not edit resources after this operation.
 # Sign every regular Mach-O file, including architecture-specific plugins,
-# before signing the enclosing application. Do not follow symlinks.
+# before signing the enclosing application. Seal the nested helper app first,
+# because codesign validates nested code while signing any parent executable.
 count=0
+quit_alert_app="$app/Contents/Helpers/GlassmacsQuitAlert.app"
+quit_alert_binary="$quit_alert_app/Contents/MacOS/GlassmacsQuitAlert"
+if [ -d "$quit_alert_app" ]; then
+  /usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
+    "$quit_alert_binary"
+  count=$((count + 1))
+  /usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
+    "$quit_alert_app"
+fi
+
 while IFS= read -r -d '' path; do
+  case "$path" in
+    "$quit_alert_app"/*) continue ;;
+  esac
   if [ "$path" = "$emacs" ]; then
     continue
   fi
@@ -39,10 +53,6 @@ done < <(/usr/bin/find "$app/Contents" -type f -print0)
 
 /usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
   "$emacs"
-while IFS= read -r -d '' nested_app; do
-  /usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
-    "$nested_app"
-done < <(/usr/bin/find "$app/Contents" -depth -type d -name '*.app' -print0)
 /usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
   "$app"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
