@@ -3047,3 +3047,22 @@ example) can run first and delay the sentinel."
       (kill-buffer first)
       (kill-buffer second))))
 
+
+(ert-deftest glassmacs-quit-fallback-scope-error-never-applies-to-all ()
+  "A failed fallback scope prompt must not silently broaden a quit choice."
+  (let ((buffer (generate-new-buffer "glassmacs-fallback-scope"))
+        (prompts 0))
+    (unwind-protect
+        (cl-letf (((symbol-function 'glassmacs-recovery--native-quit-decision)
+                   (lambda (_buffer) nil))
+                  ((symbol-function 'read-multiple-choice)
+                   (lambda (&rest _)
+                     (cl-incf prompts)
+                     (if (= prompts 1)
+                         '(?d "Don't Save")
+                       (error "Scope dialog unavailable")))))
+          (should (equal (glassmacs-recovery--quit-decision buffer)
+                         '(discard . nil)))
+          (should (= prompts 2)))
+      (kill-buffer buffer))))
+
