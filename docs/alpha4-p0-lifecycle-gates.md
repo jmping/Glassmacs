@@ -19,3 +19,14 @@ This work is stacked on PR #86. Rebase/retarget onto `main` once #86 merges.
 3. Cancel and save errors preserve unsaved document content; quit vetoes must not mark documents clean.
 4. Test packaged application behavior rather than assuming passing Emacs batch tests prove macOS integration.
 5. Close P0 issues only when the corresponding acceptance evidence exists.
+
+## Forced-quit / crash window recovery
+
+Periodic crash snapshots now include clean open file-backed documents and a
+safe data-only list of visible document frames. After confirmation at restart,
+recovery reopens those documents in native frames, alongside recovered dirty
+content. No R subprocess is automatically restarted and original files are
+never overwritten. **Remaining P0 acceptance gap:** the exact split/tab
+layout, frame geometry, selected windows, and scroll positions are not yet
+restored. Validate the crash recovery path in a packaged macOS build and
+expand it before claiming full window-session restoration.
