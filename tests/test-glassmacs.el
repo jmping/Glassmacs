@@ -1495,7 +1495,8 @@ otherwise never build."
       (glassmacs--install-macos-menus))
     (should (eq (lookup-key global-map [menu-bar file new-document])
                 'glassmacs-new-document))
-    (should (eq (lookup-key global-map [menu-bar file glassmacs-new-window])
+    (should-not (lookup-key global-map [menu-bar file glassmacs-new-window]))
+    (should (eq (lookup-key global-map [menu-bar window glassmacs-new-window])
                 'glassmacs-new-window))))
 
 (ert-deftest glassmacs-new-document-creates-distinct-buffers ()
@@ -2933,4 +2934,20 @@ example) can run first and delay the sentinel."
     (should (eq (lookup-key global-map [menu-bar file open-file])
                 'glassmacs-open-file))
     (should-not (lookup-key global-map [menu-bar file new-file]))))
+
+
+(ert-deftest glassmacs-alpha4-file-menu-has-no-duplicate-native-actions ()
+  "Document review, new window and quit each have one canonical menu."
+  (let ((global-map (copy-keymap global-map))
+        (system-type 'darwin))
+    (cl-letf (((symbol-function 'display-graphic-p)
+               (lambda (&optional _) t)))
+      (glassmacs--install-document-menu)
+      (glassmacs--install-macos-menus)
+      (glassmacs--install-macos-menus))
+    (should (lookup-key global-map [menu-bar file glassmacs-review-unsaved]))
+    (should-not (lookup-key global-map [menu-bar glassmacs review-unsaved]))
+    (should-not (lookup-key global-map [menu-bar file glassmacs-new-window]))
+    (should (lookup-key global-map [menu-bar window glassmacs-new-window]))
+    (should-not (lookup-key global-map [menu-bar file glassmacs-quit]))))
 
