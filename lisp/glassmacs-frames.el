@@ -535,6 +535,56 @@ FROM-MENU applies the graphical document-opening policy for menu selection."
     map)
   "Selectable major modes for File → New Buffer in Mode.")
 
+(defcustom glassmacs-mode-line-buffer-navigation 'documents
+  "How clicking the mode-line buffer name navigates.
+The `documents' setting focuses an existing document frame rather than
+cycling unrelated buffers into the current document window.  Choose
+`emacs' to retain the upstream mode-line mouse actions."
+  :type '(choice (const :tag "Focus open documents" documents)
+                 (const :tag "Standard Emacs buffer cycling" emacs))
+  :group 'glassmacs-frames)
+
+(defun glassmacs-focus-open-document ()
+  "Choose an open document or R console and focus its existing frame.
+A buffer without a visible view is opened using its document policy."
+  (interactive)
+  (let* ((buffers (cl-remove-if-not
+                   (lambda (buffer)
+                     (or (glassmacs--ordinary-document-buffer-p buffer)
+                         (with-current-buffer buffer
+                           (derived-mode-p 'inferior-ess-r-mode))))
+                   (buffer-list)))
+         (choices (mapcar (lambda (buffer)
+                            (cons (format "%s%s" (buffer-name buffer)
+                                          (if (buffer-file-name buffer)
+                                              (format " — %s" (abbreviate-file-name
+                                                                 (buffer-file-name buffer)))
+                                            ""))
+                                  buffer))
+                          buffers))
+         (selection (completing-read "Open document/window: " choices nil t)))
+    (unless (assoc selection choices)
+      (user-error "No document selected"))
+    (glassmacs-present-buffer (cdr (assoc selection choices)) 'focus)))
+
+(defun glassmacs--mode-line-document-click (event)
+  "Focus an open document after clicking the mode-line name at EVENT."
+  (interactive "e")
+  (let ((window (posn-window (event-start event))))
+    (when (window-live-p window)
+      (select-window window)))
+  (glassmacs-focus-open-document))
+
+(defun glassmacs--install-mode-line-document-navigation ()
+  "Install document-centric mode-line navigation without disabling Emacs opt-in."
+  (when (and (eq system-type 'darwin)
+             (boundp 'mode-line-buffer-identification-keymap)
+             (keymapp mode-line-buffer-identification-keymap))
+    (define-key mode-line-buffer-identification-keymap [mode-line mouse-1]
+      #'glassmacs--mode-line-document-click)
+    (define-key mode-line-buffer-identification-keymap [mode-line mouse-3]
+      #'glassmacs--mode-line-document-click)))
+
 (defun glassmacs--install-document-menu ()
   "Route macOS File menu open commands through Glassmacs' document policy."
   (when (and (eq system-type 'darwin) (display-graphic-p))
@@ -562,6 +612,7 @@ FROM-MENU applies the graphical document-opening policy for menu selection."
   (glassmacs--install-document-menu))
 
 (glassmacs--install-file-keybindings)
+(glassmacs--install-mode-line-document-navigation)
 
 (require 'glassmacs-buffer-placement)
 
