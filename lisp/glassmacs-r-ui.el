@@ -235,6 +235,13 @@ If SVG support is missing, retain the existing built-in XPM artwork."
                    glassmacs-r-ui--console-toolbar-actions)))
     (dolist (entry actions)
       (pcase-let ((`(,key ,label ,command ,icon) entry))
+        ;; Group execution, session navigation and help in the source bar.
+        ;; Console controls likewise separate interruption from navigation.
+        (when (memq key '(glassmacs-show-console glassmacs-help
+                          glassmacs-history))
+          (define-key-after map
+            (vector (intern (format "glassmacs-divider-%s" key)))
+            '(menu-item "--" ignore)))
         (define-key-after map (vector key)
           `(menu-item ,label ,command
                       :image (glassmacs-r-ui--toolbar-image ,icon
