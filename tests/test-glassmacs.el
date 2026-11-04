@@ -2805,3 +2805,26 @@ example) can run first and delay the sentinel."
       (should (eq (glassmacs-present-buffer buffer 'open 'new-frame)
                   (selected-window)))
       (should-not created))))
+
+(ert-deftest glassmacs-alpha3-interactive-find-file-is-remapped ()
+  "Document-centric file visits are bound without advising Lisp find-file."
+  (when (eq system-type 'darwin)
+    (should (eq (lookup-key global-map [remap find-file])
+                'glassmacs-find-file))
+    (should (eq (lookup-key global-map (kbd "C-x C-f"))
+                'glassmacs-find-file))))
+
+(ert-deftest glassmacs-alpha3-document-chooser-focuses-existing ()
+  "The document chooser delegates to focus intent, never replacement."
+  (let ((buffer (generate-new-buffer "Glassmacs Chooser Fixture"))
+        (seen nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (_prompt choices &rest _)
+                     (caar choices)))
+                  ((symbol-function 'glassmacs-present-buffer)
+                   (lambda (candidate intent &rest _)
+                     (setq seen (list candidate intent)))))
+          (glassmacs-focus-open-document)
+          (should (equal seen (list buffer 'focus))))
+      (kill-buffer buffer))))
