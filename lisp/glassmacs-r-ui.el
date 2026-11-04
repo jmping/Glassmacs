@@ -132,42 +132,9 @@
     menu)
   "Console-specific R actions.")
 
-(defcustom glassmacs-r-help-separate-frame t
-  "Display ESS R help in a separate native frame on graphical macOS.
-This setting does not alter the user's ordinary help display rules on
-other platforms.  When nil, ESS uses its normal display behavior."
-  :type 'boolean
-  :group 'glassmacs-r-ui)
-
-(defun glassmacs-r-ui--ess-help-buffer-p (name _action)
-  "Return non-nil if NAME is an ESS R help buffer.
-Check the actual buffer's major mode when available.  The name fallback
-covers the first display before ESS finishes setting its help mode."
-  (let ((buffer (get-buffer name)))
-    (or (and buffer
-             (with-current-buffer buffer
-               (derived-mode-p 'ess-help-mode)))
-        (or (string-prefix-p "*help[R]" name)
-            (string-prefix-p "*R Help" name)))))
-
-(defun glassmacs-r-ui--help-frame-action ()
-  "Return the ESS R help frame display action.
-Never reuse the selected document window, even if the user has configured
-a general-purpose display rule that would otherwise do so."
-  '(display-buffer-pop-up-frame
-    (inhibit-same-window . t)
-    (reusable-frames . nil)))
-
 (defun glassmacs-r-ui--install-help-display ()
-  "Install a narrowly scoped, macOS-only ESS R help display rule."
-  (when (and (eq system-type 'darwin)
-             (display-graphic-p)
-             glassmacs-r-help-separate-frame)
-    (unless (cl-find #'glassmacs-r-ui--ess-help-buffer-p
-                     display-buffer-alist :key #'car :test #'eq)
-      (push (cons #'glassmacs-r-ui--ess-help-buffer-p
-                  (glassmacs-r-ui--help-frame-action))
-            display-buffer-alist))))
+  "Compatibility entry point for the unified ESS Help display rule."
+  (glassmacs-r-install-help-display))
 
 (defun glassmacs-r-ui-help ()
   "Prompt for R documentation using ESS, without replacing R source.
