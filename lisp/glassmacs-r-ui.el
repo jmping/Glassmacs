@@ -159,10 +159,8 @@ Closing that help frame must not close or discard the source document."
         (call-interactively #'ess-display-help-on-object))
     (user-error "R help requires ESS")))
 
-;; ICON names must be images that GNU Emacs itself ships in `etc/images'
-;; (for example right-arrow, jump-to, next-page, cancel); `find-image'
-;; returns nil for a name that does not exist, and the button then has no
-;; image.  `glassmacs-r-ui-toolbar-icons-are-bundled-with-emacs' checks this.
+;; Keep the Emacs built-in ICON names as a portable fallback when SVG
+;; rendering is unavailable.  Glassmacs ships its own light/dark SVGs.
 (defconst glassmacs-r-ui--toolbar-actions
   '((glassmacs-run-line "Run Line" glassmacs-r-send-line "right-arrow")
     (glassmacs-run-selection "Run Selection" glassmacs-r-send-region "copy")
@@ -180,12 +178,58 @@ ICON is the base name of an image shipped with GNU Emacs.")
     (glassmacs-session "Session" glassmacs-r-select-session "open"))
   "R console toolbar entries.")
 
-(defun glassmacs-r-ui--toolbar-image (name)
-  "Find built-in toolbar image NAME without requiring external artwork."
+(defcustom glassmacs-r-ui-toolbar-icon-margin 3
+  "Padding in pixels around R toolbar images.
+A small margin keeps the action icons legible and separated on Retina
+displays without changing their commands or hit targets."
+  :type '(integer 0 12)
+  :group 'glassmacs)
+
+(defconst glassmacs-r-ui--icon-directory
+  (expand-file-name "../assets/r-toolbar/"
+                    (file-name-directory (or load-file-name
+                                             (locate-library "glassmacs-r-ui"))))
+  "Location of the bundled, consistent 24-point R toolbar symbols.")
+
+(defconst glassmacs-r-ui--icon-aliases
+  '((right-arrow . "run") (copy . "selection")
+    (next-page . "paragraph") (jump-to . "function")
+    (open . "console") (help . "help")
+    (cancel . "interrupt") (undo . "history"))
+  "Fallback mappings from built-in Emacs image names to vector symbols.")
+
+(defun glassmacs-r-ui--toolbar-image (name &optional action)
+  "Return a bundled SVG for ACTION, falling back to Emacs image NAME.
+If SVG support is missing, retain the existing built-in XPM artwork."
   (when (display-graphic-p)
-    (find-image
-     (list (list :type 'xpm :file (concat name ".xpm")
-                 :ascent 'center)))))
+    (let* ((symbol-name (or (cdr (assq (intern name)
+                                     glassmacs-r-ui--icon-aliases))
+                            name))
+           (base (or action symbol-name))
+           (dark (eq (frame-parameter nil 'background-mode) 'dark))
+           (svg (expand-file-name
+                 (concat base (if dark "-dark" "") ".svg")
+                 glassmacs-r-ui--icon-directory))
+           (fallback-svg (expand-file-name
+                          (concat base ".svg")
+                          glassmacs-r-ui--icon-directory))
+           (chosen-svg (if (file-readable-p svg) svg fallback-svg))
+           (vector-image (and (image-type-available-p 'svg)
+                              (file-readable-p chosen-svg)
+                              (find-image (list (list :type 'svg :file chosen-svg
+                                                      :ascent 'center)))))
+           (image (or vector-image
+                      (find-image
+                       (list (list :type 'xpm
+                                   :file (concat name ".xpm")
+                                   :ascent 'center))))))
+      (when image
+        ;; Image specifications begin with the marker symbol `image'; the
+        ;; remaining tail is the property list accepted by plist-put.
+        (setcdr image
+                (plist-put (cdr image) :margin
+                           (max 0 (min 12 glassmacs-r-ui-toolbar-icon-margin))))
+        image))))
 
 (defun glassmacs-r-ui--toolbar-map ()
   "Build a contextual toolbar using the same R commands as the menus."
@@ -195,9 +239,21 @@ ICON is the base name of an image shipped with GNU Emacs.")
                    glassmacs-r-ui--console-toolbar-actions)))
     (dolist (entry actions)
       (pcase-let ((`(,key ,label ,command ,icon) entry))
+        ;; Group execution, session navigation and help in the source bar.
+        ;; Console controls likewise separate interruption from navigation.
+        (when (memq key '(glassmacs-show-console glassmacs-help
+                          glassmacs-history))
+          (define-key-after map
+            (vector (intern (format "glassmacs-divider-%s" key)))
+            '(menu-item "--" ignore)))
         (define-key-after map (vector key)
           `(menu-item ,label ,command
-                      :image (glassmacs-r-ui--toolbar-image ,icon)
+                      :image (glassmacs-r-ui--toolbar-image ,icon
+                                                         ,(pcase key
+                                                            ('glassmacs-run-buffer "buffer")
+                                                            ('glassmacs-show-console "console")
+                                                            ('glassmacs-session "session")
+                                                            (_ nil)))
                       :help ,label
                       :enable ,(cond
                                 ((eq command 'glassmacs-r-send-region)

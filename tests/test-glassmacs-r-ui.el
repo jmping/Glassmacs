@@ -405,3 +405,56 @@
 
 (provide 'test-glassmacs-r-ui)
 ;;; test-glassmacs-r-ui.el ends here
+
+(ert-deftest glassmacs-r-ui-vector-toolbar-assets-are-complete ()
+  "Every source and console toolbar action has both contrast variants."
+  (dolist (entry (append glassmacs-r-ui--toolbar-actions
+                         glassmacs-r-ui--console-toolbar-actions))
+    (let* ((key (nth 0 entry))
+           (name (pcase key
+                   ('glassmacs-run-line "run")
+                   ('glassmacs-run-selection "selection")
+                   ('glassmacs-run-paragraph "paragraph")
+                   ('glassmacs-run-function "function")
+                   ('glassmacs-run-buffer "buffer")
+                   ('glassmacs-show-console "console")
+                   ('glassmacs-help "help")
+                   ('glassmacs-interrupt "interrupt")
+                   ('glassmacs-history "history")
+                   ('glassmacs-session "session"))))
+      (should name)
+      (dolist (suffix '("" "-dark"))
+        (should (file-readable-p
+                 (expand-file-name (concat name suffix ".svg")
+                                   glassmacs-r-ui--icon-directory)))))))
+
+(ert-deftest glassmacs-r-ui-toolbar-chooses-dark-contrast-vector ()
+  "A dark frame selects the bright SVG rather than the light-frame icon."
+  (let (chosen image-spec)
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
+              ((symbol-function 'frame-parameter)
+               (lambda (_frame parameter)
+                 (and (eq parameter 'background-mode) 'dark)))
+              ((symbol-function 'image-type-available-p) (lambda (_) t))
+              ((symbol-function 'find-image)
+               (lambda (spec)
+                 (setq chosen (plist-get (car spec) :file)
+                       image-spec (list 'image :type 'svg))
+                 image-spec)))
+      (let ((result (glassmacs-r-ui--toolbar-image "right-arrow")))
+        (should (string-suffix-p "/run-dark.svg" chosen))
+        (should (eq result image-spec))
+        (should (= (plist-get (cdr image-spec) :margin)
+                   glassmacs-r-ui-toolbar-icon-margin))))))
+
+
+(ert-deftest glassmacs-r-ui-toolbar-groups-source-actions ()
+  "Source execution, console and help controls have distinct groups."
+  (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
+             (lambda () t)))
+    (let ((map (glassmacs-r-ui--toolbar-map)))
+      (should (lookup-key map [glassmacs-run-line]))
+      (should (lookup-key map [glassmacs-show-console]))
+      (should (lookup-key map [glassmacs-help]))
+      (should (lookup-key map [glassmacs-divider-glassmacs-show-console]))
+      (should (lookup-key map [glassmacs-divider-glassmacs-help])))))
