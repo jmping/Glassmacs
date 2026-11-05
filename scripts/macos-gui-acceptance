@@ -1041,6 +1041,15 @@ def quit_with_unsaved_document_asks(ctx):
         instance.kill_quietly()
         raise NotRun("native quit checkbox coverage needs System Events Accessibility")
     ctx.method("native AppKit quit alert and checkbox (System Events Accessibility)")
+    quit_route = emacs.eval("""(list :save-buffers-kill-emacs
+      (and (advice-member-p #'glassmacs-recovery--reviewed-quit-advice
+                            'save-buffers-kill-emacs) t)
+      :kill-emacs
+      (and (advice-member-p #'glassmacs-recovery--reviewed-quit-advice
+                            'kill-emacs) t)
+      :command-q (key-binding (kbd "s-q"))
+      :ns-power-off (key-binding [ns-power-off]))""")
+    print(f"   quit routing before Command-Q: {quit_route!r}", flush=True)
 
     # Save the first document with the checkbox left off. The second document
     # must get its own unchecked alert; canceling it keeps its edits intact.
@@ -1383,6 +1392,8 @@ def run_scenario(harness, entry):
                             print(f"   warnings: {warnings[-800:]!r}", flush=True)
                     except Exception:  # noqa: BLE001
                         pass
+                else:
+                    print(f"   application process exited: PID {instance.pid}", flush=True)
                 print(f"   app output: {harness.log_tail(instance.log, 800)!r}", flush=True)
             result["artifacts"] = artifacts
     for instance in harness.instances:
