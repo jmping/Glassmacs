@@ -1248,7 +1248,8 @@ def quit_with_unsaved_document_asks(ctx):
     harness.native_quit_checkbox(instance.pid, "button", "Cancel")
     time.sleep(0.5)
     ctx.expect(instance.alive(), "Cancel after checking the box quit Glassmacs")
-    ctx.expect(emacs.eval(f"(buffer-modified-p (find-buffer-visiting {el(second)}))"),
+    ctx.expect(emacs.eval(
+        f"(buffer-modified-p (find-buffer-visiting {el(remaining_document)}))"),
                "Cancel after checking the box lost edits")
 
     # Closing the panel from its title bar is another Cancel path and must not
