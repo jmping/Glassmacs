@@ -41,6 +41,7 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
     private let saveButton: NSButton
     private let discardButton: NSButton
     private let cancelButton: NSButton
+    private var accessibilityGroup: NSAccessibilityElement?
 
     init(application: NSApplication, documentName: String, responseURL: URL) {
         self.application = application
@@ -120,29 +121,31 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
         panel.defaultButtonCell = saveButton.cell as? NSButtonCell
 
         super.init()
-        // AppKit assigns parents to view-backed accessibility elements from
-        // the NSView hierarchy. Keep the real controls under their content
-        // group and provide only the child lists explicitly.
+        // The native views remain the interactive controls. Retained
+        // NSAccessibilityElement proxies provide a stable AX hierarchy for
+        // System Events and assistive technologies.
         for view in [message, applyToAll, saveButton, discardButton, cancelButton] {
-            view.setAccessibilityElement(true)
+            view.setAccessibilityElement(false)
         }
-        message.setAccessibilityRole(.staticText)
-        message.setAccessibilityLabel("Quit review message")
-        applyToAll.setAccessibilityRole(.checkBox)
-        applyToAll.setAccessibilityLabel(
-            "Apply this choice to all remaining modified documents"
-        )
-        saveButton.setAccessibilityRole(.button)
-        saveButton.setAccessibilityLabel("Save")
-        discardButton.setAccessibilityRole(.button)
-        discardButton.setAccessibilityLabel("Don't Save")
-        cancelButton.setAccessibilityRole(.button)
-        cancelButton.setAccessibilityLabel("Cancel")
-        content.setAccessibilityElement(true)
-        content.setAccessibilityRole(.group)
-        content.setAccessibilityLabel("Quit review controls")
-        content.setAccessibilityChildren([message, applyToAll, saveButton, discardButton, cancelButton])
-        panel.setAccessibilityChildren([content])
+        let group = QuitAlertAXGroup(panel: panel)
+        group.setAccessibilityChildren([
+            QuitAlertAXStaticText(
+                label: "Quit review message",
+                value: message.stringValue,
+                view: message,
+                parent: group
+            ),
+            QuitAlertAXCheckBox(
+                label: "Apply this choice to all remaining modified documents",
+                button: applyToAll,
+                parent: group
+            ),
+            QuitAlertAXButton(label: "Save", button: saveButton, parent: group),
+            QuitAlertAXButton(label: "Don't Save", button: discardButton, parent: group),
+            QuitAlertAXButton(label: "Cancel", button: cancelButton, parent: group)
+        ])
+        panel.setAccessibilityChildren([group])
+        accessibilityGroup = group
         saveButton.target = self
         saveButton.action = #selector(saveChoice(_:))
         discardButton.target = self
@@ -208,6 +211,200 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func cancelChoice(_ sender: NSButton) {
         application.stopModal(withCode: .alertThirdButtonReturn)
+    }
+}
+
+private struct AccessibilityValueBox: @unchecked Sendable {
+    let value: Any?
+}
+
+@MainActor
+private final class WeakViewReference: @unchecked Sendable {
+    weak var view: NSView?
+
+    init(_ view: NSView?) {
+        self.view = view
+    }
+}
+
+@MainActor
+private final class WeakPanelReference: @unchecked Sendable {
+    weak var panel: NSPanel?
+
+    init(_ panel: NSPanel) {
+        self.panel = panel
+    }
+}
+
+@MainActor
+private final class WeakButtonReference: @unchecked Sendable {
+    weak var button: NSButton?
+
+    init(_ button: NSButton) {
+        self.button = button
+    }
+}
+
+@MainActor
+private final class WeakAccessibilityElementReference: @unchecked Sendable {
+    weak var element: NSAccessibilityElement?
+
+    init(_ element: NSAccessibilityElement) {
+        self.element = element
+    }
+}
+
+private func onMainAppKitThread<T: Sendable>(_ operation: @MainActor () -> T) -> T {
+    if Thread.isMainThread {
+        return MainActor.assumeIsolated(operation)
+    }
+    return DispatchQueue.main.sync {
+        MainActor.assumeIsolated(operation)
+    }
+}
+
+private class QuitAlertAXElement: NSAccessibilityElement, @unchecked Sendable {
+    let labelText: String
+    private let viewReference: WeakViewReference?
+
+    @MainActor
+    init(role: NSAccessibility.Role, label: String, view: NSView?, parent: Any?) {
+        labelText = label
+        viewReference = view.map(WeakViewReference.init)
+        super.init()
+        setAccessibilityRole(role)
+        setAccessibilityLabel(label)
+        setAccessibilityParent(parent)
+        let topLevel = parent as? NSWindow ??
+            (parent as? NSAccessibilityElement)?.accessibilityTopLevelUIElement()
+        setAccessibilityTopLevelUIElement(topLevel)
+        if let view {
+            setAccessibilityFrameInParentSpace(view.frame)
+        }
+    }
+
+    override func accessibilityLabel() -> String? {
+        labelText
+    }
+
+    override func accessibilityIdentifier() -> String {
+        labelText
+    }
+
+    override func accessibilityFrame() -> NSRect {
+        let viewReference = viewReference
+        return onMainAppKitThread {
+            guard let view = viewReference?.view, let window = view.window else { return NSRect.zero }
+            return window.convertToScreen(view.convert(view.bounds, to: nil))
+        }
+    }
+}
+
+private final class QuitAlertAXGroup: QuitAlertAXElement, NSAccessibilityGroup, @unchecked Sendable {
+    private let panelReference: WeakPanelReference
+
+    @MainActor
+    init(panel: NSPanel) {
+        panelReference = WeakPanelReference(panel)
+        super.init(role: .group, label: "Quit review controls", view: panel.contentView, parent: panel)
+    }
+
+    override func accessibilityFrame() -> NSRect {
+        let panelReference = panelReference
+        return onMainAppKitThread {
+            guard let panel = panelReference.panel, let content = panel.contentView else { return NSRect.zero }
+            return panel.convertToScreen(content.convert(content.bounds, to: nil))
+        }
+    }
+}
+
+private final class QuitAlertAXStaticText: QuitAlertAXElement, @unchecked Sendable {
+    private let textValue: String
+
+    @MainActor
+    init(label: String, value: String, view: NSView, parent: Any?) {
+        textValue = value
+        super.init(role: .staticText, label: label, view: view, parent: parent)
+    }
+
+    override func accessibilityValue() -> Any? {
+        textValue
+    }
+}
+
+private class QuitAlertAXButton: QuitAlertAXElement, NSAccessibilityButton, @unchecked Sendable {
+    private let buttonReference: WeakButtonReference
+
+    @MainActor
+    init(label: String, button: NSButton, parent: Any?) {
+        buttonReference = WeakButtonReference(button)
+        super.init(role: .button, label: label, view: button, parent: parent)
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        let buttonReference = buttonReference
+        return onMainAppKitThread {
+            guard let button = buttonReference.button else { return false }
+            button.performClick(nil)
+            return true
+        }
+    }
+}
+
+private final class QuitAlertAXCheckBox: NSObject, NSAccessibilityCheckBox, @unchecked Sendable {
+    private let labelText: String
+    private let viewReference: WeakViewReference
+    private let checkboxReference: WeakButtonReference
+    private let parentReference: WeakAccessibilityElementReference
+
+    @MainActor
+    init(label: String, button: NSButton, parent: NSAccessibilityElement) {
+        labelText = label
+        viewReference = WeakViewReference(button)
+        checkboxReference = WeakButtonReference(button)
+        parentReference = WeakAccessibilityElementReference(parent)
+        super.init()
+    }
+
+    func accessibilityFrame() -> NSRect {
+        let viewReference = viewReference
+        return onMainAppKitThread {
+            guard let view = viewReference.view, let window = view.window else { return NSRect.zero }
+            return window.convertToScreen(view.convert(view.bounds, to: nil))
+        }
+    }
+
+    func accessibilityParent() -> Any? {
+        let parentReference = parentReference
+        return onMainAppKitThread {
+            AccessibilityValueBox(value: parentReference.element)
+        }.value
+    }
+
+    func accessibilityLabel() -> String? {
+        labelText
+    }
+
+    func accessibilityIdentifier() -> String {
+        labelText
+    }
+
+    func accessibilityPerformPress() -> Bool {
+        let checkboxReference = checkboxReference
+        let element = self
+        return onMainAppKitThread {
+            guard let checkbox = checkboxReference.button else { return false }
+            checkbox.performClick(nil)
+            NSAccessibility.post(element: element, notification: .valueChanged)
+            return true
+        }
+    }
+
+    func accessibilityValue() -> NSNumber? {
+        let checkboxReference = checkboxReference
+        return onMainAppKitThread {
+            NSNumber(value: checkboxReference.button?.state == .on)
+        }
     }
 }
 
