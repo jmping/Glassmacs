@@ -1422,6 +1422,29 @@ def menus_in_key_modes(ctx):
     instance.kill_quietly()
 
 
+@scenario("dynamic-menu-shortcut-labels", ["KEY-003"], macos_only=True)
+def dynamic_menu_shortcut_labels(ctx):
+    """Native File menu shortcut attributes follow the active Glassmacs
+    keyboard profile and clear when the command becomes unbound."""
+    harness = ctx.harness
+    instance = harness.launch(harness.new_home("menu-shortcuts"))
+    ctx.ready(instance)
+    if not harness.system_events_available():
+        raise Failure("Dynamic menu shortcut acceptance requires System Events "
+                      "Accessibility on the macOS runner")
+    emacs = instance.emacs
+    emacs.eval("(glassmacs-set-keyboard-profile 'glassmacs-hybrid)")
+    actual = harness.menu_item_shortcut(instance.pid, "File", "New Document")
+    ctx.expect(actual is not None and actual[0].lower() == "n" and actual[1] == "0",
+               f"Hybrid New Document shortcut was {actual!r}, expected Command-N")
+    emacs.eval("(glassmacs-set-keyboard-profile 'traditional-emacs)")
+    actual = harness.menu_item_shortcut(instance.pid, "File", "New Document")
+    ctx.expect(actual is not None and actual[0] == "" and actual[1] in ("", "8"),
+               f"Unbound New Document retained a native shortcut: {actual!r}")
+    ctx.method("System Events Accessibility: native menu key-equivalent attributes")
+    instance.kill_quietly()
+
+
 @scenario("clipboard-round-trip", ["CLIP-001"], macos_only=True)
 def clipboard_round_trip(ctx):
     """Text copied in Glassmacs is what other apps paste (pbpaste), and text
