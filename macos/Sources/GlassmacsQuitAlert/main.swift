@@ -42,6 +42,7 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
     private let discardButton: NSButton
     private let cancelButton: NSButton
     private var accessibilityGroup: NSAccessibilityElement?
+    private var accessibilityCheckbox: QuitAlertAXCheckBox?
 
     init(application: NSApplication, documentName: String, responseURL: URL) {
         self.application = application
@@ -128,6 +129,11 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
             view.setAccessibilityElement(false)
         }
         let group = QuitAlertAXGroup(panel: panel)
+        let accessibilityCheckbox = QuitAlertAXCheckBox(
+            label: "Apply this choice to all remaining modified documents",
+            button: applyToAll,
+            parent: group
+        )
         group.setAccessibilityChildren([
             QuitAlertAXStaticText(
                 label: "Quit review message",
@@ -135,17 +141,14 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
                 view: message,
                 parent: group
             ),
-            QuitAlertAXCheckBox(
-                label: "Apply this choice to all remaining modified documents",
-                button: applyToAll,
-                parent: group
-            ),
+            accessibilityCheckbox,
             QuitAlertAXButton(label: "Save", button: saveButton, parent: group),
             QuitAlertAXButton(label: "Don't Save", button: discardButton, parent: group),
             QuitAlertAXButton(label: "Cancel", button: cancelButton, parent: group)
         ])
         panel.setAccessibilityChildren([group])
         accessibilityGroup = group
+        self.accessibilityCheckbox = accessibilityCheckbox
         saveButton.target = self
         saveButton.action = #selector(saveChoice(_:))
         discardButton.target = self
@@ -175,7 +178,8 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
                 "checkboxFrame": NSStringFromRect(applyToAll.frame),
                 "panelAXChildren": (panel.accessibilityChildren() ?? []).count,
                 "checkboxAXElement": applyToAll.isAccessibilityElement(),
-                "checkboxAXRole": String(describing: applyToAll.accessibilityRole()),
+                "checkboxAXRole": accessibilityCheckbox?.accessibilityRole() ?? "missing",
+                "checkboxProxyValue": accessibilityCheckbox?.accessibilityValue() ?? false,
                 "contentAXChildren": (panel.contentView?.accessibilityChildren() ?? []).count,
                 "contentAXParentIsPanel": (panel.contentView?.accessibilityParent() as? NSPanel) === panel,
                 "checkboxAXParentIsContent":
@@ -383,6 +387,10 @@ private final class QuitAlertAXCheckBox: NSObject, NSAccessibilityCheckBox, @unc
 
     func accessibilityLabel() -> String? {
         labelText
+    }
+
+    @objc func accessibilityRole() -> String {
+        NSAccessibility.Role.checkBox.rawValue
     }
 
     func accessibilityIdentifier() -> String {
