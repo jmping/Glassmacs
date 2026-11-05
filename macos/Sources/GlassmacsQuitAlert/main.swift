@@ -81,28 +81,43 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
         cancelButton.bezelStyle = .rounded
         self.cancelButton = cancelButton
 
-        let buttons = NSStackView(views: [saveButton, discardButton, cancelButton])
-        buttons.orientation = .horizontal
-        buttons.distribution = .fillEqually
-        buttons.spacing = 8
-
-        let content = NSView(frame: panel.contentView?.bounds ?? .zero)
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 500, height: 190))
         content.autoresizingMask = [.width, .height]
-        let stack = NSStackView(views: [message, applyToAll, buttons])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.distribution = .fill
-        stack.spacing = 16
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(stack)
+        for view in [message, applyToAll, saveButton, discardButton, cancelButton] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(view)
+        }
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 22),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -22),
-            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 20),
-            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20),
-            buttons.widthAnchor.constraint(equalTo: stack.widthAnchor)
+            message.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 22),
+            message.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -22),
+            message.topAnchor.constraint(equalTo: content.topAnchor, constant: 18),
+            applyToAll.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 22),
+            applyToAll.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -22),
+            applyToAll.topAnchor.constraint(equalTo: message.bottomAnchor, constant: 14),
+            saveButton.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 22),
+            discardButton.leadingAnchor.constraint(equalTo: saveButton.trailingAnchor, constant: 8),
+            cancelButton.leadingAnchor.constraint(equalTo: discardButton.trailingAnchor, constant: 8),
+            cancelButton.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -22),
+            discardButton.widthAnchor.constraint(equalTo: saveButton.widthAnchor),
+            cancelButton.widthAnchor.constraint(equalTo: saveButton.widthAnchor),
+            saveButton.topAnchor.constraint(equalTo: applyToAll.bottomAnchor, constant: 14),
+            discardButton.topAnchor.constraint(equalTo: saveButton.topAnchor),
+            cancelButton.topAnchor.constraint(equalTo: saveButton.topAnchor),
+            saveButton.heightAnchor.constraint(equalToConstant: 32),
+            discardButton.heightAnchor.constraint(equalTo: saveButton.heightAnchor),
+            cancelButton.heightAnchor.constraint(equalTo: saveButton.heightAnchor),
+            saveButton.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20)
         ])
         panel.contentView = content
+        panel.setContentSize(NSSize(width: 500, height: 190))
+        panel.contentView?.layoutSubtreeIfNeeded()
+
+        saveButton.keyEquivalent = "\r"
+        saveButton.keyEquivalentModifierMask = []
+        cancelButton.keyEquivalent = "\u{1b}"
+        cancelButton.keyEquivalentModifierMask = []
+        panel.initialFirstResponder = saveButton
+        panel.defaultButtonCell = saveButton.cell as? NSButtonCell
 
         super.init()
         saveButton.target = self
@@ -121,13 +136,19 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
         }
 
         DispatchQueue.main.async { [self] in
+            panel.contentView?.layoutSubtreeIfNeeded()
             writeResponse([
                 "phase": "presenting",
                 "activationPolicy": application.activationPolicy() == .regular ? "regular" : "other",
                 "applicationActive": application.isActive,
                 "processIdentifier": ProcessInfo.processInfo.processIdentifier,
                 "applicationWindowCount": application.windows.count,
-                "applicationVisibleWindowCount": application.windows.filter { $0.isVisible }.count
+                "applicationVisibleWindowCount": application.windows.filter { $0.isVisible }.count,
+                "panelFrame": NSStringFromRect(panel.frame),
+                "contentFrame": NSStringFromRect(panel.contentView?.frame ?? .zero),
+                "checkboxFrame": NSStringFromRect(applyToAll.frame),
+                "buttonFrames": [saveButton, discardButton, cancelButton]
+                    .map { NSStringFromRect($0.frame) }
             ], to: responseURL)
 
             let modalResponse = application.runModal(for: panel)
