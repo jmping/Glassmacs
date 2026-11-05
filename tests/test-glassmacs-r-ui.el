@@ -458,4 +458,3 @@
       (should (lookup-key map [glassmacs-help]))
       (should (lookup-key map [glassmacs-divider-glassmacs-show-console]))
       (should (lookup-key map [glassmacs-divider-glassmacs-help])))))
-
