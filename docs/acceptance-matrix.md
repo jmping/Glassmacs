@@ -321,7 +321,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 
 ## CLOSE-002
 
-**Quitting with unsaved documents asks first** (P0). Command-Q and other quit paths must not discard edits silently.
+**Quitting with unsaved documents asks first** (P0). Each modified document gets Save / Don't Save / Cancel and a freshly unchecked native Apply-to-all checkbox; quit paths must not discard edits silently.
 
 - Evidence: `glassmacs:issue-34-scenario-6`
 - Layers: A (batch), C (GUI in CI), D (manual)

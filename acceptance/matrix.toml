@@ -422,14 +422,14 @@ id = "CLOSE-002"
 title = "Quitting with unsaved documents asks first"
 severity = "P0"
 evidence = ["glassmacs:issue-34-scenario-6"]
-exposure = "Command-Q and other quit paths must not discard edits silently."
+exposure = "Each modified document gets Save / Don't Save / Cancel and a freshly unchecked native Apply-to-all checkbox; quit paths must not discard edits silently."
 layers = ["A", "C", "D"]
 tests = ["ert:glassmacs-recovery-direct-kill-guard-blocks-unsaved-documents", "ert:glassmacs-macos-explicit-quit-is-not-intercepted", "gui:quit-with-unsaved-document-asks"]
 implemented = "yes"
 automated = "partial"
 packaged_app = "ci"
 clean_machine = "NOT RUN"
-manual = ["With an unsaved document, choose Quit from the Dock icon's menu and log out of macOS: both ask before quitting."]
+manual = ["With two modified documents, verify the native checkbox starts unchecked for each prompt and after cancel or failed save; test Save, Don't Save and Cancel scope.", "Choose Quit from the Dock icon's menu and log out of macOS with unsaved documents: both must use the same safeguards."]
 
 [[check]]
 id = "RESTORE-001"

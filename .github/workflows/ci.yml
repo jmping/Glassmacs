@@ -1,8 +1,16 @@
 name: CI
 
 on:
+  # PR events validate feature branches. The push trigger is only for the
+  # integrated branch so each feature-branch commit does not queue a duplicate
+  # macOS build and GUI acceptance run.
   push:
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -197,7 +205,11 @@ jobs:
           path: ${{ runner.temp }}/app
       - name: Unpack app
         run: ditto -x -k "$RUNNER_TEMP/app/Glassmacs-macOS.zip" "$RUNNER_TEMP/app"
+      - name: Build direct Accessibility diagnostic
+        run: swiftc -o "$RUNNER_TEMP/macos-ax-probe" scripts/macos-ax-probe.swift
       - name: Run GUI acceptance scenarios
+        env:
+          GLASSMACS_AX_PROBE: ${{ runner.temp }}/macos-ax-probe
         run: |
           ./scripts/macos-gui-acceptance "$RUNNER_TEMP/app/Glassmacs.app" \
             "$RUNNER_TEMP/gui-acceptance"

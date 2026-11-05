@@ -23,6 +23,79 @@ The extra window means closing deletes a window rather than the frame."
                 (lambda (&rest _) (cl-incf prompts) (list ,answer))))
        ,@body)))
 
+(ert-deftest glassmacs-native-quit-helper-returns-alert-decision ()
+  (let* ((system-type 'darwin)
+         (invocation-directory "/Applications/Glassmacs.app/Contents/MacOS/")
+         (buffer (get-buffer-create "glassmacs-native-quit-test"))
+         (called-with nil)
+         (response-file nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+                  ((symbol-function 'executable-find)
+                   (lambda (program) (and (equal program "open") "/usr/bin/open")))
+                  ((symbol-function 'file-executable-p) (lambda (_) t))
+                  ((symbol-function 'process-file)
+                   (lambda (program _infile _destination _display &rest args)
+                     (setq called-with (cons program args)
+                           response-file (nth 5 args))
+                     (with-temp-file response-file
+                       (insert "{\"action\":\"discard\",\"all\":true}"))
+                     0)))
+          (should (equal (glassmacs-recovery--native-quit-decision buffer)
+                         '(discard . t)))
+          (should (equal (car called-with) "/usr/bin/open"))
+          (should (member "-W" (cdr called-with)))
+          (should (equal (nth 3 (cdr called-with))
+                         "/Applications/Glassmacs.app/Contents/Helpers/GlassmacsQuitAlert.app"))
+          (should-not (file-exists-p response-file)))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-native-quit-helper-reports-helper-error ()
+  (let* ((system-type 'darwin)
+         (invocation-directory "/Applications/Glassmacs.app/Contents/MacOS/")
+         (buffer (get-buffer-create "glassmacs-native-quit-error-test"))
+         (reported nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+                  ((symbol-function 'executable-find)
+                   (lambda (program) (and (equal program "open") "/usr/bin/open")))
+                  ((symbol-function 'file-executable-p) (lambda (_) t))
+                  ((symbol-function 'process-file)
+                   (lambda (_program _infile _destination _display &rest args)
+                     (with-temp-file (nth 5 args)
+                       (insert "{\"error\":\"test launch failure\"}"))
+                     0))
+                  ((symbol-function 'message)
+                   (lambda (format-string &rest args)
+                     (setq reported (apply #'format format-string args)))))
+          (should-not (glassmacs-recovery--native-quit-decision buffer))
+          (should (equal reported
+                         "Glassmacs native quit helper failed: test launch failure")))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-native-quit-command-routes-through-review ()
+  (let ((routed nil)
+        (original-called nil))
+    (cl-letf (((symbol-function 'glassmacs-recovery-quit)
+               (lambda () (setq routed t))))
+      (glassmacs-recovery--reviewed-quit-advice
+       (lambda (&rest _) (setq original-called t)))
+      (should routed)
+      (should-not original-called))))
+
+(ert-deftest glassmacs-reviewed-quit-command-calls-original ()
+  (let ((glassmacs-recovery--save-reviewed-quit t)
+        (original-called nil))
+    (glassmacs-recovery--reviewed-quit-advice
+     (lambda (&rest _) (setq original-called t)))
+    (should original-called)))
+
+(ert-deftest glassmacs-native-and-emacs-quit-entry-points-are-intercepted ()
+  (should (advice-member-p #'glassmacs-recovery--reviewed-quit-advice
+                           'save-buffers-kill-emacs))
+  (should (advice-member-p #'glassmacs-recovery--reviewed-quit-advice
+                           'kill-emacs)))
+
 (ert-deftest glassmacs-close-unmodified-document-kills-buffer-and-window ()
   (let ((buffer (generate-new-buffer "glassmacs-close-clean")))
     (glassmacs-close-test--with-split buffer

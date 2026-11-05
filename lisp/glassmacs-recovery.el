@@ -2,6 +2,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'json)
 
 (defgroup glassmacs-recovery nil
   "Durable recovery for ordinary Glassmacs document buffers."
@@ -555,12 +556,138 @@ A positive retain decision resets the review count for the item."
              (y-or-n-p "Glassmacs has crash-recovery snapshots. Review them? "))
         (glassmacs-recovery-restore-crash))))))
 
+(defun glassmacs-recovery--native-quit-decision (buffer)
+  "Return (ACTION . APPLY-ALL) from a fresh macOS alert for BUFFER.
+The checkbox is created anew, with state explicitly set to zero.  If
+the native dialog cannot run, return nil and use the safe fallback."
+  (let* ((open (executable-find "open"))
+         (helper-app (expand-file-name
+                      "../Helpers/GlassmacsQuitAlert.app" invocation-directory))
+         (helper (expand-file-name "Contents/MacOS/GlassmacsQuitAlert"
+                                   helper-app)))
+    (when (and (eq system-type 'darwin) (display-graphic-p))
+      (cond
+       ((not open)
+        (message "Glassmacs native quit helper unavailable: `open' was not found")
+        nil)
+       ((not (file-executable-p helper))
+        (message "Glassmacs native quit helper is not executable: %s" helper)
+        nil)
+       (t
+        (let ((response-file (make-temp-file "glassmacs-quit-response-"))
+              (output (generate-new-buffer " *glassmacs-quit-helper*")))
+        (unwind-protect
+            (condition-case err
+                (let ((status (process-file open nil output nil "-n" "-W" "-a"
+                                            helper-app "--args" response-file
+                                            (buffer-name buffer))))
+                  (if (and (zerop status) (file-readable-p response-file))
+                      (with-temp-buffer
+                        (let ((json-object-type 'alist))
+                          (insert-file-contents response-file)
+                          (goto-char (point-min))
+                          (let* ((response (json-read))
+                                 (error-text (cdr (assq 'error response)))
+                                 (action (cdr (assq 'action response)))
+                                 (all (cdr (assq 'all response))))
+                            (cond
+                             (error-text
+                              (message "Glassmacs native quit helper failed: %s" error-text)
+                              nil)
+                             ((member action '("save" "discard" "cancel"))
+                              (cons (intern action) (eq all t)))
+                             (t
+                              (message "Glassmacs native quit helper returned an invalid action")
+                              nil)))))
+                    (message "Glassmacs native quit helper failed (status %s): %s"
+                             status
+                             (with-current-buffer output
+                               (string-trim (buffer-string))))
+                    nil))
+              (error
+               (message "Glassmacs native quit helper failed: %s"
+                         (error-message-string err))
+               nil))
+          (ignore-errors (delete-file response-file))
+          (kill-buffer output))))))))
+
+(defun glassmacs-recovery--quit-decision (buffer)
+  "Ask about BUFFER; the scope checkbox defaults unchecked each time.
+A non-native fallback asks scope separately, defaulting to current file."
+  (or (glassmacs-recovery--native-quit-decision buffer)
+      (let* ((action
+              (pcase (condition-case nil
+                         (car (read-multiple-choice
+                               (format "Save changes to %s? " (buffer-name buffer))
+                               '((?s "Save" "Save this document")
+                                 (?d "Don't Save" "Discard changes on quit")
+                                 (?c "Cancel" "Keep Glassmacs open"))))
+                       (quit ?c))
+                (?s 'save) (?d 'discard) (_ 'cancel)))
+             (all (and (not (eq action 'cancel))
+                       (eq (car (read-multiple-choice
+                                 "Apply this choice to all remaining documents? "
+                                 '((?n "No" "Only this document")
+                                   (?y "Yes" "All remaining documents"))))
+                           ?y))))
+        (cons action all))))
+
+(defun glassmacs-recovery--quit-reviewed ()
+  "Review modified documents individually; never reuse checkbox state.
+Discard decisions are staged until quit, and restored if quit is vetoed."
+  (let ((dirty (cl-remove-if-not #'buffer-modified-p
+                                  (glassmacs-recovery--documents)))
+        (discard nil)
+        (apply-action nil)
+        (cancelled nil))
+    (catch 'cancel
+      (dolist (buffer dirty)
+        (when (and (buffer-live-p buffer) (buffer-modified-p buffer))
+          (let* ((decision (if apply-action
+                               (cons apply-action nil)
+                             (glassmacs-recovery--quit-decision buffer)))
+                 (action (car decision)))
+            (when (eq action 'cancel)
+              (setq cancelled t)
+              (throw 'cancel nil))
+            (when (cdr decision)
+              (setq apply-action action))
+            (pcase action
+              ('save
+               (condition-case err
+                   (with-current-buffer buffer
+                     (save-buffer)
+                     (when (buffer-modified-p)
+                       (error "Document remains modified")))
+                 ((error quit)
+                  (message "Quit canceled: %s" (error-message-string err))
+                  (setq cancelled t)
+                  (throw 'cancel nil))))
+              ('discard (push buffer discard))
+              (_ (setq cancelled t) (throw 'cancel nil)))))))
+    (if cancelled
+        (progn (message "Quit canceled") nil)
+      (unwind-protect
+          (progn
+            (dolist (buffer discard)
+              (when (buffer-live-p buffer)
+                (with-current-buffer buffer (set-buffer-modified-p nil))))
+            ;; Suppress Emacs's nine-choice prompt only after every document
+            ;; has been reviewed; other quit hooks still run.
+            (cl-letf (((symbol-function 'save-some-buffers)
+                       (lambda (&rest _) nil)))
+              (let ((glassmacs-recovery--save-reviewed-quit t))
+                (save-buffers-kill-emacs))))
+        (dolist (buffer discard)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p t))))))))
+
 (defun glassmacs-recovery-quit ()
   "Quit without per-document prompts only after successful preservation.
 If preservation fails, remain in Emacs and display the error."
   (interactive)
   (if (not glassmacs-preserve-open-buffers-on-quit)
-      (save-buffers-kill-emacs)
+      (glassmacs-recovery--quit-reviewed)
     (condition-case err
         (progn
           (glassmacs-recovery-preserve)
@@ -568,7 +695,8 @@ If preservation fails, remain in Emacs and display the error."
           ;; After a durable snapshot, suppress only that document prompt;
           ;; preserve other kill-emacs queries.
           (let ((buffer-offer-save nil)
-                (save-silently t))
+                (save-silently t)
+                (glassmacs-recovery--save-reviewed-quit t))
             (cl-letf (((symbol-function 'save-some-buffers)
                        (lambda (&rest _) nil)))
               (save-buffers-kill-emacs))))
@@ -596,11 +724,15 @@ termination; when disabled, refuse a direct dirty-buffer termination."
       nil))))
 
 (defun glassmacs-recovery--reviewed-quit-advice (original &rest args)
-  "Mark the ordinary Emacs save/review quit path for ORIGINAL and ARGS."
-  (let ((glassmacs-recovery--save-reviewed-quit t))
-    (apply original args)))
+  "Route native direct quit calls through Glassmacs review.
+ORIGINAL and ARGS are used only for the guarded, already-reviewed quit."
+  (if glassmacs-recovery--save-reviewed-quit
+      (apply original args)
+    (glassmacs-recovery-quit)))
 
 (advice-add 'save-buffers-kill-emacs :around
+            #'glassmacs-recovery--reviewed-quit-advice)
+(advice-add 'kill-emacs :around
             #'glassmacs-recovery--reviewed-quit-advice)
 (add-hook 'kill-emacs-query-functions #'glassmacs-recovery--quit-safety-check)
 
