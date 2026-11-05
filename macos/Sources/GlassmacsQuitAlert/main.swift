@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 
 // A deliberately small native dialog. AppKit owns the accessibility tree:
@@ -9,7 +10,7 @@ enum GlassmacsQuitAlert {
     static func main() {
         let args = Array(CommandLine.arguments.dropFirst())
         guard args.count == 2 else {
-            fputs("GlassmacsQuitAlert: expected response path and document name\n", stderr)
+            FileHandle.standardError.write(Data("GlassmacsQuitAlert: expected response path and document name\n".utf8))
             exit(EXIT_FAILURE)
         }
 
@@ -163,6 +164,6 @@ private func writeResponse(_ value: [String: Any], to url: URL) {
         let data = try JSONSerialization.data(withJSONObject: value)
         try data.write(to: url, options: .atomic)
     } catch {
-        fputs("GlassmacsQuitAlert: response write failed: \(error)\n", stderr)
+        FileHandle.standardError.write(Data("GlassmacsQuitAlert: response write failed: \(error)\n".utf8))
     }
 }
