@@ -90,6 +90,12 @@ The extra window means closing deletes a window rather than the frame."
      (lambda (&rest _) (setq original-called t)))
     (should original-called)))
 
+(ert-deftest glassmacs-native-and-emacs-quit-entry-points-are-intercepted ()
+  (should (advice-member-p #'glassmacs-recovery--reviewed-quit-advice
+                           'save-buffers-kill-emacs))
+  (should (advice-member-p #'glassmacs-recovery--reviewed-quit-advice
+                           'kill-emacs)))
+
 (ert-deftest glassmacs-close-unmodified-document-kills-buffer-and-window ()
   (let ((buffer (generate-new-buffer "glassmacs-close-clean")))
     (glassmacs-close-test--with-split buffer

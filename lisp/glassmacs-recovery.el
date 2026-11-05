@@ -732,6 +732,8 @@ ORIGINAL and ARGS are used only for the guarded, already-reviewed quit."
 
 (advice-add 'save-buffers-kill-emacs :around
             #'glassmacs-recovery--reviewed-quit-advice)
+(advice-add 'kill-emacs :around
+            #'glassmacs-recovery--reviewed-quit-advice)
 (add-hook 'kill-emacs-query-functions #'glassmacs-recovery--quit-safety-check)
 
 (defun glassmacs-recovery--periodic-snapshot ()
