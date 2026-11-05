@@ -76,7 +76,6 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
             while !application.isActive && Date() < activationDeadline {
                 RunLoop.current.run(until: Date().addingTimeInterval(0.05))
             }
-            alert.window.makeKeyAndOrderFront(nil)
 
             writeResponse([
                 "phase": "presenting",
