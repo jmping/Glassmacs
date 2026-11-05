@@ -1181,6 +1181,17 @@ def quit_with_unsaved_document_asks(ctx):
                    f"Native quit dialog named unexpected document {name!r}")
         return documents[name], checkbox_value
 
+    def expect_file_bytes(document, expected, description, allow_final_newline=False):
+        actual = document.read_bytes()
+        expected_bytes = expected.encode("utf-8")
+        allowed = {expected_bytes}
+        if allow_final_newline:
+            allowed.add(expected_bytes + b"\n")
+        ctx.expect(
+            actual in allowed,
+            f"{description}; expected bytes {sorted(allowed)!r}; "
+            f"actual repr={actual!r}; actual hex={actual.hex()}")
+
     for document in (first, second):
         emacs.wait(f"(glassmacs-acceptance-file-shown-p {el(document)})",
                    f"{document.name} to open", timeout=30)
@@ -1216,13 +1227,14 @@ def quit_with_unsaved_document_asks(ctx):
     ctx.expect(instance.alive(), "Cancel on the second document quit Glassmacs")
     original = {first: "first\n", second: "second\n"}
     expected = {first: "first\nedited ", second: "second\nedited "}
-    ctx.expect(saved_document.read_text() == expected[saved_document],
-               f"Save did not write the dialog's document {saved_document.name}")
+    expect_file_bytes(saved_document, expected[saved_document],
+                      f"Save did not write the dialog's document {saved_document.name}",
+                      allow_final_newline=True)
     state = emacs.eval(
         f"(buffer-modified-p (find-buffer-visiting {el(remaining_document)}))")
     ctx.expect(state, "Cancel on the second document lost its edits")
-    ctx.expect(remaining_document.read_text() == original[remaining_document],
-               "Cancel wrote the remaining document before Save")
+    expect_file_bytes(remaining_document, original[remaining_document],
+                      "Cancel wrote the remaining document before Save")
 
     # A checked decision canceled in one quit must not seed the next one.
     ctx.type(instance, "M-x glassmacs-recovery-quit RET")
@@ -1252,8 +1264,8 @@ def quit_with_unsaved_document_asks(ctx):
     ctx.expect(emacs.eval(
         f"(buffer-modified-p (find-buffer-visiting {el(remaining_document)}))"),
                "Closing the quit panel lost edits")
-    ctx.expect(remaining_document.read_text() == original[remaining_document],
-               "Closing the quit panel wrote the file")
+    expect_file_bytes(remaining_document, original[remaining_document],
+                      "Closing the quit panel wrote the file")
 
     # A fresh dialog starts unchecked again; checked Save applies to both
     # remaining dirty documents and then commits the quit.
@@ -1270,10 +1282,12 @@ def quit_with_unsaved_document_asks(ctx):
     while instance.alive() and time.monotonic() < deadline:
         time.sleep(0.25)
     ctx.expect(not instance.alive(), "Checked Save did not complete the reviewed quit")
-    ctx.expect(first.read_text() == "first\nedited again ",
-               "Checked Save did not save the first document")
-    ctx.expect(second.read_text() == "second\nedited ",
-               "Checked Save did not apply to the remaining document")
+    expect_file_bytes(first, "first\nedited again ",
+                      "Checked Save did not save the first document",
+                      allow_final_newline=True)
+    expect_file_bytes(second, "second\nedited ",
+                      "Checked Save did not apply to the remaining document",
+                      allow_final_newline=True)
     instance.kill_quietly()
 
 
