@@ -17,6 +17,7 @@ enum GlassmacsQuitAlert {
             !application.setActivationPolicy(.regular) {
             fail("Could not switch to the regular activation policy")
         }
+        application.finishLaunching()
 
         let alert = NSAlert()
         alert.messageText = "Save changes to \(documentName)?"
