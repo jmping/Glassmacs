@@ -33,7 +33,7 @@ enum GlassmacsQuitAlert {
 }
 
 @MainActor
-private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
+private final class QuitAlertDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let application: NSApplication
     private let panel: NSPanel
     private let applyToAll: NSButton
@@ -122,6 +122,7 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
         panel.defaultButtonCell = saveButton.cell as? NSButtonCell
 
         super.init()
+        panel.delegate = self
         // The native views remain the interactive controls. Retained
         // NSAccessibilityElement proxies provide a stable AX hierarchy for
         // System Events and assistive technologies.
@@ -134,7 +135,7 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
             button: applyToAll,
             parent: group
         )
-        group.setAccessibilityChildren([
+        let accessibilityChildren: [any NSAccessibilityElementProtocol] = [
             QuitAlertAXStaticText(
                 label: "Quit review message",
                 value: message.stringValue,
@@ -145,8 +146,13 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
             QuitAlertAXButton(label: "Save", button: saveButton, parent: group),
             QuitAlertAXButton(label: "Don't Save", button: discardButton, parent: group),
             QuitAlertAXButton(label: "Cancel", button: cancelButton, parent: group)
-        ])
+        ]
+        group.setAccessibilityChildren(accessibilityChildren)
+        group.setAccessibilityVisibleChildren(accessibilityChildren)
+        group.setAccessibilityChildrenInNavigationOrder(accessibilityChildren)
         panel.setAccessibilityChildren([group])
+        panel.setAccessibilityVisibleChildren([group])
+        panel.setAccessibilityChildrenInNavigationOrder([group])
         accessibilityGroup = group
         self.accessibilityCheckbox = accessibilityCheckbox
         saveButton.target = self
@@ -216,10 +222,12 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
     @objc private func cancelChoice(_ sender: NSButton) {
         application.stopModal(withCode: .alertThirdButtonReturn)
     }
-}
 
-private struct AccessibilityValueBox: @unchecked Sendable {
-    let value: Any?
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender === panel else { return true }
+        cancelChoice(cancelButton)
+        return false
+    }
 }
 
 @MainActor
@@ -249,13 +257,8 @@ private final class WeakButtonReference: @unchecked Sendable {
     }
 }
 
-@MainActor
-private final class WeakAccessibilityElementReference: @unchecked Sendable {
-    weak var element: NSAccessibilityElement?
-
-    init(_ element: NSAccessibilityElement) {
-        self.element = element
-    }
+private struct AccessibilityElementBox: @unchecked Sendable {
+    let element: NSAccessibilityElement
 }
 
 private func onMainAppKitThread<T: Sendable>(_ operation: @MainActor () -> T) -> T {
@@ -267,7 +270,7 @@ private func onMainAppKitThread<T: Sendable>(_ operation: @MainActor () -> T) ->
     }
 }
 
-private class QuitAlertAXElement: NSAccessibilityElement, @unchecked Sendable {
+private class QuitAlertAXElement: NSAccessibilityElement, NSAccessibilityElementProtocol, @unchecked Sendable {
     let labelText: String
     private let viewReference: WeakViewReference?
 
@@ -355,60 +358,27 @@ private class QuitAlertAXButton: QuitAlertAXElement, NSAccessibilityButton, @unc
     }
 }
 
-private final class QuitAlertAXCheckBox: NSObject, NSAccessibilityCheckBox, @unchecked Sendable {
-    private let labelText: String
-    private let viewReference: WeakViewReference
+private final class QuitAlertAXCheckBox: QuitAlertAXElement, @unchecked Sendable {
     private let checkboxReference: WeakButtonReference
-    private let parentReference: WeakAccessibilityElementReference
 
     @MainActor
-    init(label: String, button: NSButton, parent: NSAccessibilityElement) {
-        labelText = label
-        viewReference = WeakViewReference(button)
+    init(label: String, button: NSButton, parent: QuitAlertAXElement) {
         checkboxReference = WeakButtonReference(button)
-        parentReference = WeakAccessibilityElementReference(parent)
-        super.init()
+        super.init(role: .checkBox, label: label, view: button, parent: parent)
     }
 
-    func accessibilityFrame() -> NSRect {
-        let viewReference = viewReference
-        return onMainAppKitThread {
-            guard let view = viewReference.view, let window = view.window else { return NSRect.zero }
-            return window.convertToScreen(view.convert(view.bounds, to: nil))
-        }
-    }
-
-    func accessibilityParent() -> Any? {
-        let parentReference = parentReference
-        return onMainAppKitThread {
-            AccessibilityValueBox(value: parentReference.element)
-        }.value
-    }
-
-    func accessibilityLabel() -> String? {
-        labelText
-    }
-
-    @objc func accessibilityRole() -> String {
-        NSAccessibility.Role.checkBox.rawValue
-    }
-
-    func accessibilityIdentifier() -> String {
-        labelText
-    }
-
-    func accessibilityPerformPress() -> Bool {
+    override func accessibilityPerformPress() -> Bool {
         let checkboxReference = checkboxReference
-        let element = self
+        let elementBox = AccessibilityElementBox(element: self)
         return onMainAppKitThread {
             guard let checkbox = checkboxReference.button else { return false }
             checkbox.performClick(nil)
-            NSAccessibility.post(element: element, notification: .valueChanged)
+            NSAccessibility.post(element: elementBox.element, notification: .valueChanged)
             return true
         }
     }
 
-    func accessibilityValue() -> NSNumber? {
+    override func accessibilityValue() -> Any? {
         let checkboxReference = checkboxReference
         return onMainAppKitThread {
             NSNumber(value: checkboxReference.button?.state == .on)

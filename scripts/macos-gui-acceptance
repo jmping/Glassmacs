@@ -696,6 +696,30 @@ class Harness:
         result = run(["osascript", "-e", script], timeout=12, check=False)
         return (result.stdout + result.stderr).strip()[:6000]
 
+    def close_native_quit_alert(self, pid):
+        """Close the quit panel from its title bar; this must behave as Cancel."""
+        target_pid = str(pid)
+        script = (
+            'tell application "System Events"\n'
+            '  repeat with p in application processes\n'
+            '    try\n'
+            '      if unix id of p as text is "' + target_pid + '" then\n'
+            '        repeat with w in windows of p\n'
+            '          try\n'
+            '            click close button of w\n'
+            '            return "closed"\n'
+            '          end try\n'
+            '        end repeat\n'
+            '      end if\n'
+            '    end try\n'
+            '  end repeat\n'
+            '  return "missing"\n'
+            'end tell')
+        result = run(["osascript", "-e", script], timeout=10, check=False)
+        if result.returncode or result.stdout.strip() != "closed":
+            raise Failure("Could not close the native quit panel through its title bar: "
+                          f"{(result.stdout + result.stderr).strip() or 'no matching close button'}")
+
     def wait_for_native_quit_checkbox(self, pid, timeout=15):
         """Wait until the native quit alert exposes its real checkbox."""
         deadline = time.monotonic() + timeout
@@ -1098,6 +1122,18 @@ def quit_with_unsaved_document_asks(ctx):
     ctx.expect(instance.alive(), "Cancel after checking the box quit Glassmacs")
     ctx.expect(emacs.eval(f"(buffer-modified-p (find-buffer-visiting {el(second)}))"),
                "Cancel after checking the box lost edits")
+
+    # Closing the panel from its title bar is another Cancel path and must not
+    # hide the dialog, hang the modal loop, or discard the modified document.
+    ctx.type(instance, "M-x glassmacs-recovery-quit RET")
+    checkbox = harness.wait_for_native_quit_checkbox(instance.pid)
+    ctx.expect(checkbox == "0", f"Title-bar close dialog started checked as {checkbox}")
+    harness.close_native_quit_alert(instance.pid)
+    time.sleep(0.5)
+    ctx.expect(instance.alive(), "Closing the quit panel quit Glassmacs")
+    ctx.expect(emacs.eval(f"(buffer-modified-p (find-buffer-visiting {el(second)}))"),
+               "Closing the quit panel lost edits")
+    ctx.expect(second.read_text() == "second\n", "Closing the quit panel wrote the file")
 
     # A fresh dialog starts unchecked again; checked Save applies to both
     # remaining dirty documents and then commits the quit.
