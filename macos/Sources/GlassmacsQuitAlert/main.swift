@@ -120,11 +120,12 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
         panel.defaultButtonCell = saveButton.cell as? NSButtonCell
 
         super.init()
-        // Install the explicit AX tree after setContentView; AppKit can replace
-        // the content hierarchy when that property is assigned.
+        // Keep controls as direct panel children. System Events saw the window
+        // but omitted all controls when an accessible content-view group sat
+        // between the panel and its controls.
         for view in [message, applyToAll, saveButton, discardButton, cancelButton] {
             view.setAccessibilityElement(true)
-            view.setAccessibilityParent(content)
+            view.setAccessibilityParent(panel)
         }
         message.setAccessibilityRole(.staticText)
         message.setAccessibilityLabel("Quit review message")
@@ -138,14 +139,8 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
         discardButton.setAccessibilityLabel("Don't Save")
         cancelButton.setAccessibilityRole(.button)
         cancelButton.setAccessibilityLabel("Cancel")
-        content.setAccessibilityElement(true)
-        content.setAccessibilityRole(.group)
-        content.setAccessibilityLabel("Quit review controls")
-        content.setAccessibilityParent(panel)
-        content.setAccessibilityChildren([
-            message, applyToAll, saveButton, discardButton, cancelButton
-        ])
-        panel.setAccessibilityChildren([content])
+        content.setAccessibilityElement(false)
+        panel.setAccessibilityChildren([message, applyToAll, saveButton, discardButton, cancelButton])
         saveButton.target = self
         saveButton.action = #selector(saveChoice(_:))
         discardButton.target = self
@@ -174,11 +169,9 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
                 "contentFrame": NSStringFromRect(panel.contentView?.frame ?? .zero),
                 "checkboxFrame": NSStringFromRect(applyToAll.frame),
                 "panelAXChildren": (panel.accessibilityChildren() ?? []).count,
-                "contentAXChildren": (panel.contentView?.accessibilityChildren() ?? []).count,
                 "checkboxAXElement": applyToAll.isAccessibilityElement(),
                 "checkboxAXRole": String(describing: applyToAll.accessibilityRole()),
-                "checkboxAXParentIsContent":
-                    (applyToAll.accessibilityParent() as? NSView) === panel.contentView,
+                "checkboxAXParentIsPanel": (applyToAll.accessibilityParent() as? NSPanel) === panel,
                 "buttonFrames": [saveButton, discardButton, cancelButton]
                     .map { NSStringFromRect($0.frame) }
             ], to: responseURL)
