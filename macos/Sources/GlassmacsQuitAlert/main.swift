@@ -13,12 +13,9 @@ enum GlassmacsQuitAlert {
         let responseURL = URL(fileURLWithPath: arguments[0])
         let documentName = arguments[1]
         let application = NSApplication.shared
-        if application.activationPolicy() == .prohibited &&
-            !application.setActivationPolicy(.accessory) {
-            fail("Could not switch to the accessory activation policy")
-        }
-        guard application.activationPolicy() == .accessory else {
-            fail("The Glassmacs quit alert is not running as an accessory app")
+        if application.activationPolicy() != .regular &&
+            !application.setActivationPolicy(.regular) {
+            fail("Could not switch to the regular activation policy")
         }
 
         let alert = NSAlert()
@@ -36,10 +33,18 @@ enum GlassmacsQuitAlert {
         applyToAll.state = .off
         alert.accessoryView = applyToAll
 
-        application.activate(ignoringOtherApps: true)
+        if #available(macOS 14.0, *) {
+            application.activate()
+        } else {
+            application.activate(ignoringOtherApps: true)
+        }
+        let activationDeadline = Date().addingTimeInterval(2)
+        while !application.isActive && Date() < activationDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
         writeResponse([
             "phase": "presenting",
-            "activationPolicy": "accessory",
+            "activationPolicy": application.activationPolicy() == .regular ? "regular" : "other",
             "applicationActive": application.isActive,
             "processIdentifier": ProcessInfo.processInfo.processIdentifier,
             "applicationWindowCount": application.windows.count,
