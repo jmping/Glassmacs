@@ -701,6 +701,20 @@ class Harness:
                 return value
             time.sleep(0.25)
         details = self.native_quit_accessibility_dump(pid)
+        helper_responses = []
+        for response_path in sorted(
+                Path(tempfile.gettempdir()).glob("glassmacs-quit-response-*"),
+                key=lambda path: path.stat().st_mtime, reverse=True):
+            try:
+                content = response_path.read_text(errors="replace")
+            except OSError:
+                continue
+            if content.strip():
+                helper_responses.append(content[:1000])
+                if len(helper_responses) == 3:
+                    break
+        if helper_responses:
+            details = f"{details}; helper response state: {helper_responses!r}"
         raise Failure("The native quit alert checkbox did not appear within "
                       f"{timeout}s (Glassmacs PID {pid}); accessibility controls: "
                       f"{details or 'unavailable'}")

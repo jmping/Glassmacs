@@ -37,6 +37,14 @@ enum GlassmacsQuitAlert {
         alert.accessoryView = applyToAll
 
         application.activate(ignoringOtherApps: true)
+        writeResponse([
+            "phase": "presenting",
+            "activationPolicy": "accessory",
+            "applicationActive": application.isActive,
+            "processIdentifier": ProcessInfo.processInfo.processIdentifier,
+            "applicationWindowCount": application.windows.count,
+            "applicationVisibleWindowCount": application.windows.filter { $0.isVisible }.count
+        ], to: responseURL)
         let response = alert.runModal()
         let action: String
         switch response {
@@ -48,12 +56,18 @@ enum GlassmacsQuitAlert {
             action = "cancel"
         }
 
+        let result: [String: Any] = ["action": action, "all": applyToAll.state == .on]
+        writeResponse(result, to: responseURL)
+    }
+
+    private static func writeResponse(_ response: [String: Any], to url: URL) {
         do {
-            let result: [String: Any] = ["action": action, "all": applyToAll.state == .on]
-            let data = try JSONSerialization.data(withJSONObject: result)
-            try data.write(to: responseURL, options: .atomic)
+            let data = try JSONSerialization.data(withJSONObject: response)
+            try data.write(to: url, options: .atomic)
         } catch {
-            fail("Could not return the quit decision: \(error.localizedDescription)")
+            FileHandle.standardError.write(
+                Data("GlassmacsQuitAlert: Could not write response: \(error.localizedDescription)\n".utf8)
+            )
         }
     }
 
