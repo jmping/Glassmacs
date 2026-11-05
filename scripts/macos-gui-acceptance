@@ -36,6 +36,7 @@ import argparse
 import json
 import os
 import pty
+import re
 import secrets
 import shutil
 import signal
@@ -537,12 +538,12 @@ class Harness:
                   f'end tell')
         run(["osascript", "-e", script], timeout=30)
 
-    def native_quit_checkbox(self, pid, action="read", button=None):
-        """Read or operate the checkbox in Glassmacs' native quit alert.
+    def native_quit_checkbox_system_events(self, pid, action="read", button=None,
+                                           exact_process=False):
+        """Read or operate the quit controls through System Events for comparison.
 
-        The native quit panel runs in the dedicated GlassmacsQuitAlert
-        process, so limit Accessibility traversal to that helper instead of
-        scanning every GUI application's windows.
+        Acceptance uses direct AXUIElement calls. This System Events path is
+        retained only for the failure report that compares both clients.
         """
         if action not in {"read", "toggle", "button"}:
             raise ValueError(f"Unknown native checkbox action: {action}")
@@ -550,6 +551,9 @@ class Harness:
             raise ValueError("A native alert button title is required")
         label = "Apply this choice to all remaining modified documents"
         applescript_label = label.replace("\\", "\\\\").replace('"', '\\"')
+        process_match = (f'processId is "{pid}"' if exact_process else
+                         'processName contains "GlassmacsQuitAlert" or '
+                         'processName is "Glassmacs Quit Alert"')
         operation = {
             "read": 'return value of c as text',
             "toggle": 'click c\n                return value of c as text',
@@ -561,8 +565,8 @@ class Harness:
             '  repeat with p in application processes\n'
             '    try\n'
             '      set processName to name of p as text\n'
-            '      if processName contains "GlassmacsQuitAlert" or '
-            'processName is "Glassmacs Quit Alert" then\n'
+            '      set processId to unix id of p as text\n'
+            f'      if {process_match} then\n'
             '        repeat with w in windows of p\n'
             '          try\n'
             '            repeat with c in checkboxes of entire contents of w\n'
@@ -619,8 +623,129 @@ class Harness:
             return None
         return value
 
+    def native_quit_ax_action(self, pid, operation, target=None):
+        """Run a query or action against the helper process through AXUIElement."""
+        probe = os.environ.get("GLASSMACS_AX_PROBE")
+        if not probe:
+            raise Failure("Direct Accessibility helper is unavailable")
+        command = [probe, str(pid), operation]
+        if target is not None:
+            command.append(target)
+        result = run(command, timeout=15, check=False)
+        try:
+            report = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise Failure("Direct Accessibility helper returned invalid JSON: "
+                          f"{(result.stdout + result.stderr).strip()}") from error
+        if result.returncode or not report.get("performed"):
+            raise Failure("Direct Accessibility operation failed: "
+                          f"{json.dumps(report, sort_keys=True)}")
+        return report
+
+    def native_quit_dialog_snapshot(self, pid):
+        """Return the named document and checkbox value from the live dialog."""
+        probe = os.environ.get("GLASSMACS_AX_PROBE")
+        if not probe:
+            raise Failure("Direct Accessibility helper is unavailable")
+        helper_pid = self.native_quit_helper_pid()
+        if helper_pid is None:
+            raise Failure(f"Could not resolve GlassmacsQuitAlert process for PID {pid}")
+        result = run([probe, str(helper_pid), "tree"], timeout=15, check=False)
+        try:
+            report = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise Failure("Direct Accessibility helper returned invalid dialog tree: "
+                          f"{(result.stdout + result.stderr).strip()}") from error
+        if result.returncode:
+            raise Failure(f"Direct Accessibility dialog query failed: {report!r}")
+        if report.get("pid") != helper_pid:
+            raise Failure("Direct Accessibility dialog query returned the wrong process: "
+                          f"{report.get('pid')!r}, expected {helper_pid}")
+
+        texts = []
+
+        def collect(element):
+            for key in ("value", "title", "description"):
+                value = element.get(key)
+                if isinstance(value, str):
+                    texts.append(value)
+            for child in element.get("children", []):
+                collect(child)
+
+        for window in report.get("windows", []):
+            collect(window)
+        pattern = re.compile(
+            r"Save changes to (.+?)\?\s*Choose what to do before quitting Glassmacs\.",
+            re.DOTALL)
+        document = None
+        for value in texts:
+            match = pattern.search(value)
+            if match:
+                document = match.group(1)
+                break
+        checkbox_values = [element.get("value")
+                           for element in report.get("checkboxMatches", [])]
+        if document is not None and len(checkbox_values) == 1:
+            return document, checkbox_values[0]
+        raise Failure("Could not identify the document and checkbox in the native quit dialog: "
+                      f"{json.dumps({'texts': texts, 'checkboxes': checkbox_values}, ensure_ascii=False)}")
+
+    def wait_for_native_quit_dialog(self, pid, previous_document=None, timeout=15):
+        """Wait for a direct-AX snapshot of a new native quit dialog."""
+        deadline = time.monotonic() + timeout
+        last_error = None
+        while time.monotonic() < deadline:
+            try:
+                document, checkbox = self.native_quit_dialog_snapshot(pid)
+                if (checkbox in {"0", "1"} and
+                        (previous_document is None or document != previous_document)):
+                    return document, checkbox
+            except Failure as error:
+                last_error = str(error)
+            time.sleep(0.25)
+        detail = f"; last query: {last_error}" if last_error else ""
+        raise Failure(f"Native quit dialog did not appear with a new document within "
+                      f"{timeout}s{detail}")
+
+    def native_quit_checkbox(self, pid, action="read", button=None):
+        """Read or operate native quit controls through direct AX queries."""
+        if action not in {"read", "toggle", "button"}:
+            raise ValueError(f"Unknown native checkbox action: {action}")
+        if action == "button" and not button:
+            raise ValueError("A native alert button title is required")
+        helper_pid = self.native_quit_helper_pid()
+        if helper_pid is None:
+            raise Failure(f"Could not resolve GlassmacsQuitAlert process for PID {pid}")
+        operation = "button" if action == "button" else "checkbox"
+        target = button if action == "button" else action
+        report = self.native_quit_ax_action(helper_pid, operation, target)
+        if action in {"read", "toggle"}:
+            return report.get("value")
+        return "clicked"
+
+    def native_quit_helper_pid(self):
+        """Resolve the separate quit helper PID through System Events."""
+        script = (
+            'tell application "System Events"\n'
+            '  repeat with p in application processes\n'
+            '    try\n'
+            '      set processName to name of p as text\n'
+            '      if processName contains "GlassmacsQuitAlert" or '
+            'processName is "Glassmacs Quit Alert" then\n'
+            '        return unix id of p as text\n'
+            '      end if\n'
+            '    end try\n'
+            '  end repeat\n'
+            '  return "missing"\n'
+            'end tell')
+        result = run(["osascript", "-e", script], timeout=12, check=False)
+        value = result.stdout.strip()
+        if result.returncode or not value.isdigit():
+            return None
+        return int(value)
+
     def native_quit_accessibility_dump(self, pid):
-        """Describe Glassmacs and alert-helper windows after discovery fails."""
+        """Describe one process's windows and controls through System Events."""
         target_pid = str(pid)
         script = (
             'tell application "System Events"\n'
@@ -635,12 +760,7 @@ class Harness:
             '    try\n'
             '      set processId to unix id of p as text\n'
             '    end try\n'
-            '    try\n'
-            '      set processFrontmost to frontmost of p\n'
-            '    end try\n'
-            '    if processId is "' + target_pid + '" or '
-            'processName contains "Glassmacs" or processName is "osascript" '
-            'or processFrontmost then\n'
+            '    if processId is "' + target_pid + '" then\n'
             '      try\n'
             '        repeat with w in windows of p\n'
             '          set windowName to ""\n'
@@ -660,6 +780,7 @@ class Harness:
             '            set controlName to ""\n'
             '            set controlTitle to ""\n'
             '            set controlDescription to ""\n'
+            '            set controlValue to ""\n'
             '            try\n'
             '              set controlRole to value of attribute "AXRole" of c as text\n'
             '            end try\n'
@@ -672,11 +793,16 @@ class Harness:
             '            try\n'
             '              set controlDescription to value of attribute "AXDescription" of c as text\n'
             '            end try\n'
+            '            try\n'
+            '              set controlValue to value of attribute "AXValue" of c as text\n'
+            '            end try\n'
             '            if controlRole is not "" or controlName is not "" or '
-            'controlTitle is not "" or controlDescription is not "" then\n'
+            'controlTitle is not "" or controlDescription is not "" or '
+            'controlValue is not "" then\n'
             '              set report to report & "control|" & processName & "|" & '
-            'windowName & "|" & controlRole & "|" & controlName & "|" & '
-            'controlTitle & "|" & controlDescription & linefeed\n'
+            'processId & "|" & windowName & "|" & controlRole & "|" & '
+            'controlName & "|" & controlTitle & "|" & controlDescription & "|" & '
+            'controlValue & linefeed\n'
             '            end if\n'
             '          end repeat\n'
             '          on error messageText\n'
@@ -696,56 +822,29 @@ class Harness:
         result = run(["osascript", "-e", script], timeout=12, check=False)
         return (result.stdout + result.stderr).strip()[:6000]
 
-    def close_native_quit_alert(self, pid):
-        """Close the quit panel from its title bar; this must behave as Cancel."""
-        target_pid = str(pid)
-        script = (
-            'tell application "System Events"\n'
-            '  repeat with p in application processes\n'
-            '    try\n'
-            '      if unix id of p as text is "' + target_pid + '" then\n'
-            '        repeat with w in windows of p\n'
-            '          try\n'
-            '            click close button of w\n'
-            '            return "closed"\n'
-            '          end try\n'
-            '        end repeat\n'
-            '      end if\n'
-            '    end try\n'
-            '  end repeat\n'
-            '  return "missing"\n'
-            'end tell')
-        result = run(["osascript", "-e", script], timeout=10, check=False)
-        if result.returncode or result.stdout.strip() != "closed":
-            raise Failure("Could not close the native quit panel through its title bar: "
-                          f"{(result.stdout + result.stderr).strip() or 'no matching close button'}")
+    def native_quit_direct_ax_probe(self, pid):
+        """Capture the helper's AX tree independently of System Events."""
+        probe = os.environ.get("GLASSMACS_AX_PROBE")
+        if not probe:
+            return "Direct AX probe unavailable (GLASSMACS_AX_PROBE not set)"
+        result = run([probe, str(pid)], timeout=20, check=False)
+        output = (result.stdout + result.stderr).strip()
+        report_path = self.output / "quit-accessibility-ax.json"
+        try:
+            report = json.loads(result.stdout)
+            report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        except (json.JSONDecodeError, OSError):
+            report_path.write_text(output + "\n")
+        if result.returncode:
+            return f"Direct AX probe exited {result.returncode}: {output[:6000]}"
+        return f"Direct AX report saved to {report_path.name}: {output[:6000]}"
 
-    def wait_for_native_quit_checkbox(self, pid, timeout=15):
-        """Wait until the native quit alert exposes its real checkbox."""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            value = self.native_quit_checkbox(pid)
-            if value in {"0", "1"}:
-                return value
-            time.sleep(0.25)
-        details = self.native_quit_accessibility_dump(pid)
-        helper_responses = []
-        for response_path in sorted(
-                Path(tempfile.gettempdir()).glob("glassmacs-quit-response-*"),
-                key=lambda path: path.stat().st_mtime, reverse=True):
-            try:
-                content = response_path.read_text(errors="replace")
-            except OSError:
-                continue
-            if content.strip():
-                helper_responses.append(content[:4000])
-                if len(helper_responses) == 3:
-                    break
-        if helper_responses:
-            details = f"{details}; helper response state: {helper_responses!r}"
-        raise Failure("The native quit alert checkbox did not appear within "
-                      f"{timeout}s (Glassmacs PID {pid}); accessibility controls: "
-                      f"{details or 'unavailable'}")
+    def close_native_quit_alert(self, pid):
+        """Close the native panel with its AX close button; this must cancel."""
+        helper_pid = self.native_quit_helper_pid()
+        if helper_pid is None:
+            raise Failure(f"Could not resolve GlassmacsQuitAlert process for PID {pid}")
+        self.native_quit_ax_action(helper_pid, "close")
 
     def crash_reports(self):
         directory = Path.home() / "Library/Logs/DiagnosticReports"
@@ -1073,6 +1172,26 @@ def quit_with_unsaved_document_asks(ctx):
     instance = harness.launch(harness.new_home("quit"), files=[first, second])
     ctx.ready(instance)
     emacs = instance.emacs
+    documents = {first.name: first, second.name: second}
+
+    def dialog_document(previous_document=None):
+        name, checkbox_value = harness.wait_for_native_quit_dialog(
+            instance.pid, previous_document=previous_document)
+        ctx.expect(name in documents,
+                   f"Native quit dialog named unexpected document {name!r}")
+        return documents[name], checkbox_value
+
+    def expect_file_bytes(document, expected, description, allow_final_newline=False):
+        actual = document.read_bytes()
+        expected_bytes = expected.encode("utf-8")
+        allowed = {expected_bytes}
+        if allow_final_newline:
+            allowed.add(expected_bytes + b"\n")
+        ctx.expect(
+            actual in allowed,
+            f"{description}; expected bytes {sorted(allowed)!r}; "
+            f"actual repr={actual!r}; actual hex={actual.hex()}")
+
     for document in (first, second):
         emacs.wait(f"(glassmacs-acceptance-file-shown-p {el(document)})",
                    f"{document.name} to open", timeout=30)
@@ -1082,7 +1201,7 @@ def quit_with_unsaved_document_asks(ctx):
     if not harness.system_events_available():
         instance.kill_quietly()
         raise NotRun("native quit checkbox coverage needs System Events Accessibility")
-    ctx.method("native AppKit quit alert and checkbox (System Events Accessibility)")
+    ctx.method("native AppKit quit alert and checkbox (direct Accessibility API)")
     quit_route = emacs.eval("""(list :save-buffers-kill-emacs
       (and (advice-member-p #'glassmacs-recovery--reviewed-quit-advice
                             'save-buffers-kill-emacs) t)
@@ -1093,54 +1212,68 @@ def quit_with_unsaved_document_asks(ctx):
       :ns-power-off (key-binding [ns-power-off]))""")
     print(f"   quit routing before Command-Q: {quit_route!r}", flush=True)
 
-    # Save the first document with the checkbox left off. The second document
-    # must get its own unchecked alert; canceling it keeps its edits intact.
+    # Save whichever document the native dialog names. The next dialog must
+    # identify the other document; canceling it keeps those edits intact.
     ctx.type(instance, "s-q", system_events='keystroke "q" using command down')
-    checkbox = harness.wait_for_native_quit_checkbox(instance.pid)
+    saved_document, checkbox = dialog_document()
     ctx.expect(checkbox == "0", f"First dialog checkbox started as {checkbox}")
     harness.native_quit_checkbox(instance.pid, "button", "Save")
-    checkbox = harness.wait_for_native_quit_checkbox(instance.pid)
+    remaining_document, checkbox = dialog_document(previous_document=saved_document.name)
     ctx.expect(checkbox == "0", f"Second document checkbox started as {checkbox}")
+    ctx.expect(remaining_document != saved_document,
+               "Save did not advance to the other modified document")
     harness.native_quit_checkbox(instance.pid, "button", "Cancel")
     time.sleep(0.5)
     ctx.expect(instance.alive(), "Cancel on the second document quit Glassmacs")
-    ctx.expect(first.read_text() == "first\nedited ",
-               "Save on the first document did not write its changes")
-    state = emacs.eval(f"(buffer-modified-p (find-buffer-visiting {el(second)}))")
+    original = {first: "first\n", second: "second\n"}
+    expected = {first: "first\nedited ", second: "second\nedited "}
+    expect_file_bytes(saved_document, expected[saved_document],
+                      f"Save did not write the dialog's document {saved_document.name}",
+                      allow_final_newline=True)
+    state = emacs.eval(
+        f"(buffer-modified-p (find-buffer-visiting {el(remaining_document)}))")
     ctx.expect(state, "Cancel on the second document lost its edits")
-    ctx.expect(second.read_text() == "second\n", "The second file was written before Save")
+    expect_file_bytes(remaining_document, original[remaining_document],
+                      "Cancel wrote the remaining document before Save")
 
     # A checked decision canceled in one quit must not seed the next one.
     ctx.type(instance, "M-x glassmacs-recovery-quit RET")
-    checkbox = harness.wait_for_native_quit_checkbox(instance.pid)
+    reviewed_document, checkbox = dialog_document()
     ctx.expect(checkbox == "0", f"New quit attempt checkbox started as {checkbox}")
+    ctx.expect(reviewed_document == remaining_document,
+               "Canceled quit did not review the remaining modified document")
     harness.native_quit_checkbox(instance.pid, "toggle")
     ctx.expect(harness.native_quit_checkbox(instance.pid) == "1",
                "The native checkbox could not be checked")
     harness.native_quit_checkbox(instance.pid, "button", "Cancel")
     time.sleep(0.5)
     ctx.expect(instance.alive(), "Cancel after checking the box quit Glassmacs")
-    ctx.expect(emacs.eval(f"(buffer-modified-p (find-buffer-visiting {el(second)}))"),
+    ctx.expect(emacs.eval(
+        f"(buffer-modified-p (find-buffer-visiting {el(remaining_document)}))"),
                "Cancel after checking the box lost edits")
 
     # Closing the panel from its title bar is another Cancel path and must not
     # hide the dialog, hang the modal loop, or discard the modified document.
     ctx.type(instance, "M-x glassmacs-recovery-quit RET")
-    checkbox = harness.wait_for_native_quit_checkbox(instance.pid)
+    reviewed_document, checkbox = dialog_document()
     ctx.expect(checkbox == "0", f"Title-bar close dialog started checked as {checkbox}")
+    ctx.expect(reviewed_document == remaining_document,
+               "Title-bar close showed an unexpected document")
     harness.close_native_quit_alert(instance.pid)
     time.sleep(0.5)
     ctx.expect(instance.alive(), "Closing the quit panel quit Glassmacs")
-    ctx.expect(emacs.eval(f"(buffer-modified-p (find-buffer-visiting {el(second)}))"),
+    ctx.expect(emacs.eval(
+        f"(buffer-modified-p (find-buffer-visiting {el(remaining_document)}))"),
                "Closing the quit panel lost edits")
-    ctx.expect(second.read_text() == "second\n", "Closing the quit panel wrote the file")
+    expect_file_bytes(remaining_document, original[remaining_document],
+                      "Closing the quit panel wrote the file")
 
     # A fresh dialog starts unchecked again; checked Save applies to both
     # remaining dirty documents and then commits the quit.
     emacs.eval(f"(with-current-buffer (find-buffer-visiting {el(first)}) "
                f"(goto-char (point-max)) (insert \"again \"))")
     ctx.type(instance, "s-q", system_events='keystroke "q" using command down')
-    checkbox = harness.wait_for_native_quit_checkbox(instance.pid)
+    _, checkbox = dialog_document()
     ctx.expect(checkbox == "0", f"Checkbox carried into a later quit as {checkbox}")
     harness.native_quit_checkbox(instance.pid, "toggle")
     ctx.expect(harness.native_quit_checkbox(instance.pid) == "1",
@@ -1150,10 +1283,12 @@ def quit_with_unsaved_document_asks(ctx):
     while instance.alive() and time.monotonic() < deadline:
         time.sleep(0.25)
     ctx.expect(not instance.alive(), "Checked Save did not complete the reviewed quit")
-    ctx.expect(first.read_text() == "first\nedited again ",
-               "Checked Save did not save the first document")
-    ctx.expect(second.read_text() == "second\nedited ",
-               "Checked Save did not apply to the remaining document")
+    expect_file_bytes(first, "first\nedited again ",
+                      "Checked Save did not save the first document",
+                      allow_final_newline=True)
+    expect_file_bytes(second, "second\nedited ",
+                      "Checked Save did not apply to the remaining document",
+                      allow_final_newline=True)
     instance.kill_quietly()
 
 
