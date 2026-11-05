@@ -537,13 +537,12 @@ class Harness:
                   f'end tell')
         run(["osascript", "-e", script], timeout=30)
 
-    def native_quit_checkbox(self, pid, action="read", button=None,
-                             exact_process=False):
-        """Read or operate the checkbox in Glassmacs' native quit alert.
+    def native_quit_checkbox_system_events(self, pid, action="read", button=None,
+                                           exact_process=False):
+        """Read or operate the quit controls through System Events for comparison.
 
-        The native quit panel runs in the dedicated GlassmacsQuitAlert
-        process, so limit Accessibility traversal to that helper instead of
-        scanning every GUI application's windows.
+        Acceptance uses direct AXUIElement calls. This System Events path is
+        retained only for the failure report that compares both clients.
         """
         if action not in {"read", "toggle", "button"}:
             raise ValueError(f"Unknown native checkbox action: {action}")
@@ -623,6 +622,41 @@ class Harness:
             return None
         return value
 
+    def native_quit_ax_action(self, pid, operation, target=None):
+        """Run a query or action against the helper process through AXUIElement."""
+        probe = os.environ.get("GLASSMACS_AX_PROBE")
+        if not probe:
+            raise Failure("Direct Accessibility helper is unavailable")
+        command = [probe, str(pid), operation]
+        if target is not None:
+            command.append(target)
+        result = run(command, timeout=15, check=False)
+        try:
+            report = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise Failure("Direct Accessibility helper returned invalid JSON: "
+                          f"{(result.stdout + result.stderr).strip()}") from error
+        if result.returncode or not report.get("performed"):
+            raise Failure("Direct Accessibility operation failed: "
+                          f"{json.dumps(report, sort_keys=True)}")
+        return report
+
+    def native_quit_checkbox(self, pid, action="read", button=None):
+        """Read or operate native quit controls through direct AX queries."""
+        if action not in {"read", "toggle", "button"}:
+            raise ValueError(f"Unknown native checkbox action: {action}")
+        if action == "button" and not button:
+            raise ValueError("A native alert button title is required")
+        helper_pid = self.native_quit_helper_pid()
+        if helper_pid is None:
+            raise Failure(f"Could not resolve GlassmacsQuitAlert process for PID {pid}")
+        operation = "button" if action == "button" else "checkbox"
+        target = button if action == "button" else action
+        report = self.native_quit_ax_action(helper_pid, operation, target)
+        if action in {"read", "toggle"}:
+            return report.get("value")
+        return "clicked"
+
     def native_quit_helper_pid(self):
         """Resolve the separate quit helper PID through System Events."""
         script = (
@@ -653,6 +687,7 @@ class Harness:
             '  repeat with p in application processes\n'
             '    set processName to "unknown"\n'
             '    set processId to "unknown"\n'
+            '    set processFrontmost to false\n'
             '    try\n'
             '      set processName to name of p as text\n'
             '    end try\n'
@@ -739,28 +774,11 @@ class Harness:
         return f"Direct AX report saved to {report_path.name}: {output[:6000]}"
 
     def close_native_quit_alert(self, pid):
-        """Close the quit panel from its title bar; this must behave as Cancel."""
-        target_pid = str(pid)
-        script = (
-            'tell application "System Events"\n'
-            '  repeat with p in application processes\n'
-            '    try\n'
-            '      if unix id of p as text is "' + target_pid + '" then\n'
-            '        repeat with w in windows of p\n'
-            '          try\n'
-            '            click close button of w\n'
-            '            return "closed"\n'
-            '          end try\n'
-            '        end repeat\n'
-            '      end if\n'
-            '    end try\n'
-            '  end repeat\n'
-            '  return "missing"\n'
-            'end tell')
-        result = run(["osascript", "-e", script], timeout=10, check=False)
-        if result.returncode or result.stdout.strip() != "closed":
-            raise Failure("Could not close the native quit panel through its title bar: "
-                          f"{(result.stdout + result.stderr).strip() or 'no matching close button'}")
+        """Close the native panel with its AX close button; this must cancel."""
+        helper_pid = self.native_quit_helper_pid()
+        if helper_pid is None:
+            raise Failure(f"Could not resolve GlassmacsQuitAlert process for PID {pid}")
+        self.native_quit_ax_action(helper_pid, "close")
 
     def wait_for_native_quit_checkbox(self, pid, timeout=15):
         """Wait until the native quit alert exposes its real checkbox."""
@@ -781,7 +799,7 @@ class Harness:
         else:
             direct_ax = self.native_quit_direct_ax_probe(helper_pid)
             system_events = self.native_quit_accessibility_dump(helper_pid)
-            system_events_checkbox = self.native_quit_checkbox(
+            system_events_checkbox = self.native_quit_checkbox_system_events(
                 helper_pid, exact_process=True
             )
         details = (f"helper PID={helper_pid}; {direct_ax}; "
@@ -1140,7 +1158,7 @@ def quit_with_unsaved_document_asks(ctx):
     if not harness.system_events_available():
         instance.kill_quietly()
         raise NotRun("native quit checkbox coverage needs System Events Accessibility")
-    ctx.method("native AppKit quit alert and checkbox (System Events Accessibility)")
+    ctx.method("native AppKit quit alert and checkbox (direct Accessibility API)")
     quit_route = emacs.eval("""(list :save-buffers-kill-emacs
       (and (advice-member-p #'glassmacs-recovery--reviewed-quit-advice
                             'save-buffers-kill-emacs) t)
