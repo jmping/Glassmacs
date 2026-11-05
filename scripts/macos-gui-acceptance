@@ -696,6 +696,23 @@ class Harness:
         result = run(["osascript", "-e", script], timeout=12, check=False)
         return (result.stdout + result.stderr).strip()[:6000]
 
+    def native_quit_direct_ax_probe(self, pid):
+        """Capture the helper's AX tree independently of System Events."""
+        probe = os.environ.get("GLASSMACS_AX_PROBE")
+        if not probe:
+            return "Direct AX probe unavailable (GLASSMACS_AX_PROBE not set)"
+        result = run([probe, str(pid)], timeout=20, check=False)
+        output = (result.stdout + result.stderr).strip()
+        report_path = self.output / "quit-accessibility-ax.json"
+        try:
+            report = json.loads(result.stdout)
+            report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        except (json.JSONDecodeError, OSError):
+            report_path.write_text(output + "\n")
+        if result.returncode:
+            return f"Direct AX probe exited {result.returncode}: {output[:6000]}"
+        return f"Direct AX report saved to {report_path.name}: {output[:6000]}"
+
     def close_native_quit_alert(self, pid):
         """Close the quit panel from its title bar; this must behave as Cancel."""
         target_pid = str(pid)
@@ -728,7 +745,11 @@ class Harness:
             if value in {"0", "1"}:
                 return value
             time.sleep(0.25)
+        # Run while the dialog is still open so direct AX and System Events
+        # observe the same helper process and UI state.
+        direct_ax = self.native_quit_direct_ax_probe(pid)
         details = self.native_quit_accessibility_dump(pid)
+        details = f"{direct_ax}; System Events: {details}"
         helper_responses = []
         for response_path in sorted(
                 Path(tempfile.gettempdir()).glob("glassmacs-quit-response-*"),
