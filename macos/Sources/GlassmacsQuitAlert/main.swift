@@ -173,6 +173,12 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
                 "panelFrame": NSStringFromRect(panel.frame),
                 "contentFrame": NSStringFromRect(panel.contentView?.frame ?? .zero),
                 "checkboxFrame": NSStringFromRect(applyToAll.frame),
+                "panelAXChildren": (panel.accessibilityChildren() ?? []).count,
+                "contentAXChildren": (panel.contentView?.accessibilityChildren() ?? []).count,
+                "checkboxAXElement": applyToAll.isAccessibilityElement(),
+                "checkboxAXRole": String(describing: applyToAll.accessibilityRole()),
+                "checkboxAXParentIsContent":
+                    (applyToAll.accessibilityParent() as? NSView) === panel.contentView,
                 "buttonFrames": [saveButton, discardButton, cancelButton]
                     .map { NSStringFromRect($0.frame) }
             ], to: responseURL)
