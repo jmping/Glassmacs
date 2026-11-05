@@ -77,13 +77,10 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
                 RunLoop.current.run(until: Date().addingTimeInterval(0.05))
             }
             alert.window.makeKeyAndOrderFront(nil)
-            if application.isActive {
-                _ = application.setActivationPolicy(.accessory)
-            }
 
             writeResponse([
                 "phase": "presenting",
-                "activationPolicy": application.activationPolicy() == .accessory ? "accessory" : "regular",
+                "activationPolicy": application.activationPolicy() == .regular ? "regular" : "other",
                 "applicationActive": application.isActive,
                 "processIdentifier": ProcessInfo.processInfo.processIdentifier,
                 "applicationWindowCount": application.windows.count,
