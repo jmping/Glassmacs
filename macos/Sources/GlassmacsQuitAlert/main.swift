@@ -87,6 +87,9 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
             view.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(view)
         }
+        content.setAccessibilityElement(true)
+        content.setAccessibilityRole(.group)
+        content.setAccessibilityChildren([message, applyToAll, saveButton, discardButton, cancelButton])
         NSLayoutConstraint.activate([
             message.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 22),
             message.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -22),

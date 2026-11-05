@@ -540,9 +540,9 @@ class Harness:
     def native_quit_checkbox(self, pid, action="read", button=None):
         """Read or operate the checkbox in Glassmacs' native quit alert.
 
-        The NSAlert runs in the dedicated GlassmacsQuitAlert process, so limit
-        Accessibility traversal to that helper instead of scanning every GUI
-        application's windows.
+        The native quit panel runs in the dedicated GlassmacsQuitAlert
+        process, so limit Accessibility traversal to that helper instead of
+        scanning every GUI application's windows.
         """
         if action not in {"read", "toggle", "button"}:
             raise ValueError(f"Unknown native checkbox action: {action}")
@@ -714,7 +714,7 @@ class Harness:
             except OSError:
                 continue
             if content.strip():
-                helper_responses.append(content[:1000])
+                helper_responses.append(content[:4000])
                 if len(helper_responses) == 3:
                     break
         if helper_responses:
