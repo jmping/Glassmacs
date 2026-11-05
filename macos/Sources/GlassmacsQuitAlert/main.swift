@@ -120,12 +120,11 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
         panel.defaultButtonCell = saveButton.cell as? NSButtonCell
 
         super.init()
-        // Keep controls as direct panel children. System Events saw the window
-        // but omitted all controls when an accessible content-view group sat
-        // between the panel and its controls.
+        // AppKit assigns parents to view-backed accessibility elements from
+        // the NSView hierarchy. Keep the real controls under their content
+        // group and provide only the child lists explicitly.
         for view in [message, applyToAll, saveButton, discardButton, cancelButton] {
             view.setAccessibilityElement(true)
-            view.setAccessibilityParent(panel)
         }
         message.setAccessibilityRole(.staticText)
         message.setAccessibilityLabel("Quit review message")
@@ -139,8 +138,11 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
         discardButton.setAccessibilityLabel("Don't Save")
         cancelButton.setAccessibilityRole(.button)
         cancelButton.setAccessibilityLabel("Cancel")
-        content.setAccessibilityElement(false)
-        panel.setAccessibilityChildren([message, applyToAll, saveButton, discardButton, cancelButton])
+        content.setAccessibilityElement(true)
+        content.setAccessibilityRole(.group)
+        content.setAccessibilityLabel("Quit review controls")
+        content.setAccessibilityChildren([message, applyToAll, saveButton, discardButton, cancelButton])
+        panel.setAccessibilityChildren([content])
         saveButton.target = self
         saveButton.action = #selector(saveChoice(_:))
         discardButton.target = self
@@ -171,7 +173,10 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
                 "panelAXChildren": (panel.accessibilityChildren() ?? []).count,
                 "checkboxAXElement": applyToAll.isAccessibilityElement(),
                 "checkboxAXRole": String(describing: applyToAll.accessibilityRole()),
-                "checkboxAXParentIsPanel": (applyToAll.accessibilityParent() as? NSPanel) === panel,
+                "contentAXChildren": (panel.contentView?.accessibilityChildren() ?? []).count,
+                "contentAXParentIsPanel": (panel.contentView?.accessibilityParent() as? NSPanel) === panel,
+                "checkboxAXParentIsContent":
+                    (applyToAll.accessibilityParent() as? NSView) === panel.contentView,
                 "buttonFrames": [saveButton, discardButton, cancelButton]
                     .map { NSStringFromRect($0.frame) }
             ], to: responseURL)
