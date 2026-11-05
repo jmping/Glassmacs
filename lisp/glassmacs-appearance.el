@@ -55,5 +55,36 @@
         (disable-theme enabled)))
     (enable-theme theme)))
 
+(defgroup glassmacs-window-chrome nil
+  "Subtle spacing around native Glassmacs document windows."
+  :group 'faces)
+
+(defcustom glassmacs-window-content-inset 10
+  "Interior padding in pixels between a graphical frame and its contents.
+Set to zero for the original edge-to-edge presentation.  This is an
+Emacs internal border, not an operating-system window decoration."
+  :type '(integer :tag "Inset (pixels)" 0 40)
+  :group 'glassmacs-window-chrome
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (when (and (eq system-type 'darwin) (integerp value))
+           (setf (alist-get 'internal-border-width default-frame-alist) value)
+           (dolist (frame (frame-list))
+             (when (display-graphic-p frame)
+               (set-frame-parameter frame 'internal-border-width value))))))
+
+(defun glassmacs-apply-window-content-inset ()
+  "Apply the configured document-window padding on graphical macOS."
+  (when (and (eq system-type 'darwin)
+             (integerp glassmacs-window-content-inset))
+    (setf (alist-get 'internal-border-width default-frame-alist)
+          glassmacs-window-content-inset)
+    (dolist (frame (frame-list))
+      (when (display-graphic-p frame)
+        (set-frame-parameter frame 'internal-border-width
+                             glassmacs-window-content-inset)))))
+
+(glassmacs-apply-window-content-inset)
+
 (provide 'glassmacs-appearance)
 ;;; glassmacs-appearance.el ends here

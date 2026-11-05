@@ -150,14 +150,15 @@ Never snapshot process buffers, remote files, or special buffers."
   "Return the durable in-flight recovery transaction path."
   (expand-file-name "transaction.eldata" glassmacs-recovery-directory))
 
-(defun glassmacs-recovery--write-index-transaction (index records)
+(defun glassmacs-recovery--write-index-transaction (index records &optional windows)
   "Publish RECORDS to INDEX with an in-flight transaction marker.
 A failed publication retains the marker, preventing reclamation."
   (glassmacs-recovery--require-clean-transaction)
   (let* ((target (expand-file-name index glassmacs-recovery-directory))
          (marker (glassmacs-recovery--transaction-path))
          (old (glassmacs-recovery--read-index index))
-         (new (list :version 1 :buffers records)))
+         (new (append (list :version 1 :buffers records)
+                      (when windows (list :windows windows)))))
     (glassmacs-recovery--write-private
      marker (prin1-to-string
              (list :version 1 :index index :old old :new new)))
@@ -307,6 +308,94 @@ Return the number of recorded buffers.  Never write original documents."
             (unless (eobp) (error "Trailing recovery manifest data"))
             data))))))
 
+(defun glassmacs-recovery--safe-frame-dimension (value minimum maximum)
+  "Return bounded integer VALUE for a recovered frame, or nil."
+  (when (and (integerp value) (<= minimum value) (<= value maximum))
+    value))
+
+(defun glassmacs-recovery--restore-view (window record)
+  "Restore WINDOW's point and scroll start from bounded data-only RECORD."
+  (when (and (window-live-p window) (listp record))
+    (let* ((buffer (window-buffer window))
+           (limit (with-current-buffer buffer (point-max)))
+           (point (plist-get record :point))
+           (start (plist-get record :start)))
+      (when (and (integerp point) (<= 1 point limit))
+        (set-window-point window point))
+      (when (and (integerp start) (<= 1 start limit))
+        (set-window-start window start t)))))
+
+(defun glassmacs-recovery--restore-window-layout (manifest)
+  "Recreate one frame per saved frame, preserving document splits and size.
+Only data-only buffer IDs and bounded geometry are read.  Missing documents
+are skipped; no process is launched and no original file is overwritten."
+  (when (display-graphic-p)
+    (dolist (record (plist-get manifest :windows))
+      (when (and (listp record) (listp (plist-get record :buffers)))
+        (let* ((buffers
+                (cl-loop for id in (plist-get record :buffers)
+                         for buffer = (and (stringp id)
+                                           (cl-find-if
+                                            (lambda (candidate)
+                                              (and (buffer-live-p candidate)
+                                                   (equal (buffer-local-value
+                                                           'glassmacs-recovery--id candidate)
+                                                          id)))
+                                            (buffer-list)))
+                         when buffer collect buffer))
+               (width (glassmacs-recovery--safe-frame-dimension
+                       (plist-get record :width) 20 500))
+               (height (glassmacs-recovery--safe-frame-dimension
+                        (plist-get record :height) 8 300))
+               (left (glassmacs-recovery--safe-frame-dimension
+                      (plist-get record :left) -10000 10000))
+               (top (glassmacs-recovery--safe-frame-dimension
+                     (plist-get record :top) -10000 10000)))
+          (when buffers
+            (let ((frame (make-frame)))
+              (with-selected-frame frame
+                (delete-other-windows)
+                (set-window-buffer (selected-window) (car buffers))
+                (dolist (buffer (cdr buffers))
+                  (condition-case nil
+                      (let ((window (split-window (selected-window) nil 'right)))
+                        (set-window-buffer window buffer)
+                        (select-window window))
+                    (error
+                     ;; Keep the recovered buffer accessible even when a
+                     ;; small display cannot accommodate another split.
+                     (display-buffer buffer))))
+                (when (and width height)
+                  (condition-case nil
+                      (set-frame-size frame width height)
+                    (error nil)))
+                ;; Window-manager placement is best-effort.  Never accept
+                ;; arbitrary Lisp forms from an on-disk recovery index.
+                (when (and left top)
+                  (condition-case nil
+                      (set-frame-position frame left top)
+                    (error nil)))
+                (dolist (window (window-list frame 'never))
+                  (let* ((buffer (window-buffer window))
+                         (id (and (buffer-live-p buffer)
+                                  (buffer-local-value
+                                   'glassmacs-recovery--id buffer)))
+                         (view (cl-find id (plist-get record :views)
+                                        :key (lambda (entry)
+                                               (plist-get entry :id))
+                                        :test #'equal)))
+                    (glassmacs-recovery--restore-view window view)))
+                (let* ((selected-id (plist-get record :selected))
+                       (selected (cl-find-if
+                                  (lambda (window)
+                                    (equal (buffer-local-value
+                                            'glassmacs-recovery--id
+                                            (window-buffer window))
+                                           selected-id))
+                                  (window-list frame 'never))))
+                  (when (and (stringp selected-id) selected)
+                    (select-window selected)))))))))))
+
 (defun glassmacs-recovery-restore-crash ()
   "Restore the crash index without modifying the preserved-buffer index."
   (interactive)
@@ -366,14 +455,16 @@ never overwritten.  Calling this repeatedly does not duplicate buffers."
                   (setq-local glassmacs-recovery--id id))
                 (push buffer restored)
                 (cl-incf count))))))))
-    ;; Recovery is deliberately non-displaying in noninteractive startup
-    ;; paths.  A user-requested restore presents each recovered document
-    ;; independently, without replacing the currently visible document.
-    (when (and (called-interactively-p 'interactive)
-               (display-graphic-p)
-               (fboundp 'glassmacs-present-buffer))
-      (dolist (buffer (nreverse restored))
-        (glassmacs-present-buffer buffer 'open 'new-frame)))
+    ;; On confirmed startup recovery, reconstruct visible document frames.
+    ;; Older manifests have no :windows metadata and retain the original
+    ;; interactive-only presentation behavior.
+    (if (plist-get manifest :windows)
+        (glassmacs-recovery--restore-window-layout manifest)
+      (when (and (called-interactively-p 'interactive)
+                 (display-graphic-p)
+                 (fboundp 'glassmacs-present-buffer))
+        (dolist (buffer (nreverse restored))
+          (glassmacs-present-buffer buffer 'open 'new-frame))))
     (when (called-interactively-p 'interactive)
       (message "Restored %d preserved document buffers" count))
     count))
@@ -625,10 +716,14 @@ A non-native fallback asks scope separately, defaulting to current file."
                        (quit ?c))
                 (?s 'save) (?d 'discard) (_ 'cancel)))
              (all (and (not (eq action 'cancel))
-                       (eq (car (read-multiple-choice
-                                 "Apply this choice to all remaining documents? "
-                                 '((?n "No" "Only this document")
-                                   (?y "Yes" "All remaining documents"))))
+                       (eq (condition-case nil
+                               (car (read-multiple-choice
+                                     "Apply this choice to all remaining documents? "
+                                     '((?n "No" "Only this document")
+                                       (?y "Yes" "All remaining documents"))))
+                             ;; Never broaden the decision on a dismissed or
+                             ;; failed scope prompt.
+                             ((quit error) ?n))
                            ?y))))
         (cons action all))))
 
@@ -736,19 +831,61 @@ ORIGINAL and ARGS are used only for the guarded, already-reviewed quit."
             #'glassmacs-recovery--reviewed-quit-advice)
 (add-hook 'kill-emacs-query-functions #'glassmacs-recovery--quit-safety-check)
 
+(defun glassmacs-recovery--open-window-records ()
+  "Record visible document frames for crash recovery, without process buffers.
+Only durable document IDs and bounded geometry are stored; window contents
+and arbitrary frame parameters are never evaluated from recovery files."
+  (let (records)
+    (dolist (frame (frame-list))
+      (when (and (frame-live-p frame) (frame-visible-p frame)
+                 (not (frame-parameter frame 'minibuffer-only)))
+        (let ((buffers (cl-remove-duplicates
+                        (cl-loop for window in (window-list frame 'never)
+                                 for buffer = (window-buffer window)
+                                 when (glassmacs-recovery--eligible-p buffer)
+                                 collect (with-current-buffer buffer
+                                           (glassmacs-recovery--id)))
+                        :test #'equal)))
+          (when buffers
+            (push (list :buffers buffers
+                        :left (frame-parameter frame 'left)
+                        :top (frame-parameter frame 'top)
+                        :width (frame-width frame)
+                        :height (frame-height frame)
+                        :selected (let ((selected (window-buffer
+                                                   (frame-selected-window frame))))
+                                    (when (glassmacs-recovery--eligible-p selected)
+                                      (with-current-buffer selected
+                                        (glassmacs-recovery--id))))
+                        :views (cl-loop for window in (window-list frame 'never)
+                                        for buffer = (window-buffer window)
+                                        when (glassmacs-recovery--eligible-p buffer)
+                                        collect (list
+                                                 :id (with-current-buffer buffer
+                                                       (glassmacs-recovery--id))
+                                                 :point (window-point window)
+                                                 :start (window-start window))))
+                  records)))))
+    (nreverse records)))
+
 (defun glassmacs-recovery--periodic-snapshot ()
   "Best-effort snapshots for crash recovery; do not replace quit manifest."
   (unless glassmacs-recovery--restoring
     (condition-case err
         (progn
           (glassmacs-recovery--ensure-directory)
-          (let ((records nil))
+          (let ((records nil)
+                (windows (glassmacs-recovery--open-window-records)))
+            ;; Include clean, file-backed documents so a forced quit can
+            ;; reconstruct visible source windows, not just dirty snapshots.
             (dolist (buffer (glassmacs-recovery--documents))
-              (when (buffer-modified-p buffer)
+              (when (or (buffer-modified-p buffer)
+                        (and (buffer-file-name buffer)
+                             (not (file-remote-p (buffer-file-name buffer)))))
                 (push (glassmacs-recovery--snapshot buffer) records)))
-            (when records
+            (when (or records windows)
               (glassmacs-recovery--write-index-transaction
-               "crash.eldata" (nreverse records)))))
+               "crash.eldata" (nreverse records) windows))))
       (error (display-warning 'glassmacs-recovery
                               (error-message-string err) :warning)))))
 

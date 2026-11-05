@@ -3047,3 +3047,102 @@ example) can run first and delay the sentinel."
       (kill-buffer first)
       (kill-buffer second))))
 
+
+(ert-deftest glassmacs-quit-fallback-scope-error-never-applies-to-all ()
+  "A failed fallback scope prompt must not silently broaden a quit choice."
+  (let ((buffer (generate-new-buffer "glassmacs-fallback-scope"))
+        (prompts 0))
+    (unwind-protect
+        (cl-letf (((symbol-function 'glassmacs-recovery--native-quit-decision)
+                   (lambda (_buffer) nil))
+                  ((symbol-function 'read-multiple-choice)
+                   (lambda (&rest _)
+                     (cl-incf prompts)
+                     (if (= prompts 1)
+                         '(?d "Don't Save")
+                       (error "Scope dialog unavailable")))))
+          (should (equal (glassmacs-recovery--quit-decision buffer)
+                         '(discard . nil)))
+          (should (= prompts 2)))
+      (kill-buffer buffer))))
+
+
+(ert-deftest glassmacs-crash-index-records-visible-clean-document ()
+  "Crash recovery tracks open clean files as well as dirty snapshots."
+  (let* ((file (make-temp-file "glassmacs-crash-window-" nil ".txt" "clean"))
+         (buffer (find-file-noselect file))
+         (glassmacs-recovery-directory (make-temp-file "glassmacs-crash-index-" t))
+         (glassmacs-recovery--last-snapshots (make-hash-table :test 'equal)))
+    (unwind-protect
+        (save-window-excursion
+          (set-window-buffer (selected-window) buffer)
+          (cl-letf (((symbol-function 'glassmacs-recovery--documents)
+                     (lambda () (list buffer)))
+                    ((symbol-function 'glassmacs-recovery--open-window-records)
+                     (lambda () (list (list :buffers (list
+                                                        (with-current-buffer buffer
+                                                          (glassmacs-recovery--id))))))))
+            (glassmacs-recovery--periodic-snapshot)
+            (let* ((index (glassmacs-recovery--read-index "crash.eldata"))
+                   (record (car (plist-get index :buffers))))
+              (should (equal (plist-get record :file) file))
+              (should-not (plist-get record :modified))
+              (should (plist-get index :windows)))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (delete-file file)
+      (delete-directory glassmacs-recovery-directory t))))
+
+
+(ert-deftest glassmacs-crash-restore-rejects-unbounded-frame-geometry ()
+  "Malformed recovery data must not create enormous or invalid windows."
+  (should-not (glassmacs-recovery--safe-frame-dimension -1 20 500))
+  (should-not (glassmacs-recovery--safe-frame-dimension 100000 20 500))
+  (should-not (glassmacs-recovery--safe-frame-dimension "500" 20 500))
+  (should (= 100 (glassmacs-recovery--safe-frame-dimension 100 20 500))))
+
+(ert-deftest glassmacs-crash-restore-skips-unavailable-document-ids ()
+  "A missing recovery buffer ID must not create an empty frame."
+  (let ((created 0))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+              ((symbol-function 'make-frame)
+               (lambda (&rest _) (cl-incf created) (error "Unexpected frame"))))
+      (glassmacs-recovery--restore-window-layout
+       '(:windows ((:buffers ("nonexistent-recovery-document-id")
+                    :width 100 :height 40))))
+      (should (= created 0)))))
+
+
+(ert-deftest glassmacs-crash-restore-view-rejects-invalid-positions ()
+  "Corrupt cursor and scroll offsets cannot escape the buffer bounds."
+  (with-temp-buffer
+    (insert "first\nsecond\nthird\n")
+    (let ((window (selected-window)))
+      (save-window-excursion
+        (set-window-buffer window (current-buffer))
+        (set-window-point window 3)
+        (glassmacs-recovery--restore-view
+         window '(:point -50 :start 999999))
+        (should (= (window-point window) 3))
+        (glassmacs-recovery--restore-view
+         window '(:point 8 :start 1))
+        (should (= (window-point window) 8))))))
+
+
+(ert-deftest glassmacs-window-content-inset-is-configurable ()
+  "The macOS content inset is modest and remains user-adjustable."
+  (should (custom-variable-p 'glassmacs-window-content-inset))
+  (should (integerp glassmacs-window-content-inset))
+  (should (<= 0 glassmacs-window-content-inset 40)))
+
+
+(ert-deftest glassmacs-crash-frame-position-is-bounded ()
+  "Restoration rejects malicious or nonsensical screen coordinates."
+  (should (= -120 (glassmacs-recovery--safe-frame-dimension
+                    -120 -10000 10000)))
+  (should (= 400 (glassmacs-recovery--safe-frame-dimension
+                   400 -10000 10000)))
+  (should-not (glassmacs-recovery--safe-frame-dimension
+               '(eval (delete-directory "/")) -10000 10000))
+  (should-not (glassmacs-recovery--safe-frame-dimension
+               1000000000 -10000 10000)))
+

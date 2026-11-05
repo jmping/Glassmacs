@@ -260,11 +260,15 @@ close; closing one of several console views needs no confirmation."
                  (glassmacs--live-r-console-p buffer)
                  (not (glassmacs--buffer-shown-elsewhere-p buffer windows)))
         (unless (eq
-                 (car (read-multiple-choice
-                       (format "Hide R console %s? The R session keeps running. "
-                               (buffer-name buffer))
-                       '((?h "hide" "Hide this window; keep R running")
-                         (?c "cancel" "Keep this R console window open"))))
+                 (condition-case nil
+                     (car (read-multiple-choice
+                           (format "Hide R console %s? The R session keeps running. "
+                                   (buffer-name buffer))
+                           '((?h "hide" "Hide this window; keep R running")
+                             (?c "cancel" "Keep this R console window open"))))
+                   ;; A dismissed dialog, keyboard quit, or UI error must
+                   ;; never close the only visible view of a live R process.
+                   ((quit error) ?c))
                  ?h)
           (throw 'cancel nil))))))
 
