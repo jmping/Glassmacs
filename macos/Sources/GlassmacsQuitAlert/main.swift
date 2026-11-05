@@ -86,10 +86,29 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
         for view in [message, applyToAll, saveButton, discardButton, cancelButton] {
             view.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(view)
+            view.setAccessibilityElement(true)
+            view.setAccessibilityParent(content)
         }
+        message.setAccessibilityRole(.staticText)
+        message.setAccessibilityLabel("Quit review message")
+        applyToAll.setAccessibilityRole(.checkBox)
+        applyToAll.setAccessibilityLabel(
+            "Apply this choice to all remaining modified documents"
+        )
+        saveButton.setAccessibilityRole(.button)
+        saveButton.setAccessibilityLabel("Save")
+        discardButton.setAccessibilityRole(.button)
+        discardButton.setAccessibilityLabel("Don't Save")
+        cancelButton.setAccessibilityRole(.button)
+        cancelButton.setAccessibilityLabel("Cancel")
         content.setAccessibilityElement(true)
         content.setAccessibilityRole(.group)
-        content.setAccessibilityChildren([message, applyToAll, saveButton, discardButton, cancelButton])
+        content.setAccessibilityLabel("Quit review controls")
+        content.setAccessibilityParent(panel)
+        content.setAccessibilityChildren([
+            message, applyToAll, saveButton, discardButton, cancelButton
+        ])
+        panel.setAccessibilityChildren([content])
         NSLayoutConstraint.activate([
             message.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 22),
             message.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -22),
