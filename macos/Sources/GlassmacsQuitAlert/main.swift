@@ -72,9 +72,18 @@ private final class QuitAlertDelegate: NSObject, NSApplicationDelegate {
         }
 
         DispatchQueue.main.async { [self] in
+            let activationDeadline = Date().addingTimeInterval(2)
+            while !application.isActive && Date() < activationDeadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            }
+            alert.window.makeKeyAndOrderFront(nil)
+            if application.isActive {
+                _ = application.setActivationPolicy(.accessory)
+            }
+
             writeResponse([
                 "phase": "presenting",
-                "activationPolicy": application.activationPolicy() == .regular ? "regular" : "other",
+                "activationPolicy": application.activationPolicy() == .accessory ? "accessory" : "regular",
                 "applicationActive": application.isActive,
                 "processIdentifier": ProcessInfo.processInfo.processIdentifier,
                 "applicationWindowCount": application.windows.count,

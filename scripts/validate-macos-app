@@ -39,7 +39,7 @@ test "$(/usr/bin/env "$plist_buddy" -c 'Print :LSMinimumSystemVersion' "$plist")
 test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundlePackageType' "$quit_alert/Info.plist")" = APPL
 test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundleIdentifier' "$quit_alert/Info.plist")" = org.glassmacs.Glassmacs.QuitAlert
 test "$(/usr/bin/env "$plist_buddy" -c 'Print :CFBundleExecutable' "$quit_alert/Info.plist")" = GlassmacsQuitAlert
-test "$(/usr/bin/env "$plist_buddy" -c 'Print :LSUIElement' "$quit_alert/Info.plist")" = true
+test "$(/usr/bin/env "$plist_buddy" -c 'Print :LSUIElement' "$quit_alert/Info.plist")" = false
 
 
 # Static packaged-app checks (acceptance matrix DIST-001 to DIST-004,
