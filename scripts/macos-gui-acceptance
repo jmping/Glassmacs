@@ -537,7 +537,8 @@ class Harness:
                   f'end tell')
         run(["osascript", "-e", script], timeout=30)
 
-    def native_quit_checkbox(self, pid, action="read", button=None):
+    def native_quit_checkbox(self, pid, action="read", button=None,
+                             exact_process=False):
         """Read or operate the checkbox in Glassmacs' native quit alert.
 
         The native quit panel runs in the dedicated GlassmacsQuitAlert
@@ -550,6 +551,9 @@ class Harness:
             raise ValueError("A native alert button title is required")
         label = "Apply this choice to all remaining modified documents"
         applescript_label = label.replace("\\", "\\\\").replace('"', '\\"')
+        process_match = (f'processId is "{pid}"' if exact_process else
+                         'processName contains "GlassmacsQuitAlert" or '
+                         'processName is "Glassmacs Quit Alert"')
         operation = {
             "read": 'return value of c as text',
             "toggle": 'click c\n                return value of c as text',
@@ -561,8 +565,8 @@ class Harness:
             '  repeat with p in application processes\n'
             '    try\n'
             '      set processName to name of p as text\n'
-            '      if processName contains "GlassmacsQuitAlert" or '
-            'processName is "Glassmacs Quit Alert" then\n'
+            '      set processId to unix id of p as text\n'
+            f'      if {process_match} then\n'
             '        repeat with w in windows of p\n'
             '          try\n'
             '            repeat with c in checkboxes of entire contents of w\n'
@@ -619,8 +623,29 @@ class Harness:
             return None
         return value
 
+    def native_quit_helper_pid(self):
+        """Resolve the separate quit helper PID through System Events."""
+        script = (
+            'tell application "System Events"\n'
+            '  repeat with p in application processes\n'
+            '    try\n'
+            '      set processName to name of p as text\n'
+            '      if processName contains "GlassmacsQuitAlert" or '
+            'processName is "Glassmacs Quit Alert" then\n'
+            '        return unix id of p as text\n'
+            '      end if\n'
+            '    end try\n'
+            '  end repeat\n'
+            '  return "missing"\n'
+            'end tell')
+        result = run(["osascript", "-e", script], timeout=12, check=False)
+        value = result.stdout.strip()
+        if result.returncode or not value.isdigit():
+            return None
+        return int(value)
+
     def native_quit_accessibility_dump(self, pid):
-        """Describe Glassmacs and alert-helper windows after discovery fails."""
+        """Describe one process's windows and controls through System Events."""
         target_pid = str(pid)
         script = (
             'tell application "System Events"\n'
@@ -628,19 +653,13 @@ class Harness:
             '  repeat with p in application processes\n'
             '    set processName to "unknown"\n'
             '    set processId to "unknown"\n'
-            '    set processFrontmost to false\n'
             '    try\n'
             '      set processName to name of p as text\n'
             '    end try\n'
             '    try\n'
             '      set processId to unix id of p as text\n'
             '    end try\n'
-            '    try\n'
-            '      set processFrontmost to frontmost of p\n'
-            '    end try\n'
-            '    if processId is "' + target_pid + '" or '
-            'processName contains "Glassmacs" or processName is "osascript" '
-            'or processFrontmost then\n'
+            '    if processId is "' + target_pid + '" then\n'
             '      try\n'
             '        repeat with w in windows of p\n'
             '          set windowName to ""\n'
@@ -660,6 +679,7 @@ class Harness:
             '            set controlName to ""\n'
             '            set controlTitle to ""\n'
             '            set controlDescription to ""\n'
+            '            set controlValue to ""\n'
             '            try\n'
             '              set controlRole to value of attribute "AXRole" of c as text\n'
             '            end try\n'
@@ -672,11 +692,16 @@ class Harness:
             '            try\n'
             '              set controlDescription to value of attribute "AXDescription" of c as text\n'
             '            end try\n'
+            '            try\n'
+            '              set controlValue to value of attribute "AXValue" of c as text\n'
+            '            end try\n'
             '            if controlRole is not "" or controlName is not "" or '
-            'controlTitle is not "" or controlDescription is not "" then\n'
+            'controlTitle is not "" or controlDescription is not "" or '
+            'controlValue is not "" then\n'
             '              set report to report & "control|" & processName & "|" & '
-            'windowName & "|" & controlRole & "|" & controlName & "|" & '
-            'controlTitle & "|" & controlDescription & linefeed\n'
+            'processId & "|" & windowName & "|" & controlRole & "|" & '
+            'controlName & "|" & controlTitle & "|" & controlDescription & "|" & '
+            'controlValue & linefeed\n'
             '            end if\n'
             '          end repeat\n'
             '          on error messageText\n'
@@ -745,11 +770,23 @@ class Harness:
             if value in {"0", "1"}:
                 return value
             time.sleep(0.25)
-        # Run while the dialog is still open so direct AX and System Events
-        # observe the same helper process and UI state.
-        direct_ax = self.native_quit_direct_ax_probe(pid)
-        details = self.native_quit_accessibility_dump(pid)
-        details = f"{direct_ax}; System Events: {details}"
+        # The dialog belongs to the separate helper process, not Glassmacs.
+        # Resolve its PID through System Events so both probes inspect the
+        # same live process and window.
+        helper_pid = self.native_quit_helper_pid()
+        if helper_pid is None:
+            direct_ax = "Direct AX probe skipped: System Events could not resolve the quit helper PID"
+            system_events = f"Helper PID unavailable (Glassmacs PID {pid})"
+            system_events_checkbox = "not queried"
+        else:
+            direct_ax = self.native_quit_direct_ax_probe(helper_pid)
+            system_events = self.native_quit_accessibility_dump(helper_pid)
+            system_events_checkbox = self.native_quit_checkbox(
+                helper_pid, exact_process=True
+            )
+        details = (f"helper PID={helper_pid}; {direct_ax}; "
+                   f"System Events checkbox={system_events_checkbox!r}; "
+                   f"System Events tree: {system_events}")
         helper_responses = []
         for response_path in sorted(
                 Path(tempfile.gettempdir()).glob("glassmacs-quit-response-*"),
