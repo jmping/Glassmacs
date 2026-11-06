@@ -42,7 +42,7 @@ jobs:
           while IFS= read -r file; do
             [[ -z "$file" ]] && continue
             case "$file" in
-              lisp/*|init.el|tests/*|scripts/test|scripts/acceptance-matrix|scripts/macos-gui-acceptance|docs/acceptance-matrix*|.github/workflows/ci.yml) emacs=true ;;
+              lisp/*|init.el|tests/*|scripts/test|scripts/acceptance-matrix|scripts/check-docs|scripts/macos-gui-acceptance|docs/*|README.md|CONTRIBUTING.md|.github/workflows/ci.yml) emacs=true ;;
             esac
             case "$file" in
               lisp/glassmacs-r*|lisp/glassmacs-sessions.el|lisp/glassmacs-ess*|lisp/glassmacs-packages.el|tests/*ess*|tests/*r-*|tests/r-*|scripts/bundle-ess|.github/workflows/ci.yml) ess=true ;;
@@ -73,6 +73,8 @@ jobs:
         run: ./scripts/test
       - name: Test macOS release scripts with mocked Apple tools
         run: python3 -m unittest discover -s tests -p 'test_macos_release_scripts.py'
+      - name: Check documentation registry and links
+        run: python3 scripts/check-docs
       - name: Check the acceptance matrix
         # Every referenced test, scenario and CI step must exist, and the
         # generated matrix and checklist documents must be current.

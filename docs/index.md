@@ -1,13 +1,5 @@
 # Documentation index and authority register
 
-## Integrated 0.1 development status — 2026-10-27
-
-PRs [#18](https://github.com/jmping/Glassmacs/pull/18), [#19](https://github.com/jmping/Glassmacs/pull/19), [#20](https://github.com/jmping/Glassmacs/pull/20), [#21](https://github.com/jmping/Glassmacs/pull/21), and [#22](https://github.com/jmping/Glassmacs/pull/22) have merged into `main` (most recently #22 at `604e44e`). Their PR CI succeeded (Emacs ERT, ESS/R integration, macOS launcher), **not** interactive Cocoa GUI acceptance.
-
-Implemented: native Cocoa application/menu/window infrastructure; configurable document opening; New Buffer in Mode; ESS-based R menus and contextual toolbar actions; R sessions, explicit targeting, queue/output controls; Save As and modified-document review; keyboard, toolbar and document preferences. R Markdown, Quarto, Sweave, Shiny and remote workflows have partial integrations, not fully verified end-to-end behavior.
-
-Outstanding: real macOS testing for reopening, document safety, keyboard/menu dispatch, R execution/session targets, native Quartz plotting, toolbar image/layout and preference persistence; release candidate signing/notarization, Gatekeeper and licensing/source obligations. **The next separate audit** will compare current menus against Aquamacs historical source, followed by historical issue triage; do not equate design inventory with demonstrated parity.
-
 > **Document ID:** DOC-INDEX  
 > **Status:** Canonical documentation governance  
 > **Owner:** Glassmacs maintainers  
@@ -16,7 +8,7 @@ Outstanding: real macOS testing for reopening, document safety, keyboard/menu di
 > **Coverage:** Documentation authority, status, ownership and navigation  
 > **Supersedes:** None
 
-This is the **canonical index** for maintained project documentation. If a document's authority or scope is unclear, this register governs. Architecture documents describe intended design, **not proof of implementation**; source code and verified tests establish actual behavior.
+This is the **canonical index** for maintained project documentation. The short [navigation page](README.md) is not a second authority register; the [machine-readable registry](registry.toml) is a validated subset of this index. If a document's authority or scope is unclear, this register governs. Architecture documents describe intended design, **not proof of implementation**; source code and verified tests establish actual behavior.
 
 ## Comparative audit (informational)
 
@@ -26,7 +18,7 @@ This is the **canonical index** for maintained project documentation. If a docum
 
 | Document | ID | Authority / status | Canonical coverage | Exclusions |
 | --- | --- | --- | --- | --- |
-| [README](../README.md) | DOC-README | Canonical for project identity | Vision, intended audience, high-level feature promises, getting started | Detailed design, delivery schedule |
+| [Documentation navigation](README.md) | DOC-NAV | Informational | Short navigation into the canonical index and guides | Authority and lifecycle policy |\n| [Contributing](../CONTRIBUTING.md) | DOC-CONTRIB | Canonical for contribution process | Branch, PR, CI and local GUI acceptance workflow | Detailed build commands |\n| [Reference conventions](governance/documentation-standard.md) | DOC-STANDARDS | Canonical supplement | Registry, link and traceability conventions | DOC-GOV lifecycle policy |\n| [README](../README.md) | DOC-README | Canonical for project identity | Vision, intended audience, high-level feature promises, getting started | Detailed design, delivery schedule |
 | [Architecture](architecture.md) | DOC-ARCH | Canonical for target design | Invariants, boundaries, lifecycle/document abstractions, security, execution and integration contracts | Proof features are implemented, milestone status |
 | [Aquamacs compatibility inventory](aquamacs-compatibility.md) | DOC-AQUA-COMPAT | Proposed, target for canonical after review | Source-traced feature matrix, dispositions, implementation status, priorities and acceptance tests | General execution architecture, menu taxonomy, proof of current implementation |
 | [Menu architecture](menu-architecture.md) | DOC-MENU | Proposed, target for canonical after review | Historical menu inventory, proposed taxonomy, Emacs command dispatch, context/state, extensions and menu test strategy | Keyboard binding authority, per-feature parity status |

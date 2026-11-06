@@ -1,4 +1,4 @@
-# Glassmacs Alpha development status
+# Glassmacs Alpha development status\n\n> **Snapshot warning (2026-11-06):** This is a dated integration snapshot, not a live PR queue. PR #91 has since merged into main, and the repository no longer runs hosted macOS GUI acceptance. Check current GitHub PR/CI state and the [acceptance matrix](acceptance-matrix.md) before acting on any status below.\n
 
 Updated: 2026-11-04 19:00 UTC. Source of truth: merged code, open GitHub issues/PRs, CI workflow and run/job records, plus the Glassmacs Aquamacs comparability audit dated 2026-11-04. This map reconciles recommendations with the current stack; refresh states before closing issues or advancing release gates.
 

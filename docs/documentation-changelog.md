@@ -8,6 +8,30 @@
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
 
+## 2026-11-06 — cross-document status audit (PR #95)
+
+- Removed duplicated October 27 integration banners from DOC-ARCH, DOC-DEV, DOC-MAC-LAUNCHER, DOC-R-WORKFLOWS and DOC-KEYS. These repeated old PR states and obscured the canonical document metadata.
+- Removed the outdated integrated-status banner from DOC-ROADMAP and clarified that roadmap milestones are not release certification.
+- Marked `docs/development-status.md` as a dated snapshot, including the subsequent merge of PR #91 and the removal of hosted GUI acceptance.
+- Corrected the obsolete packaged-GUI-CI gate in `docs/alpha-copilot-build-handoff.md`; local GUI acceptance remains required.
+- These changes do not claim that all underlying implementation descriptions have been reverified against the latest local Mac build.
+
+---
+
+## 2026-11-06 — documentation navigation and contribution governance (PR #95)
+
+- **DOC-README:** replaced dated development checkpoints with current project overview and explicit local GUI acceptance limits.
+- **DOC-INDEX:** retained as the sole canonical authority register; removed its obsolete October integration banner and registered DOC-NAV, DOC-CONTRIB and DOC-STANDARDS.
+- **DOC-NAV:** new navigation page at `docs/README.md`, informational and subordinate to DOC-INDEX.
+- **DOC-CONTRIB:** new contributor workflow and PR/CI/local GUI testing guidance.
+- **DOC-STANDARDS:** new reference and machine-validation conventions, supplemental to DOC-GOV.
+- **DOC-GOV:** remains the canonical lifecycle and metadata policy; no replacement or change of authority.
+- **DOC-CHANGELOG:** remains the historical change register.
+- Added `docs/registry.toml` as a machine-readable subset of DOC-INDEX and `scripts/check-docs` for registered identity and link checks.
+- Existing documents remain at their established paths until an audited migration can preserve links and generated-document tooling.
+
+---
+
 ## 2026-10-29 — acceptance gates (issue #34)
 
 - **New DOC-ACCEPT** (`docs/acceptance-matrix.md`) and **DOC-MAC-CHECKLIST** (`docs/macos-acceptance-checklist.md`), both generated from `acceptance/matrix.toml` by `scripts/acceptance-matrix`; registered in the index. The matrix is the authority for acceptance status; other documents link to it rather than restate results.

@@ -1,0 +1,49 @@
+# Machine-readable subset of DOC-INDEX (docs/index.md).
+# The existing authority register remains canonical.
+[[document]]
+id = "DOC-README"
+path = "README.md"
+category = "project"
+status = "canonical"
+
+[[document]]
+id = "DOC-INDEX"
+path = "docs/index.md"
+category = "governance"
+status = "canonical"
+
+[[document]]
+id = "DOC-NAV"
+path = "docs/README.md"
+category = "navigation"
+status = "informational"
+
+[[document]]
+id = "DOC-GOV"
+path = "docs/documentation-governance.md"
+category = "governance"
+status = "canonical"
+
+[[document]]
+id = "DOC-CHANGELOG"
+path = "docs/documentation-changelog.md"
+category = "governance"
+status = "canonical"
+
+[[document]]
+id = "DOC-CONTRIB"
+path = "CONTRIBUTING.md"
+category = "development"
+status = "canonical"
+
+[[document]]
+id = "DOC-STANDARDS"
+path = "docs/governance/documentation-standard.md"
+category = "governance"
+status = "canonical"
+
+[[document]]
+id = "DOC-ACCEPT"
+path = "docs/acceptance-matrix.md"
+category = "development"
+status = "canonical"
