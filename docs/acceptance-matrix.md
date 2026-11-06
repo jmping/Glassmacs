@@ -11,11 +11,11 @@
 <!-- Generated from acceptance/matrix.toml by scripts/acceptance-matrix render; edit the matrix, not this file. -->
 
 
-Statuses are kept apart on purpose. **Implemented** means the behavior exists; **automated** means tests check it; **packaged app** says whether those checks run against the built Glassmacs.app in CI (`ci`) or not at all (`NOT RUN`); **clean machine** records a dated manual run on a fresh Mac, and is `NOT RUN` until someone records one. A green batch run is never GUI acceptance.
+Statuses are kept apart on purpose. **Implemented** means the behavior exists; **automated** means tests check it; **packaged app** says whether automated checks run against the built Glassmacs.app in CI (`ci`) or not at all (`NOT RUN`); **clean machine** records a dated manual run on a fresh Mac, and is `NOT RUN` until someone records one. A green batch run is never GUI acceptance.
 
-Layers: **A** batch tests (`./scripts/test`), **B** static checks of the packaged app (`scripts/validate-macos-app`), **C** GUI scenarios on the packaged app in CI (`scripts/macos-gui-acceptance`), **D** manual ([checklist](macos-acceptance-checklist.md)). In a running Glassmacs, `M-x glassmacs-self-check` runs the in-app subset.
+Layers: **A** batch tests (`./scripts/test`), **B** static checks of the packaged app (`scripts/validate-macos-app`), **C** GUI scenarios on a local Mac (`scripts/macos-gui-acceptance`), **D** manual ([checklist](macos-acceptance-checklist.md)). In a running Glassmacs, `M-x glassmacs-self-check` runs the in-app subset.
 
-The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `Glassmacs-GUI-acceptance` artifact; `scripts/acceptance-matrix outcomes results.json` maps them onto these IDs.
+Local GUI outcomes are recorded by `scripts/macos-gui-acceptance`; `scripts/acceptance-matrix outcomes results.json` maps them onto these IDs. GitHub CI does not run GUI acceptance.
 
 | ID | Check | Sev. | Evidence | Layers | Implemented | Automated | Packaged app | Clean machine |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -122,7 +122,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Packaged app launches from LaunchServices in a clean home** (P0). Launch via Finder/Dock uses launchd's environment, not a developer shell.
 
 - Evidence: [Aquamacs #264](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/264), [Aquamacs #268](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/268)
-- Layers: C (GUI in CI), D (manual)
+- Layers: C (GUI on local Mac), D (manual)
 - Tests: `gui:launch-clean-home`, `ci:Verify bootstrap with bundled configuration`, `swift:testBundlePathsAndArgumentsUseTheBundledEmacsAndConfiguration`
 - Manual: see [checklist](macos-acceptance-checklist.md#launch-001)
 
@@ -131,7 +131,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **The app ignores the user's own Emacs init files** (P0). Found by this audit: the launcher passed -Q as argv[0], so Emacs ignored it and loaded ~/.emacs.d init files and packages.
 
 - Evidence: `glassmacs:launcher-argv0`, [Aquamacs #251](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/251)
-- Layers: A (batch), B (packaged app, static), C (GUI in CI)
+- Layers: A (batch), B (packaged app, static), C (GUI on local Mac)
 - Tests: `swift:testProcessArgumentsStartWithTheProgramSoQuickStartIsAnOption`, `ci:Verify the app does not load the user's Emacs init files`, `gui:user-emacs-init-is-not-loaded`, `ert:glassmacs-startup-does-not-touch-ordinary-emacs-home`
 
 ## LIFE-001
@@ -139,7 +139,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Closing the last window keeps the app running; the Dock reopens it** (P0). Cocoa sends handle-delete-frame for the close button; Glassmacs hides the final frame and its lifecycle module answers reopen.
 
 - Evidence: [Aquamacs #270](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/270)
-- Layers: A (batch), C (GUI in CI), D (manual)
+- Layers: A (batch), C (GUI on local Mac), D (manual)
 - Tests: `ert:glassmacs-macos-cocoa-close-of-final-frame-does-not-quit`, `ert:glassmacs-macos-reopen-after-cocoa-close-shows-hidden-frame`, `ert:glassmacs-windowless-dock-reopen-creates-no-buffers`, `gui:last-window-close-and-dock-reopen`
 - Not fully automated because: CI delivers the close as Cocoa's delete-frame event and reopens by clicking the Dock icon through System Events; a person still has to click the close button on a clean machine.
 - Manual: see [checklist](macos-acceptance-checklist.md#life-001)
@@ -149,7 +149,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Menus and shortcuts work with no window open** (P0). Cocoa routes menu actions and key equivalents through the key window, which does not exist; the lifecycle module forwards them.
 
 - Evidence: [Aquamacs #270](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/270)
-- Layers: A (batch), C (GUI in CI), D (manual)
+- Layers: A (batch), C (GUI on local Mac), D (manual)
 - Tests: `ert:glassmacs-windowless-command-n-follows-keyboard-profile`, `ert:glassmacs-windowless-buffer-command-reveals-frame`, `py:test_lifecycle_bridge_routes_windowless_menu_and_key_events`, `gui:windowless-menu-and-shortcuts`
 - Not fully automated because: The GUI scenario needs Accessibility for System Events; without it the scenario is NOT RUN.
 - Manual: see [checklist](macos-acceptance-checklist.md#life-002)
@@ -159,7 +159,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Opening a file from Finder with no window shows it** (P0). A Finder open arrives as an Apple Event while the only frame is hidden.
 
 - Evidence: [Aquamacs #270](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/270)
-- Layers: A (batch), C (GUI in CI), D (manual)
+- Layers: A (batch), C (GUI on local Mac), D (manual)
 - Tests: `ert:glassmacs-windowless-open-file-shows-in-hidden-frame`, `ert:glassmacs-cocoa-file-open-event-uses-document-policy`, `gui:finder-open-while-windowless`
 - Manual: see [checklist](macos-acceptance-checklist.md#finder-001)
 
@@ -168,7 +168,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Repeated and duplicate opens do not duplicate buffers or windows** (P1). LaunchServices may deliver the same document again; paths can contain spaces and non-ASCII characters.
 
 - Evidence: [Aquamacs #247](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/247), [Aquamacs #249](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/249), [Aquamacs #270](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/270)
-- Layers: A (batch), C (GUI in CI)
+- Layers: A (batch), C (GUI on local Mac)
 - Tests: `ert:glassmacs-visible-document-is-not-opened-in-an-extra-frame`, `gui:finder-repeat-and-mixed-documents`, `gui:finder-open-while-windowless`
 
 ## FINDER-003
@@ -176,7 +176,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **A Finder open during startup restore is shown in front** (P0). Workspace restore reuses the startup frame while LaunchServices delivers the document.
 
 - Evidence: [Aquamacs #270](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/270), `glassmacs:issue-34-scenario-1`
-- Layers: A (batch), C (GUI in CI)
+- Layers: A (batch), C (GUI on local Mac)
 - Tests: `ert:glassmacs-workspace-restores-before-recovery-is-offered`, `gui:crash-restore-recovery-and-finder-open`
 
 ## CLIENT-001
@@ -193,7 +193,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Menu items evaluate without errors in key modes** (P1). Emacs evaluates every item's :enable/:visible/:button/:filter when it updates the Cocoa menu.
 
 - Evidence: [Aquamacs #256](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/256), [Aquamacs #180](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/180)
-- Layers: A (batch), C (GUI in CI)
+- Layers: A (batch), C (GUI on local Mac)
 - Tests: `ert:glassmacs-menu-check-reports-broken-items`, `ert:glassmacs-menus-evaluate-cleanly-in-key-modes`, `gui:menus-in-key-modes`
 
 ## MENU-002
@@ -211,7 +211,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Mode menus with ESS, polymode and TRAMP do not break** (P2). Third-party mode menus are evaluated in Glassmacs's menu bar.
 
 - Evidence: [Aquamacs #180](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/180)
-- Layers: A (batch), C (GUI in CI)
+- Layers: A (batch), C (GUI on local Mac)
 - Tests: `ert:glassmacs-polymode-menus-evaluate-in-prose-and-chunks`, `ert:glassmacs-menus-evaluate-cleanly-in-key-modes`, `ert:glassmacs-r-source-and-console-menus-have-distinct-actions`, `gui:menus-in-key-modes`
 - Not fully automated because: ESS and polymode menus run in the integration CI job; TRAMP buffers need a host.
 - Manual: see [checklist](macos-acceptance-checklist.md#mode-001)
@@ -221,7 +221,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Preferences persist across relaunch** (P1). Found by this audit: under -Q Emacs refused to save customizations, so several preference toggles changed the session only.
 
 - Evidence: [Aquamacs #246](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/246), `glassmacs:customize-under-q`
-- Layers: A (batch), C (GUI in CI)
+- Layers: A (batch), C (GUI on local Mac)
 - Tests: `ert:glassmacs-preference-toggles-are-saved-in-glassmacs-home`, `ert:glassmacs-document-opening-policy-is-persisted`, `ert:glassmacs-keyboard-profile-is-persisted`, `gui:preferences-persist-across-relaunch`
 
 ## PREF-002
@@ -229,7 +229,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **State stays in the Glassmacs home** (P1). Glassmacs must not read or write ~/.emacs.d or its eln-cache, or the directory it started in. Found by the GUI clean-home scenario: Emacs's own interactive startup created an empty ~/.emacs.d (locate-user-emacs-file) before Glassmacs's configuration ran; the launchers now pass --init-directory with the Glassmacs home.
 
 - Evidence: [Aquamacs #251](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/251)
-- Layers: A (batch), C (GUI in CI)
+- Layers: A (batch), C (GUI on local Mac)
 - Tests: `ert:glassmacs-startup-does-not-touch-ordinary-emacs-home`, `ert:glassmacs-package-state-is-isolated`, `ert:glassmacs-empty-home-variable-means-the-default-home`, `ert:glassmacs-native-compilation-does-not-use-user-cache`, `ert:glassmacs-launcher-forwards-emacs-arguments`, `swift:testInitDirectoryIsTheGlassmacsHomeSoEmacsCreatesNoDotEmacsD`, `gui:launch-clean-home`
 
 ## PREF-003
@@ -237,7 +237,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Safe local variables and upgrades keep the user's choices** (P1). Answers to file-local variable questions are customizations; an upgraded app must read the existing home.
 
 - Evidence: [Aquamacs #251](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/251)
-- Layers: A (batch), C (GUI in CI), D (manual)
+- Layers: A (batch), C (GUI on local Mac), D (manual)
 - Tests: `ert:glassmacs-safe-local-variables-are-saved-in-glassmacs-home`, `gui:user-emacs-init-is-not-loaded`, `gui:preferences-persist-across-relaunch`
 - Manual: see [checklist](macos-acceptance-checklist.md#pref-003)
 
@@ -246,7 +246,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Spell checker discovery and absence** (P1). Glassmacs uses enchant-2, hunspell or aspell when present and must keep editing working without any.
 
 - Evidence: [Aquamacs #265](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/265)
-- Layers: A (batch), C (GUI in CI)
+- Layers: A (batch), C (GUI on local Mac)
 - Tests: `ert:glassmacs-spelling-prefers-enchant-then-hunspell-then-aspell`, `ert:glassmacs-spelling-missing-checker-explains-installation`, `ert:glassmacs-spelling-real-checker-flags-only-prose-misspellings`, `gui:launch-clean-home`
 
 ## SPELL-002
@@ -272,7 +272,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Files changed by other programs update; unsaved edits are kept** (P1). Found by this audit: Glassmacs had no auto-revert; added (glassmacs-follow-file-changes). On macOS it polls, as Aquamacs 4 settled on: kqueue notifications need a descriptor per file and miss files replaced by rename.
 
 - Evidence: [Aquamacs #245](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/245)
-- Layers: A (batch), C (GUI in CI)
+- Layers: A (batch), C (GUI on local Mac)
 - Tests: `ert:glassmacs-editing-follows-external-file-changes`, `ert:glassmacs-editing-external-change-never-discards-unsaved-edits`, `ert:glassmacs-editing-file-following-is-interactive-and-optional`, `ert:glassmacs-editing-file-following-polls-on-macos`, `gui:external-file-changes`
 
 ## NATIVE-001
@@ -280,7 +280,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Bundled native code loads without a compiler; no user cache** (P1). Only the bundle's signed .eln files are loaded; JIT compilation and trampolines are off.
 
 - Evidence: [Aquamacs #253](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/253)
-- Layers: A (batch), B (packaged app, static), C (GUI in CI), D (manual)
+- Layers: A (batch), B (packaged app, static), C (GUI on local Mac), D (manual)
 - Tests: `ert:glassmacs-native-jit-is-disabled-by-default-before-packages`, `ert:glassmacs-native-compilation-does-not-use-user-cache`, `py:test_native_compilation_is_configured_before_package_loading`, `gui:launch-clean-home`
 - Manual: see [checklist](macos-acceptance-checklist.md#native-001)
 
@@ -307,7 +307,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Closing full-screen windows** (P1). Full-screen windows live in their own Space; closing the last one must hide it, not quit.
 
 - Evidence: [Aquamacs #218](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/218), [Aquamacs #160](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/160)
-- Layers: C (GUI in CI), D (manual)
+- Layers: C (GUI on local Mac), D (manual)
 - Tests: `gui:fullscreen-close-and-reopen`
 - Not fully automated because: CI uses toggle-frame-fullscreen; the green button and Spaces animation need a person.
 - Manual: see [checklist](macos-acceptance-checklist.md#full-001)
@@ -317,7 +317,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Command-W never loses unsaved changes** (P0). Command-W closes the document and window; Save / Don't Save / Cancel must protect edits.
 
 - Evidence: [Aquamacs #218](https://github.com/aquamacs-emacs/aquamacs-emacs/issues/218), `glassmacs:issue-34-scenario-6`
-- Layers: A (batch), C (GUI in CI)
+- Layers: A (batch), C (GUI on local Mac)
 - Tests: `ert:glassmacs-close-cancel-keeps-modified-document-open`, `ert:glassmacs-close-dont-save-discards-without-writing`, `ert:glassmacs-close-save-writes-then-closes`, `ert:glassmacs-close-button-cancel-keeps-frame-open`, `gui:command-w-never-loses-changes`
 
 ## CLOSE-002
@@ -325,7 +325,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Quitting with unsaved documents asks first** (P0). Each modified document gets Save / Don't Save / Cancel and a freshly unchecked native Apply-to-all checkbox; quit paths must not discard edits silently.
 
 - Evidence: `glassmacs:issue-34-scenario-6`
-- Layers: A (batch), C (GUI in CI), D (manual)
+- Layers: A (batch), C (GUI on local Mac), D (manual)
 - Tests: `ert:glassmacs-recovery-direct-kill-guard-blocks-unsaved-documents`, `ert:glassmacs-macos-explicit-quit-is-not-intercepted`, `gui:quit-with-unsaved-document-asks`
 - Manual: see [checklist](macos-acceptance-checklist.md#close-002)
 
@@ -334,7 +334,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Workspace restore reopens files once and starts no processes** (P1). Opt-in desktop.el restore after normal quit or crash.
 
 - Evidence: `glassmacs:issue-34-scenario-2`
-- Layers: A (batch), C (GUI in CI), D (manual)
+- Layers: A (batch), C (GUI on local Mac), D (manual)
 - Tests: `ert:glassmacs-workspace-round-trip-reopens-local-files-only`, `ert:glassmacs-workspace-restores-once-from-glassmacs-home`, `ert:glassmacs-workspace-and-recovery-after-abnormal-shutdown`, `gui:crash-restore-recovery-and-finder-open`
 - Manual: see [checklist](macos-acceptance-checklist.md#restore-001)
 
@@ -343,7 +343,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Crash recovery is offered and never overwrites data** (P0). Snapshots of unsaved edits must survive a crash and the next startup.
 
 - Evidence: `glassmacs:issue-34-scenario-2`
-- Layers: A (batch), C (GUI in CI)
+- Layers: A (batch), C (GUI on local Mac)
 - Tests: `ert:glassmacs-recovery-crash-restore-does-not-replace-quit-index`, `ert:glassmacs-workspace-and-recovery-share-a-clean-file-buffer`, `gui:crash-restore-recovery-and-finder-open`
 
 ## TEXT-001
@@ -351,7 +351,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Typed text stays literal in code, consoles and mixed documents** (P0). No autocorrect, smart quotes, dashes or substitutions unless explicitly enabled, and never in source code.
 
 - Evidence: `policy:literal-text-entry`
-- Layers: A (batch), C (GUI in CI), D (manual)
+- Layers: A (batch), C (GUI on local Mac), D (manual)
 - Tests: `ert:glassmacs-editing-literal-text-entry`, `ert:glassmacs-latex-typing-is-literal`, `ert:glassmacs-editing-markdown-typing-is-literal`, `ert:glassmacs-polymode-typing-is-literal-in-prose-and-chunks`, `gui:command-w-never-loses-changes`
 - Not fully automated because: CI types through System Events only when Accessibility is granted; otherwise keys are Emacs events.
 - Manual: see [checklist](macos-acceptance-checklist.md#text-001)
@@ -370,7 +370,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Glassmacs menu shortcuts follow active keymaps** (P2). A static accelerator can mislead users after a keyboard-profile, mode-map or user-override change.
 
 - Evidence: `glassmacs:issue-90-key-003`
-- Layers: A (batch), C (GUI in CI), D (manual)
+- Layers: A (batch), C (GUI on local Mac), D (manual)
 - Tests: `ert:glassmacs-menu-keys-follow-active-profile-and-mode-map`, `ert:glassmacs-menu-keys-respect-user-override-and-unbound-state`, `ert:glassmacs-menu-keys-refresh-without-touching-upstream-menus`, `ert:glassmacs-menu-command-field-unwraps-emacs-command-form`, `ert:glassmacs-menu-keeps-ess-mode-bindings-authoritative`, `gui:dynamic-menu-shortcut-labels`
 - Manual: see [checklist](macos-acceptance-checklist.md#key-003)
 
@@ -379,7 +379,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Clipboard round trip with other apps** (P1). Copy and paste must keep quotes, dashes and non-ASCII text unchanged.
 
 - Evidence: `policy:literal-text-entry`
-- Layers: C (GUI in CI)
+- Layers: C (GUI on local Mac)
 - Tests: `gui:clipboard-round-trip`
 
 ## ENC-001
@@ -395,7 +395,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Finder launches find tools on the login-shell PATH** (P1). launchd gives apps a minimal PATH; Glassmacs imports the login shell's.
 
 - Evidence: `glassmacs:issue-34-other-risks`
-- Layers: A (batch), C (GUI in CI)
+- Layers: A (batch), C (GUI on local Mac)
 - Tests: `ert:glassmacs-environment-imports-variables-from-login-shell`, `ert:glassmacs-environment-times-out-without-blocking-startup`, `gui:launch-clean-home`
 
 ## ASSOC-001
@@ -411,7 +411,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Documents open by type through LaunchServices** (P1). open -a delivers R, R Markdown, Quarto and Sweave documents; Finder's default app is the user's choice.
 
 - Evidence: `glassmacs:issue-34-other-risks`
-- Layers: C (GUI in CI), D (manual)
+- Layers: C (GUI on local Mac), D (manual)
 - Tests: `gui:finder-open-while-windowless`, `gui:finder-repeat-and-mixed-documents`
 - Manual: see [checklist](macos-acceptance-checklist.md#assoc-002)
 
@@ -420,7 +420,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Optional packages are offered once; declining installs nothing** (P1). Startup must not reach the network; the offer comes after the document is visible. Found by the GUI crash scenario: a file reopened by workspace restore asked during startup, holding up the Finder document and the recovery offer; it now waits until startup is over and no other question is open.
 
 - Evidence: `glassmacs:issue-34-other-risks`
-- Layers: A (batch), C (GUI in CI)
+- Layers: A (batch), C (GUI on local Mac)
 - Tests: `ert:glassmacs-packages-decline-installs-nothing`, `ert:glassmacs-packages-offer-is-asked-once-per-session`, `ert:glassmacs-packages-offer-waits-for-startup-and-other-questions`, `gui:package-offer-declined-installs-nothing`
 
 ## MIX-001
@@ -436,7 +436,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **Mixed documents in the app: document menu and Command shortcuts** (P1). Command chords arrive from Cocoa as integer and symbol events that the document keymap must match.
 
 - Evidence: `glassmacs:mixed-documents`
-- Layers: C (GUI in CI), D (manual)
+- Layers: C (GUI on local Mac), D (manual)
 - Tests: `gui:finder-repeat-and-mixed-documents`, `ert:glassmacs-chunks-shortcuts-and-menu`
 - Manual: see [checklist](macos-acceptance-checklist.md#mix-gui-001)
 
@@ -516,7 +516,7 @@ The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its `G
 **NS freeze from events sent to a closed window, fixed after Emacs 31.1 (bug#72496)** (P1). Upstream ef448d2ca (master only) addresses app-defined events to a window that exists; Glassmacs hides and restores frames, the path this concerns.
 
 - Evidence: `glassmacs:emacs-31-1-missing-ns-fixes`
-- Layers: C (GUI in CI), D (manual)
+- Layers: C (GUI on local Mac), D (manual)
 - Tests: `gui:last-window-close-and-dock-reopen`, `gui:fullscreen-close-and-reopen`
 - Not fully automated because: The GUI scenarios close and reopen windows under deadlines, so a freeze fails them, but the race is not reliably reproducible.
 - Manual: see [checklist](macos-acceptance-checklist.md#upstream-002)
