@@ -1,0 +1,30 @@
+# Stable document identifiers. Paths are relative to the repository root.
+[[document]]
+id = "DOC-README"
+path = "README.md"
+category = "project"
+status = "canonical"
+
+[[document]]
+id = "DOC-INDEX"
+path = "docs/README.md"
+category = "governance"
+status = "canonical"
+
+[[document]]
+id = "DOC-CONTRIB"
+path = "CONTRIBUTING.md"
+category = "governance"
+status = "canonical"
+
+[[document]]
+id = "DOC-STANDARDS"
+path = "docs/governance/documentation-standard.md"
+category = "governance"
+status = "canonical"
+
+[[document]]
+id = "DOC-ACCEPT"
+path = "docs/acceptance-matrix.md"
+category = "development"
+status = "canonical"
