@@ -177,3 +177,7 @@ Future entries should state date, affected document IDs, old/new coverage or aut
 - **Expanded DOC-ROADMAP:** added staged per-buffer session selection, context menus, session-scoped object explorer, explicit local-test/remote-deploy provenance and a longer-term graphical SSH file transfer/permission-management track.
 - **Clarified safety:** no implicit cross-host path equivalence, execution retargeting, working-directory synchronization, queued-command migration, remote upload execution or destructive remote file/permission operations without appropriate explicit user actions and confirmation.
 - These are architectural targets and planned delivery milestones, **not implemented functionality**. No document authority, status, ownership or supersession changed.
+
+## 2026-11-06 — Integrated window presentation program
+
+The integration branch incorporates the unmerged ESS console placement patch from PR #96 and the linked-presentation architecture, Phase 0 baseline, and Phase 1 source audit from PR #97. The latter three are informational design/audit documents registered in DOC-INDEX and docs/registry.toml. This integration is not a native GUI acceptance claim. The approved R console interaction contract requires New Console to always create an independent session, a separate Link Console action, and explicit link selection before source execution; implementation and tests are pending.
