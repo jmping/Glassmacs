@@ -857,7 +857,26 @@ class Harness:
         probe = os.environ.get("GLASSMACS_AX_PROBE")
         if not probe:
             raise Failure("Direct Accessibility probe is required for menu acceptance")
-        result = run([probe, str(pid), "menu"], timeout=20, check=False)
+        process_name = self.system_events_process_name(pid)
+        if not process_name:
+            raise Failure(f"Could not resolve application process name for PID {pid}")
+        # AppleScript string literals: escape backslashes and double quotes.
+        def apple_quote(value):
+            return value.replace(chr(92), chr(92) * 2).replace('"', chr(92) + '"')
+        click_script = (
+            'tell application "System Events" to tell first process whose '
+            f'name is "{apple_quote(process_name)}" to click menu bar item '
+            f'"{apple_quote(menu_title)}" of menu bar 1')
+        opened = run(["osascript", "-e", click_script], timeout=15, check=False)
+        if opened.returncode:
+            raise Failure("Could not open native menu for AX inspection: "
+                          f"{(opened.stdout + opened.stderr).strip()}")
+        try:
+            time.sleep(0.25)
+            result = run([probe, str(pid), "menu"], timeout=20, check=False)
+        finally:
+            # Direct AX populates the menu children only while File is open.
+            run(["osascript", "-e", click_script], timeout=15, check=False)
         if result.returncode:
             raise Failure("Could not inspect direct AX menu hierarchy: "
                           f"{(result.stdout + result.stderr).strip()}")
