@@ -847,65 +847,38 @@ class Harness:
         self.native_quit_ax_action(helper_pid, "close")
 
     def menu_item_shortcut(self, pid, menu_title, item_title):
-        """Read the visible shortcut suffix from the direct AX menu tree.
-
-        Cocoa Emacs renders shortcuts in AXTitle after a tab (e.g.
-        'New Document\\ts-n'), rather than exposing AXMenuItemCmdChar.
-        Check the actual accessibility title instead of querying unsupported
-        System Events attributes or expecting an exact bare item name.
-        """
-        probe = os.environ.get("GLASSMACS_AX_PROBE")
-        if not probe:
-            raise Failure("Direct Accessibility probe is required for menu acceptance")
+        """Read Cocoa Emacs's tab-separated shortcut from System Events names."""
         process_name = self.system_events_process_name(pid)
         if not process_name:
-            raise Failure(f"Could not resolve application process name for PID {pid}")
-        # AppleScript string literals: escape backslashes and double quotes.
-        def apple_quote(value):
+            raise Failure(f"Could not resolve process name for PID {pid}")
+        def quote(value):
             return value.replace(chr(92), chr(92) * 2).replace('"', chr(92) + '"')
-        click_script = (
-            'tell application "System Events" to tell first process whose '
-            f'name is "{apple_quote(process_name)}" to click menu bar item '
-            f'"{apple_quote(menu_title)}" of menu bar 1')
-        opened = run(["osascript", "-e", click_script], timeout=15, check=False)
-        if opened.returncode:
-            raise Failure("Could not open native menu for AX inspection: "
-                          f"{(opened.stdout + opened.stderr).strip()}")
-        try:
-            time.sleep(0.25)
-            result = run([probe, str(pid), "menu"], timeout=20, check=False)
-        finally:
-            # Direct AX populates the menu children only while File is open.
-            run(["osascript", "-e", click_script], timeout=15, check=False)
+        script = (
+            'tell application "System Events"\n'
+            f'  tell first process whose name is "{quote(process_name)}"\n'
+            '    set frontmost to true\n'
+            f'    set targetMenu to menu bar item "{quote(menu_title)}" of menu bar 1\n'
+            '    set itemNames to {}\n'
+            '    repeat with itemRef in menu items of menu 1 of targetMenu\n'
+            '      try\n'
+            '        set end of itemNames to (name of itemRef as text)\n'
+            '      end try\n'
+            '    end repeat\n'
+            '    set AppleScript\\'s text item delimiters to linefeed\n'
+            '    return itemNames as text\n'
+            '  end tell\n'
+            'end tell')
+        result = run(["osascript", "-e", script], timeout=20, check=False)
         if result.returncode:
-            raise Failure("Could not inspect direct AX menu hierarchy: "
+            raise Failure("Could not enumerate native menu items: "
                           f"{(result.stdout + result.stderr).strip()}")
-        try:
-            report = json.loads(result.stdout)
-        except json.JSONDecodeError as error:
-            raise Failure(f"Invalid direct AX menu report: {error}") from error
-        if not report.get("trusted") or report.get("menuBarStatus") != "success":
-            raise Failure(f"Direct AX menu inspection unavailable: "
-                          f"{report.get('menuBarStatus')!r}")
-        menu = report.get("fileMenu") if menu_title == "File" else report.get("menuBar")
-        if not menu:
-            raise Failure(f"Native menu {menu_title!r} not found in AX hierarchy")
-
-        def titles(node):
-            if isinstance(node, dict):
-                title = node.get("title")
-                if isinstance(title, str):
-                    yield title
-                for child in node.get("children", []):
-                    yield from titles(child)
-
-        matching = [title for title in titles(menu)
-                    if title.split("\\t", 1)[0] == item_title]
+        names = result.stdout.splitlines()
+        matching = [name for name in names
+                    if name.split("\\t", 1)[0] == item_title]
         if len(matching) != 1:
-            raise Failure(f"Expected one AX menu item {item_title!r} in "
-                          f"{menu_title!r}, found {matching!r}")
-        title = matching[0]
-        return title.partition("\\t")[2].strip()
+            raise Failure(f"Expected one native menu item {item_title!r} in "
+                          f"{menu_title!r}, found {matching!r}; inventory: {names!r}")
+        return matching[0].partition("\\t")[2].strip()
 
     def capture_menu_accessibility_diagnostics(self, pid):
         """Record direct AX and System Events menu views without asserting."""
@@ -1554,7 +1527,7 @@ def dynamic_menu_shortcut_labels(ctx):
     actual = harness.menu_item_shortcut(instance.pid, "File", "New Document")
     ctx.expect(actual == "",
                f"Unbound New Document retained a visible shortcut: {actual!r}")
-    ctx.method("Direct Accessibility: visible Cocoa Emacs menu shortcut labels")
+    ctx.method("System Events: visible Cocoa Emacs menu shortcut labels")
     instance.kill_quietly()
 
 
