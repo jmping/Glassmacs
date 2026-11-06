@@ -864,7 +864,7 @@ class Harness:
             '        set end of itemNames to (name of itemRef as text)\n'
             '      end try\n'
             '    end repeat\n'
-            '    set AppleScript\\'s text item delimiters to linefeed\n'
+            '    set AppleScript\'s text item delimiters to linefeed\n'
             '    return itemNames as text\n'
             '  end tell\n'
             'end tell')
@@ -874,11 +874,11 @@ class Harness:
                           f"{(result.stdout + result.stderr).strip()}")
         names = result.stdout.splitlines()
         matching = [name for name in names
-                    if name.split("\\t", 1)[0] == item_title]
+                    if name.split("\t", 1)[0] == item_title]
         if len(matching) != 1:
             raise Failure(f"Expected one native menu item {item_title!r} in "
                           f"{menu_title!r}, found {matching!r}; inventory: {names!r}")
-        return matching[0].partition("\\t")[2].strip()
+        return matching[0].partition("\t")[2].strip()
 
     def capture_menu_accessibility_diagnostics(self, pid):
         """Record direct AX and System Events menu views without asserting."""
