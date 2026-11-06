@@ -65,3 +65,45 @@ Read the current `main`-derived `docs/linked-presentations-phase0` branch at the
 7. Recovery and native close only after dedicated GUI safety gates.
 
 **No source behavior changes are made by this audit.**
+
+## Phase 1 continuation: native lifecycle and test coverage
+
+### Native close/reopen call graph (confirmed from source)
+
+- Hybrid Command-W: `lisp/glassmacs-keys.el` maps `s-w` to `glassmacs-close-document`. This asks about hiding a last visible live R console, then saves/discards/cancels exclusive ordinary documents, then `glassmacs--close-view` deletes a split, tab, or frame.
+- Cocoa red close button: `handle-delete-frame` has **targeted** around-advice `glassmacs--handle-delete-frame-preserving-app` installed in `glassmacs-macos.el`. It calls `glassmacs-close-frame-documents`; cancel prevents close. The last visible top-level graphical frame is hidden instead of quitting.
+- Programmatic `delete-frame`: targeted around-advice `glassmacs--delete-frame-preserving-app` hides the sole remaining graphical frame. **Important nuance:** this wrapper does not itself run the document close confirmation sequence; do not assume every programmatic deletion is equivalent to Cmd-W.
+- Dock reopen / new window: `glassmacs--show-hidden-final-frame`, `glassmacs-reopen`, and `glassmacs-new-window` reuse a retained hidden frame where possible. A post-command hook reveals it after commands that require a visible window.
+- Explicit Quit: the native Cocoa close interception deliberately does not replace `save-buffers-kill-emacs`. Recovery has separate quit-review entry points and hooks; test the two paths independently.
+- Recovery: `glassmacs-recovery--restore-window-layout` intentionally uses `make-frame`, `set-window-buffer`, splits and a fallback `display-buffer`; restoring layout is not ordinary opening. A second graphical restore path calls the central presenter.
+
+### Existing ERT coverage mapped to behavior (test names inspected; tests not run)
+
+| Area | Existing tests / evidence | Remaining coverage or GUI gate |
+| --- | --- | --- |
+| Cmd-W, save/discard/cancel, shared document view | `tests/test-glassmacs-close.el`: `glassmacs-close-cancel-keeps-modified-document-open`, `glassmacs-close-dont-save-discards-without-writing`, `glassmacs-close-save-writes-then-closes`, `glassmacs-close-keeps-document-shown-in-another-window` | Native sheet focus, tab interaction, multiple modified documents and real mouse click |
+| Live console close confirmation | `glassmacs-console-close-dismissed-dialog-preserves-live-session`; `glassmacs-close-never-kills-console-or-special-buffers` | Real process survives last-view close, multiple console views, Cancel under Cocoa |
+| Cocoa close and final frame | `tests/test-glassmacs.el`: `glassmacs-macos-cocoa-close-of-final-frame-does-not-quit`, `glassmacs-macos-closing-nonfinal-frame-deletes-only-that-frame`, `glassmacs-macos-reopen-restores-hidden-frame-without-duplicating-it`; `tests/test-glassmacs-close.el`: `glassmacs-close-button-cancel-keeps-frame-open` | Native event delivery and hidden/visible frame focus, programmatic deletion semantics |
+| Quit routing | `glassmacs-native-and-emacs-quit-entry-points-are-intercepted`, `glassmacs-native-quit-command-routes-through-review`, `glassmacs-macos-explicit-quit-is-not-intercepted` | Full native Cmd-Q Save/Don't Save/Cancel across documents |
+| New documents and opening | `glassmacs-new-document-uses-each-configured-policy`, `glassmacs-cocoa-file-open-event-uses-document-policy`, `glassmacs-visible-document-is-not-opened-in-an-extra-frame`, `glassmacs-new-buffer-in-mode-creates-distinct-mode-buffer` | Native Finder and new-buffer menu in second frame |
+| Hidden final frame | `glassmacs-windowless-new-document-reuses-hidden-frame-per-policy`, `glassmacs-windowless-buffer-command-reveals-frame`, `glassmacs-windowless-dock-reopen-creates-no-buffers` | Actual Dock and menu activation |
+| Manual placement | `glassmacs-buffer-placement-replace-preserves-buffer`, `glassmacs-buffer-placement-split-preserves-original-view` in `tests/test-glassmacs.el` | Stale frame, inactive tab, move/undo with unrelated buffer, new view vs move |
+| Session identity | `tests/test-glassmacs-sessions.el`: `glassmacs-sessions-identity-and-registration`, `glassmacs-sessions-does-not-guess-among-several`, `glassmacs-r-explicit-source-targets-stay-on-process-incarnation`, concurrent real ESS integration tests | Real native two-console placement and post-ESS startup suitability; new vs show GUI command |
+| R toolbar command | `glassmacs-r-toolbar-uses-shared-commands`, `glassmacs-r-console-launch-is-available-without-session` in `tests/test-glassmacs.el` | The existing tests explicitly expect start-or-switch; separate New/Show UX is a future decision |
+| Recovery | `tests/test-glassmacs-recovery-home.el` covers isolation of recovery directory, not presentation restoration; other recovery tests need a full-name inventory | Duplicate-frame prevention, multiple dirty restored views, saved layout, no process relaunch |
+
+### Native acceptance harness
+
+`scripts/macos-gui-acceptance` contains explicit Cocoa close-button, Cmd-W and quit scenarios, plus broader GUI acceptance. Its presence does **not** establish that the installed candidate passed each scenario. Check recorded results against a named app SHA. Do not confuse mocked ERT lifecycle tests with real Cocoa event delivery.
+
+### Specific safety hazards to track
+
+1. The final-frame `delete-frame` wrapper and Cocoa close-button path are intentionally different; adding generic presentation hooks here could bypass save/cancel review.
+2. `glassmacs--close-documents-in-windows` collects decisions before killing buffers, but saves may already have happened when a later document cancels. Preserve this documented non-atomic behavior until a separately designed change.
+3. `glassmacs-r-hide-console` directly deletes a frame; do not introduce a new console-close confirmation cycle accidentally through generic lifecycle changes.
+4. The recovery renderer may create new frames even when a buffer already has a view; any deduplication must account for saved layout intent rather than simply skipping visible buffers.
+5. The R toolbar start-or-switch binding is asserted by existing tests; changing it is an intentional UX change requiring test updates and explicit acceptance, not a silent bug fix.
+
+### Phase 1 disposition
+
+Native lifecycle paths and representative ERT coverage have been mapped from source. **Outstanding:** exhaustive enumeration of recovery tests, all direct-display calls in remaining modules, CI/test execution, and native GUI evidence. No code changes authorized or performed.
