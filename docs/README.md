@@ -1,29 +1,25 @@
 # Glassmacs documentation
 
-> **Document ID:** DOC-INDEX  
-> **Status:** Canonical  
+> **Document ID:** DOC-NAV  
+> **Status:** Informational  
 > **Owner:** Glassmacs maintainers  
 > **Last reviewed:** 2026-11-06  
-> **Coverage:** Documentation navigation and source-of-truth conventions  
+> **Coverage:** Documentation navigation  
 > **Supersedes:** None
 
-This index is the entry point for Glassmacs documentation. The [project README](../README.md) is the public-facing overview; detailed instructions and implementation evidence belong in the documents below.
+The existing [documentation index and authority register](index.md) (**DOC-INDEX**) remains the canonical source for document ownership, status and scope. The [documentation governance policy](documentation-governance.md) (**DOC-GOV**) defines lifecycle and metadata. The [documentation change register](documentation-changelog.md) (**DOC-CHANGELOG**) records authority changes. This page is a short navigation guide, not a second authority register.
 
-## Start here
+## Getting started
 
-- [Project overview and development build](../README.md) — what Glassmacs is and how to build it.
-- [macOS application guide](macos-launcher.md) — app packaging, launch and platform requirements.
-- [R workflows](r-workflows.md) — R, ESS and research integrations.
-- [Architecture](architecture.md) — implementation and component boundaries.
-- [Acceptance matrix](acceptance-matrix.md) — requirements, tests and verification status.
-- [Contributing](../CONTRIBUTING.md) — development and review process.
-- [Documentation standard](governance/documentation-standard.md) — document IDs, lifecycle and references.
+- [Project README](../README.md) — overview, development status and build instructions.
+- [macOS application](macos-launcher.md) — packaging, installation and platform requirements.
+- [R workflows](r-workflows.md) — ESS and research tools.
+- [Keybindings](keybindings.md) — keyboard profiles.
+- [Architecture](architecture.md) — component boundaries and intended design.
+- [Acceptance matrix](acceptance-matrix.md) — implementation and verification evidence.
+- [Contributing](../CONTRIBUTING.md) — contributor workflow.
+- [Development](development.md) — build and test details.
 
-## Source-of-truth rules
+## Reference system
 
-- The README introduces the project; specialized guides own detailed instructions.
-- A canonical document is authoritative for its subject, **not** proof that every described feature has shipped.
-- The acceptance matrix records implementation and verification status separately.
-- GUI acceptance runs locally on a Mac, not in GitHub Actions.
-- Historical checkpoints should be archived, not presented as current release status.
-- The [registry](registry.toml) records document identity and location. Preserve IDs across renames.
+The [authority register](index.md) defines stable `DOC-*` IDs. The [machine-readable registry](registry.toml) supports automated identity/path checks but does not supersede the authority register. Use [governance](documentation-governance.md) for status and review conventions. GitHub CI tests code and packaging; native GUI acceptance is performed locally on a Mac.
