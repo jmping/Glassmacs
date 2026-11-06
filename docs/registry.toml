@@ -47,3 +47,21 @@ id = "DOC-ACCEPT"
 path = "docs/acceptance-matrix.md"
 category = "development"
 status = "canonical"
+
+[[document]]
+id = "DOC-LINKED-PRESENTATIONS"
+path = "docs/linked-presentation-architecture.md"
+category = "architecture"
+status = "informational"
+
+[[document]]
+id = "DOC-LINKED-PHASE0"
+path = "docs/linked-presentation-phase0.md"
+category = "development"
+status = "informational"
+
+[[document]]
+id = "DOC-LINKED-PHASE1"
+path = "docs/linked-presentation-phase1-audit.md"
+category = "development"
+status = "informational"

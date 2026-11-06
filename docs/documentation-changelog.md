@@ -171,3 +171,7 @@ Future entries should state date, affected document IDs, old/new coverage or aut
 - **Expanded DOC-ROADMAP:** added staged per-buffer session selection, context menus, session-scoped object explorer, explicit local-test/remote-deploy provenance and a longer-term graphical SSH file transfer/permission-management track.
 - **Clarified safety:** no implicit cross-host path equivalence, execution retargeting, working-directory synchronization, queued-command migration, remote upload execution or destructive remote file/permission operations without appropriate explicit user actions and confirmation.
 - These are architectural targets and planned delivery milestones, **not implemented functionality**. No document authority, status, ownership or supersession changed.
+
+## 2026-11-06 — Linked presentations proposal and baseline
+
+Registered DOC-LINKED-PRESENTATIONS, DOC-LINKED-PHASE0 and DOC-LINKED-PHASE1 as informational design/audit documents. No change to canonical runtime behavior or acceptance status. Phase 1 is an initial static source audit; native GUI acceptance remains separate.
