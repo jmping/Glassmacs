@@ -152,7 +152,7 @@ def render_matrix(data, checks):
                     data["reviewed"])]
     lines.append(
         "Statuses are kept apart on purpose. **Implemented** means the behavior exists; "
-        "**automated** means tests check it; **packaged app** says whether those checks run "
+        "**automated** means tests check it; **packaged app** says whether automated checks run "
         "against the built Glassmacs.app in CI (`ci`) or not at all (`NOT RUN`); **clean "
         "machine** records a dated manual run on a fresh Mac, and is `NOT RUN` until someone "
         "records one. A green batch run is never GUI acceptance.\n\n"
