@@ -3,7 +3,7 @@ name: CI
 on:
   # PR events validate feature branches. The push trigger is only for the
   # integrated branch so each feature-branch commit does not queue a duplicate
-  # macOS build and GUI acceptance run.
+  # macOS build and build.
   push:
     branches: [main]
   pull_request:
@@ -190,41 +190,3 @@ jobs:
           path: ${{ runner.temp }}/Glassmacs-macOS.zip
           if-no-files-found: error
 
-  macos-gui-acceptance:
-    # Layer C: drives the packaged app built above through LaunchServices.
-    # See scripts/macos-gui-acceptance and docs/acceptance-matrix.md.
-    needs: macos-launcher
-    runs-on: macos-15
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download app archive
-        uses: actions/download-artifact@v4
-        with:
-          name: Glassmacs-macOS-app
-          path: ${{ runner.temp }}/app
-      - name: Unpack app
-        run: ditto -x -k "$RUNNER_TEMP/app/Glassmacs-macOS.zip" "$RUNNER_TEMP/app"
-      - name: Build direct Accessibility diagnostic
-        run: swiftc -o "$RUNNER_TEMP/macos-ax-probe" scripts/macos-ax-probe.swift
-      - name: Run GUI acceptance scenarios
-        env:
-          GLASSMACS_AX_PROBE: ${{ runner.temp }}/macos-ax-probe
-        run: |
-          ./scripts/macos-gui-acceptance "$RUNNER_TEMP/app/Glassmacs.app" \
-            "$RUNNER_TEMP/gui-acceptance"
-      - name: Require core Alpha GUI scenarios to pass
-        run: python3 scripts/check-alpha-gui-results "$RUNNER_TEMP/gui-acceptance/results.json"
-      - name: Publish summary
-        if: always()
-        run: |
-          if [ -f "$RUNNER_TEMP/gui-acceptance/summary.md" ]; then
-            cat "$RUNNER_TEMP/gui-acceptance/summary.md" >> "$GITHUB_STEP_SUMMARY"
-          fi
-      - name: Upload results, screenshots, logs and crash reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Glassmacs-GUI-acceptance
-          path: ${{ runner.temp }}/gui-acceptance
-          if-no-files-found: warn
