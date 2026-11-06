@@ -4,264 +4,73 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-28
-> **Coverage:** Project identity, audience, vision and high-level getting started  
+> **Last reviewed:** 2026-11-06  
+> **Coverage:** Project overview, development build and documentation entry points  
 > **Supersedes:** None
-
-## Recovery development checkpoint — 2026-10-28
-
-[PR #28](https://github.com/jmping/Glassmacs/pull/28) implements a **draft, opt-in document-preservation and recovery prototype**, including private immutable snapshots of eligible document buffers, crash and quit manifests, startup restoration, and startup-gated 90-day review of unreferenced recovery copies. Its [latest pre-documentation CI](https://github.com/jmping/Glassmacs/actions/runs/40711222337) passed Emacs batch, ESS/R integration and macOS launcher jobs. This does **not** establish data-loss safety on native Cocoa Quit/Dock Quit, forced termination, corrupted metadata, or disk-write failures. PR #28 is not merged and is not a production recovery guarantee. See [recovery implementation and acceptance gates](docs/recent-print-recovery.md).
-
-## Integrated 0.1 development status — 2026-10-27
-
-PRs [#18](https://github.com/jmping/Glassmacs/pull/18), [#19](https://github.com/jmping/Glassmacs/pull/19), [#20](https://github.com/jmping/Glassmacs/pull/20), [#21](https://github.com/jmping/Glassmacs/pull/21), and [#22](https://github.com/jmping/Glassmacs/pull/22) have merged into `main`. The most recent merge was #22 at `604e44e`. Their pull-request CI completed successfully (Emacs ERT, ESS/R integration, and macOS launcher build). These results establish code integration and automated validation, **not interactive Cocoa GUI acceptance**.
-
-Implemented capabilities include native application/menu/window infrastructure; configurable new-frame/new-tab/reuse-current document opens; New Buffer in Mode and Change Buffer Mode; ESS-backed R source/console menus and contextual toolbar actions; explicit R session start, targeting, inspection and listing; execution-queue and output controls; Save Document As and non-destructive unsaved-document review; and keyboard/document/toolbar preferences. R Markdown, Quarto, Sweave, Shiny and remote workflows have preliminary integrations and still require separate end-to-end validation. Neither complete historical Aquamacs parity nor a production release is claimed.
-
-**Still outstanding:** signed-app testing of Cocoa reopen/close, document safety and focus, R source-to-console execution, session targeting, native R/Quartz plotting, toolbar image/layout, persistent preferences, and optional rendering/Shiny workflows. A releasable 0.1 build also needs candidate-specific signing, notarization, Gatekeeper checks and license/source-distribution review. Earlier signed builds do not certify the current `main` tree.
-
-**Next audit, separate from this documentation sync:** compare current Glassmacs menu commands against historical Aquamacs menu inventory and then triage historical Aquamacs issues, recording evidence, priority and disposition without treating proposed parity as implemented behavior.
-
----
-
 
 **The power of Emacs. The elegance of macOS. Built for R and research.**
 
-Glassmacs is an open-source project to create a modern, Mac-native GNU Emacs experience, inspired by Aquamacs and designed for statistical computing, programming, and reproducible research.
+Glassmacs is an open-source project building a modern, Mac-native GNU Emacs experience inspired by Aquamacs, with a particular emphasis on R, ESS and reproducible research. It combines upstream Cocoa Emacs, modular Emacs Lisp configuration and a thin macOS application bootstrap rather than maintaining a modified Emacs core.
 
-Glassmacs combines the extensibility and power of GNU Emacs with the familiar conventions of modern macOS, attractive syntax highlighting, and integrated workflows for R, ESS, Shiny, Quarto, R Markdown, Sweave, and LaTeX.
+> **Development status:** Glassmacs is under active development, not a production release. Automated CI verifies code and application packaging; interactive macOS behavior is tested separately on a local Mac. A passing build is not a guarantee of GUI correctness, recovery safety or release readiness.
 
-## Project Vision
+## What Glassmacs offers
 
-Aquamacs brought GNU Emacs closer to the Mac by adopting native keyboard shortcuts, application conventions, and user-friendly defaults.
+- **macOS-oriented editing:** configurable document window/frame policies, native menus and keyboard profiles combining Mac conventions with traditional Emacs shortcuts.
+- **R and ESS workflows:** R source editing, interactive R sessions, source-to-console commands, session targeting and contextual menu actions.
+- **Research documents:** integrations for R Markdown, Quarto, Sweave, LaTeX/AUCTeX and related tools, with varying levels of implementation and end-to-end verification.
+- **Emacs compatibility:** upstream GNU Emacs extensibility and packages, including ordinary text editing without installing R.
+- **Application packaging:** a standalone macOS application bundle, with optional research dependencies installed only with user consent.
 
-Glassmacs aims to carry that philosophy forward for contemporary macOS, without maintaining a heavily modified Emacs core.
+Some workflows—including native graphics, remote execution, Shiny previews, window restoration and recovery—still require local acceptance testing. See the [acceptance matrix](docs/acceptance-matrix.md) for individual implementation and verification status. Features described in technical documents are not necessarily production-verified.
 
-Our goals are to:
+## Build and run
 
-- **Feel at home on macOS.** Modern interface conventions, attractive typography, native-feeling window management, and light/dark appearances.
-- **Preserve Aquamacs muscle memory.** Familiar editing shortcuts combined with contemporary macOS keyboard conventions.
-- **Make R a first-class language.** Excellent ESS integration, intelligent indentation, syntax highlighting, completion, diagnostics, and interactive R sessions.
-- **Support reproducible research.** Seamless editing, execution, rendering, and previewing of R Markdown, Quarto, Sweave, and knitr documents.
-- **Make Shiny development easier.** Integrated application execution, diagnostics, and preview workflows.
-- **Be a dependable plain text editor.** Open and edit ordinary text files without requiring R or research tooling, and provide safe, responsive inspection of very large text documents and logs.
-- **Remain true to GNU Emacs.** Preserve Emacs extensibility, existing packages, and conventional Emacs commands.
-- **Minimize maintenance overhead.** Prefer upstream GNU Emacs and actively maintained packages over custom forks and duplicated functionality.
-
-## Planned Features
-
-### Modern macOS Experience
-- Native GNU Emacs graphical editor
-- Modern macOS-inspired appearance
-- Light and dark themes
-- Customizable fonts and syntax highlighting
-- Mac-style application and document shortcuts
-- Familiar Aquamacs editing behavior
-- A standalone Cocoa application bundle with a thin Swift process bootstrap
-
-### R and Statistical Computing
-- Modern Emacs Speaks Statistics (ESS)
-- Interactive R sessions
-- Send lines, regions, functions, and buffers to R
-- Context-aware syntax highlighting
-- Completion and diagnostic integration
-- R help, documentation, and package-development tools
-
-### Reproducible Documents
-- R Markdown (`.Rmd`)
-- Quarto (`.qmd`)
-- Sweave (`.Rnw`, `.Snw`)
-- knitr
-- LaTeX and AUCTeX
-- Embedded R code chunks
-- HTML, PDF, and other supported output formats
-- Render and preview commands
-
-### Shiny Development
-- Run and stop local Shiny applications
-- Support `app.R` and `ui.R` / `server.R` projects
-- View application output and errors
-- Open local application previews
-
-### Hybrid Aquamacs/macOS Keybindings
-- Command-key shortcuts for common Mac operations
-- Traditional Emacs Control and Meta key sequences
-- Preserved ESS evaluation commands
-- Configurable keyboard profiles
-
-
-### Execution and remote research roadmap
-
-Glassmacs aims to support fast local direct execution, persistent terminal/PTY sessions, and SSH/TRAMP-based remote R and research workflows. The editor and computational host need not be the same machine. Planned capabilities include per-project execution profiles, remote ESS, asynchronous rendering, remote Shiny previews through secure SSH port forwarding, and detachable long-running server jobs. **These features are architectural goals, not part of the present prototype.** See [execution architecture](docs/architecture.md) and [R workflows](docs/r-workflows.md).
-
-## Architecture
-
-Glassmacs uses upstream Cocoa GNU Emacs as its editing engine, with a modular
-Emacs Lisp configuration for macOS behavior, appearance, and research workflows.
-
-The macOS app build packages the upstream Emacs bundle as the top-level
-`Glassmacs.app`; its Swift bootstrap replaces itself with Emacs rather than
-spawning a second editor/application. The project avoids modifying GNU Emacs.
-
-## Build and launch
-
-For development on macOS or Linux, install GNU Emacs and run the checkout's
-launcher:
+For development on macOS or Linux, install GNU Emacs and run:
 
 ```sh
 ./scripts/glassmacs
 ```
 
-For a standalone macOS build, use macOS 13 or newer with Swift 6 and the
-standard tools documented in the [macOS application guide](docs/macos-launcher.md):
+For a standalone macOS application, use the prerequisites in the [macOS application guide](docs/macos-launcher.md), then run:
 
 ```sh
 ./scripts/build-macos-app
 ./scripts/validate-macos-app build/Glassmacs.app
 ```
 
-The builder downloads the pinned Cocoa Emacs bundle and verifies its checksum.
-Drag `build/Glassmacs.app` into `/Applications`, then launch it from Finder,
-Spotlight, or the Dock. No separate Emacs installation or Glassmacs checkout is
-needed at runtime. Builds are unsigned by default; the documented release
-scripts support Developer ID signing and notarization. Dock identity, Finder
-integration, and other GUI behavior still require macOS manual testing.
+The builder obtains a pinned upstream Cocoa Emacs bundle and verifies its checksum. The resulting `build/Glassmacs.app` can be launched locally or copied to `/Applications`. Development builds are unsigned by default; distribution signing, notarization and Gatekeeper validation are separate release tasks. Do not treat a local build as a signed public release.
 
-For terminal use or development, `./scripts/glassmacs -nw` starts terminal
-Emacs. File arguments are forwarded directly, for example
-`./scripts/glassmacs some-file.R` or
-`./scripts/glassmacs /ssh:research:/home/user/project/analysis.R`. Set
-`GLASSMACS_EMACS` to select a non-default Emacs executable.
+For terminal Emacs use `./scripts/glassmacs -nw`. File paths may be passed as arguments. `GLASSMACS_EMACS` selects an alternative Emacs executable for development.
 
-Core editing requires only GNU Emacs. ESS, R, Quarto, TeX/AUCTeX, SSH and Mosh
-are optional integrations; ordinary text editing does not require them. To
-install the optional Emacs packages for research/document workflows, run:
+## R and research tools
+
+R, ESS, Quarto, TeX/AUCTeX and other research tools are optional and are not all bundled. Plain-text editing does not require them. To install optional Emacs packages in a development checkout:
 
 ```sh
 ./scripts/bootstrap
 ```
 
-In the macOS app, choose **Glassmacs → Install R & Document Packages…**;
-Glassmacs also offers this, once per session, the first time an R or research
-document opens without its mode. Nothing is downloaded without your consent.
-The app's bundled bootstrap can be run from Terminal as well and installs into
-the app's own home by default:
+In the macOS app, use **Glassmacs → Install R & Document Packages…**. Package installation requires consent and network access; normal startup does not automatically refresh package archives. Install external tools such as R, Quarto and TeX separately as needed. See [R workflows](docs/r-workflows.md) for setup and usage.
 
-```sh
-"/Applications/Glassmacs.app/Contents/Resources/Glassmacs/scripts/bootstrap"
-```
+Glassmacs stores application state under `~/Library/Application Support/Glassmacs` and uses `~/.config/glassmacs` for the development launcher. Set `GLASSMACS_HOME` to override the location. It does not use your ordinary Emacs or Aquamacs preferences by default.
 
-Installation needs network access. Normal startup does not install packages or
-refresh archives. App state and
-packages live in `~/Library/Application Support/Glassmacs`; the development
-launcher uses `~/.config/glassmacs`. Set `GLASSMACS_HOME` to override either
-location. The app launches with `-Q` and does not modify `~/.emacs`,
-`~/.emacs.d`, or Aquamacs preferences. R, ESS, Quarto, TeX and other optional
-tools are not bundled. See [R workflows](docs/r-workflows.md) for R setup.
+## Keyboard and window behavior
 
-Install R, Quarto, TeX and remote tools separately when needed, and ensure their
-executables are available on `PATH`. When the app is started from Finder or the
-Dock, Glassmacs imports `PATH` from your login shell and also appends the
-standard Homebrew, CRAN R, MacTeX and Quarto locations, so tools that work in
-Terminal are found (see the [macOS application guide](docs/macos-launcher.md)). Missing optional integrations do not block
-startup; the relevant command reports what is missing.
+Glassmacs supports a hybrid Aquamacs/macOS keyboard profile and traditional Emacs bindings. Native menu shortcut labels are designed to follow the active profile. Document-opening policies can prefer separate frames, tabs or reuse of the current frame. Details and verified behavior are tracked in the [acceptance matrix](docs/acceptance-matrix.md); native behavior should be assessed on a local Mac.
 
-For installation, diagnostics, manual macOS GUI checks, and limitations, see
-the [macOS application guide](docs/macos-launcher.md). Linux batch/terminal
-checks do not validate Cocoa behavior. CI builds and validates the app bundle
-but does not perform interactive GUI verification. Signing and notarization
-are release-only operations requiring a Developer ID identity and local
-notarytool Keychain profile.
+## Known limitations and verification
 
-Interactive document opens on a graphical macOS session default to a separate
-frame, with configurable new-tab and reuse-current policies. Special buffers
-and non-graphical sessions are not redirected. Cocoa file-open events use the
-same Lisp policy, but the GUI event path and frame behavior remain unverified.
-Run `M-x glassmacs-diagnostics` for local dependency and platform information.
-For the optional R graphics smoke check, see [R workflows](docs/r-workflows.md).
+Glassmacs remains a development project. Interactive macOS behavior—including document/window focus, multiple R consoles, R help placement, crash recovery and native menu interactions—requires local testing. Recovery prototypes should not be relied on as the sole protection against data loss. Signed release testing, notarization and clean-machine acceptance are distinct from CI.
 
-Run the automated tests with:
+GitHub Actions runs Emacs batch tests, ESS/R integration checks and macOS application build/packaging checks. **GUI acceptance is intentionally local**, performed by maintainers or a local testing assistant. See [Contributing](CONTRIBUTING.md) for the development workflow.
 
-```sh
-./scripts/test
-```
+## Documentation
 
-See [development](docs/development.md), [architecture](docs/architecture.md),
-[roadmap](docs/roadmap.md),
-[keybindings](docs/keybindings.md), and [R workflows](docs/r-workflows.md)
-for details.
+Start with the [documentation index](docs/README.md). Key references include the [macOS application guide](docs/macos-launcher.md), [R workflows](docs/r-workflows.md), [architecture](docs/architecture.md), [acceptance matrix](docs/acceptance-matrix.md) and [documentation standard](docs/governance/documentation-standard.md).
 
-## Prototype implementation details (historical baseline)
-
-The first milestone introduces:
-
-- Isolated startup and package storage.
-- A macOS graphical Command-key profile, intended to preserve conventional
-  Emacs Control/Meta bindings and language-mode keymaps.
-- Optional modern ESS integration and `.R`/`.r` file associations.
-- Glassmacs dark and light themes.
-- Best-effort R Markdown, Quarto, Sweave/knitr, and Rd editing support,
-  plus document-rendering commands.
-- Local Shiny process start/stop commands.
-- ERT coverage for isolated startup, document-opening policy, diagnostics,
-  keybindings, file associations, themes, R graphics output and missing tools;
-  CI also runs a real ESS/R integration job.
-
-**Not yet verified:** Native macOS Cocoa behavior and full Aquamacs
-keybinding compatibility. The standalone app build and packaging CI are
-implemented, but the GUI app has not yet been exercised on macOS. ESS, R,
-document rendering, and Shiny functionality require the relevant Emacs
-packages, R packages, and external executables. Optional Emacs package
-versions are not pinned to a reproducible snapshot.
-
-Issue #10 adds an interactive document-opening policy and local diagnostics.
-The default separate-frame behavior, `new-tab` and `reuse-current` choices,
-and privacy-limited report are implemented in Lisp; actual Cocoa frame behavior
-and ESS graphics on macOS have not been verified. Standard R graphics remain
-owned by the installed R device; Glassmacs has no managed plot viewer.
-
-## Development Status
-
-**Integrated development preview for testing; not yet a production-ready macOS application.** A relocatable app bundle is built in macOS CI, while interactive macOS GUI, ESS/R and native graphics verification remain outstanding.
-
-The initial development priorities are:
-
-1. Establish a stable GNU Emacs baseline on modern macOS.
-2. Implement hybrid Aquamacs/macOS keybindings.
-3. Configure and test modern ESS and R.
-4. Integrate R Markdown, Quarto, Sweave, and Shiny workflows.
-5. Develop the visual theme and native application experience.
-6. Complete interactive validation and refinement of the standalone macOS application.
-
-The first milestone implements part of this foundation, as described above. The complete feature set remains a development goal.
-
-## Relationship to Aquamacs
-
-Glassmacs is inspired by Aquamacs and its philosophy of making GNU Emacs comfortable for Mac users.
-
-It is an independent experimental project, not an official Aquamacs release or an affiliated GNU Emacs distribution.
-
-We intend to acknowledge and respect the contributions of the Aquamacs, GNU Emacs, ESS, and broader open-source communities.
-
-## Planned AI and remote terminal integration
-
-- **Support opt-in AI assistance.** Query local or remote agents about code, errors and documents with explicit context sharing, permissions and reviewed edits.
-- **Support resilient remote terminals.** Offer Mosh as an optional interactive transport alongside SSH/TRAMP and tmux for unstable connections.
-
-See [architecture](docs/architecture.md) and [roadmap](docs/roadmap.md) for proposed capabilities, trust boundaries and delivery stages. These integrations are not yet implemented.
-
-Glassmacs also plans **research application profiles**: lightweight support for imported or embedded model syntax, local or remote execution, diagnostics and output artifacts. Early candidates include `lavaan`, JAGS/BUGS and Stan, with an extensible route to other installed statistical applications. Profiles reuse the execution infrastructure and remain optional; opening a file never implicitly executes it.
-
-## Who Glassmacs is for
-
-Glassmacs is designed for **experienced base R, ESS and Emacs users who work across languages, applications and remote computers**. It is not an RStudio clone or a project to impose RStudio-style workflows on established researchers. R is a first-class language, not the owner of the workspace. Files, buffers, terminals, external tools and reproducible scripts come first; integrations remain optional, transparent and composable.
-
-See the [canonical documentation index](docs/index.md) for document authority, [governance policy](docs/documentation-governance.md) for updates, and [change register](docs/documentation-changelog.md) for changes in coverage.
-
-## License
-
-License selection and third-party code obligations will be documented before redistribution. Components derived from GNU Emacs or Aquamacs must comply with their applicable GNU GPL terms.
+The project uses stable `DOC-*` document identifiers and requirement IDs recorded in the acceptance matrix. Documentation metadata, status and reference rules are described in the [documentation standard](docs/governance/documentation-standard.md).
 
 ## Contributing
 
-Contributions, bug reports, feature suggestions, and testing are welcome as development progresses, particularly from users of R, ESS, Aquamacs, Quarto, Shiny, and reproducible research tools.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for branch, PR, CI and local macOS acceptance expectations. Development changes should keep their associated documentation current. Glassmacs is built on GNU Emacs and upstream packages; consult the repository's licensing files before redistributing a build.
