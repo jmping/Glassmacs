@@ -8,6 +8,20 @@
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
 
+## 2026-11-06 — documentation navigation and contribution governance (PR #95)
+
+- **DOC-README:** replaced dated development checkpoints with current project overview and explicit local GUI acceptance limits.
+- **DOC-INDEX:** retained as the sole canonical authority register; removed its obsolete October integration banner and registered DOC-NAV, DOC-CONTRIB and DOC-STANDARDS.
+- **DOC-NAV:** new navigation page at `docs/README.md`, informational and subordinate to DOC-INDEX.
+- **DOC-CONTRIB:** new contributor workflow and PR/CI/local GUI testing guidance.
+- **DOC-STANDARDS:** new reference and machine-validation conventions, supplemental to DOC-GOV.
+- **DOC-GOV:** remains the canonical lifecycle and metadata policy; no replacement or change of authority.
+- **DOC-CHANGELOG:** remains the historical change register.
+- Added `docs/registry.toml` as a machine-readable subset of DOC-INDEX and `scripts/check-docs` for registered identity and link checks.
+- Existing documents remain at their established paths until an audited migration can preserve links and generated-document tooling.
+
+---
+
 ## 2026-10-29 — acceptance gates (issue #34)
 
 - **New DOC-ACCEPT** (`docs/acceptance-matrix.md`) and **DOC-MAC-CHECKLIST** (`docs/macos-acceptance-checklist.md`), both generated from `acceptance/matrix.toml` by `scripts/acceptance-matrix`; registered in the index. The matrix is the authority for acceptance status; other documents link to it rather than restate results.
