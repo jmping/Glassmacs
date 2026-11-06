@@ -1,32 +1,20 @@
-# Documentation and reference standard
+# Documentation reference and validation conventions
 
 > **Document ID:** DOC-STANDARDS  
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Last reviewed:** 2026-11-06  
-> **Coverage:** Document organization, identifiers, references and lifecycle  
+> **Coverage:** Supplemental ID registry, link conventions and validation  
 > **Supersedes:** None
 
-## Organization
+This standard **supplements**, and does not replace, the existing [documentation governance policy](../documentation-governance.md) (**DOC-GOV**) and [canonical authority register](../index.md) (**DOC-INDEX**). Follow those documents for lifecycle states, metadata, ownership and precedence. Record authority changes in [DOC-CHANGELOG](../documentation-changelog.md).
 
-The repository root contains the public README, CONTRIBUTING and other repository-wide files. `docs/README.md` is the documentation index. As documents are revised, use `docs/user/` for user instructions, `docs/development/` for contributor/build guidance, `docs/specifications/` for behavior contracts, `docs/governance/` for process and standards, and `docs/archive/` for historical material.
+## References and traceability
 
-Do not move existing documents solely to satisfy the directory layout without updating their links and generated-document paths. Existing links and build tooling take priority during migration.
+Use stable document IDs from DOC-INDEX, requirement IDs from `acceptance/matrix.toml`, and repository-relative Markdown links. IDs are never reused or changed when a file moves. Separate implemented, planned, automated, locally observed and release-verified claims. A green build is not native GUI acceptance.
 
-## Identity and metadata
+## Registry and migration
 
-Each substantive document has a unique, permanent `DOC-*` identifier. IDs are never reassigned or derived from file paths. Use the metadata fields Document ID, Status, Owner, Last reviewed, Coverage and Supersedes. Valid lifecycle statuses are **Draft**, **Canonical**, **Superseded** and **Archived**. A superseded document must name its successor. Update Last reviewed only after substantive review.
+`docs/registry.toml` is a machine-readable subset of the existing authority register for automated validation; it is **not** a second source of truth. Expand it incrementally after checking each document's current ID, metadata and status. Never create a duplicate document ID. Existing `docs/` paths remain stable until links, generators and cross-references can be migrated safely.
 
-Register canonical documents in `docs/registry.toml`; the registry is the source of truth for identifiers and paths. The index provides human-readable navigation.
-
-## References
-
-Use relative Markdown links for repository documents, with readable titles. Cite requirement IDs (for example `KEY-003`) consistently with `acceptance/matrix.toml`. Cite source paths, test names, issues and PRs where implementation claims require evidence. Distinguish planned, implemented, automated, locally observed and release-verified behavior. Never infer GUI acceptance from a passing CI build.
-
-## Change control
-
-Update affected canonical docs in the same PR as behavioral changes. Generated documents must be changed through their generators and validated with their existing checks. Historical material should be marked archived and linked to current guidance, not silently rewritten as if it were current. Avoid duplicating normative instructions across documents.
-
-## Validation
-
-Documentation changes must preserve registry uniqueness, registered paths and IDs, internal links, and generated-document consistency. The existing `scripts/acceptance-matrix check` remains authoritative for its generated acceptance documents. GUI tests remain local.
+The validator checks registered document metadata and links. The generated acceptance documents remain governed by `scripts/acceptance-matrix render` and `scripts/acceptance-matrix check`.
