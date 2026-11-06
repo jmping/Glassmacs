@@ -82,3 +82,13 @@ Each phase requires a focused PR, no automatic merge, a rollback path, and separ
 - `docs/window-presentation-audit.md` records earlier PR #84 inventory and release gates; its historical status must not be mistaken for current verification.
 - `docs/linked-presentation-phase0.md` is the Phase 0 evidence ledger and test contract.
 - `docs/acceptance-matrix.md` is generated from `acceptance/matrix.toml`; do not hand-edit generated acceptance files.
+
+## Approved R console interaction contract (2026-11-06)
+
+The source toolbar **Console** button means **New R Console**, always: each activation starts a distinct ESS/R process, registers a distinct session and presents it. It must never silently focus an existing console. A separate **Link Console** button chooses an existing live session and associates it with the current source document (including its polymode/indirect buffers), without creating a process or moving an unrelated view.
+
+For source execution, an explicit live document-to-session link is authoritative. If no link exists, **prompt the user to choose a live R console before sending code**, even if exactly one live console exists. The selected console becomes the document's explicit link so subsequent sends do not reprompt. If there are no live consoles, do not execute code or silently create a process: show a clear instruction to create one. A stale link must not fall through to another live session; request an explicit new selection. Cancel must not send code or alter the link. The link is document-scoped, not frame-scoped, and survives opening another view of the same document.
+
+This supersedes the current implicit-single-session and ESS-local-process fallback behavior **for user-initiated source execution**; it is an intentional change, not a description of the current implementation. Preserve batch/noninteractive deterministic failure rather than prompting. Audit non-source console commands and explicit one-off sends separately so they do not acquire unwanted prompts.
+
+Implementation should reuse `glassmacs-r-new-console`, `glassmacs-r-select-session`, `glassmacs-r--set-document-target`, and the existing session registry. Distinguish **Link Console** from **Show Console** (focus an existing view) and **New View** (additional presentation). Update existing toolbar tests and add explicit new/link/execution routing tests when the change is implemented in a dedicated runtime PR, not the documentation-only Phase 1 branch.
