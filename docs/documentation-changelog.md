@@ -8,6 +8,16 @@
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
 
+## 2026-11-06 — cross-document status audit (PR #95)
+
+- Removed duplicated October 27 integration banners from DOC-ARCH, DOC-DEV, DOC-MAC-LAUNCHER, DOC-R-WORKFLOWS and DOC-KEYS. These repeated old PR states and obscured the canonical document metadata.
+- Removed the outdated integrated-status banner from DOC-ROADMAP and clarified that roadmap milestones are not release certification.
+- Marked `docs/development-status.md` as a dated snapshot, including the subsequent merge of PR #91 and the removal of hosted GUI acceptance.
+- Corrected the obsolete packaged-GUI-CI gate in `docs/alpha-copilot-build-handoff.md`; local GUI acceptance remains required.
+- These changes do not claim that all underlying implementation descriptions have been reverified against the latest local Mac build.
+
+---
+
 ## 2026-11-06 — documentation navigation and contribution governance (PR #95)
 
 - **DOC-README:** replaced dated development checkpoints with current project overview and explicit local GUI acceptance limits.
