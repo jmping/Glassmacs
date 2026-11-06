@@ -1,4 +1,5 @@
-# Stable document identifiers. Paths are relative to the repository root.
+# Machine-readable subset of DOC-INDEX (docs/index.md).
+# The existing authority register remains canonical.
 [[document]]
 id = "DOC-README"
 path = "README.md"
@@ -7,14 +8,32 @@ status = "canonical"
 
 [[document]]
 id = "DOC-INDEX"
+path = "docs/index.md"
+category = "governance"
+status = "canonical"
+
+[[document]]
+id = "DOC-NAV"
 path = "docs/README.md"
+category = "navigation"
+status = "informational"
+
+[[document]]
+id = "DOC-GOV"
+path = "docs/documentation-governance.md"
+category = "governance"
+status = "canonical"
+
+[[document]]
+id = "DOC-CHANGELOG"
+path = "docs/documentation-changelog.md"
 category = "governance"
 status = "canonical"
 
 [[document]]
 id = "DOC-CONTRIB"
 path = "CONTRIBUTING.md"
-category = "governance"
+category = "development"
 status = "canonical"
 
 [[document]]
