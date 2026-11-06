@@ -539,6 +539,8 @@ FROM-MENU applies the graphical document-opening policy for menu selection."
     map)
   "Selectable major modes for File → New Buffer in Mode.")
 
+(glassmacs-menu-install-dynamic-keys glassmacs-new-buffer-mode-menu)
+
 (defcustom glassmacs-mode-line-buffer-navigation 'documents
   "How clicking the mode-line buffer name navigates.
 The `documents' setting focuses an existing document frame rather than
@@ -677,7 +679,13 @@ Unlike document opening, this never creates a frame or replaces a view."
                   :enable (menu-bar-non-minibuffer-window-p)))
     ;; "Visit New File" duplicated "Open File" exactly.  Keep one route
     ;; through the document presentation policy; remove the obsolete entry.
-    (define-key global-map [menu-bar file new-file] nil)))
+    (define-key global-map [menu-bar file new-file] nil))
+
+  (when (keymapp (lookup-key global-map [menu-bar file]))
+    (glassmacs-menu-install-dynamic-keys
+     (lookup-key global-map [menu-bar file])
+     '(glassmacs-close-document glassmacs-review-unsaved glassmacs-new-in-mode
+       glassmacs-change-mode new-document open-file))))
 
 (with-eval-after-load 'menu-bar
   (glassmacs--install-document-menu))

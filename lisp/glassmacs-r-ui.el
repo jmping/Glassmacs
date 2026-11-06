@@ -144,6 +144,9 @@
     menu)
   "Console-specific R actions.")
 
+(glassmacs-menu-install-dynamic-keys glassmacs-r-ui-source-menu)
+(glassmacs-menu-install-dynamic-keys glassmacs-r-ui-console-menu)
+
 (defun glassmacs-r-ui--install-help-display ()
   "Compatibility entry point for the unified ESS Help display rule."
   (glassmacs-r-install-help-display))
@@ -417,6 +420,8 @@ ESS's prompt and completion-cache state before calling `comint-send-input'."
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     menu)
   "Context menu shared by R source buffers and ESS R consoles.")
+
+(glassmacs-menu-install-dynamic-keys glassmacs-r-ui-context-menu)
 
 (defun glassmacs-r-ui--populate-context-menu (menu _click)
   "Add Glassmacs R actions to MENU in an R source or console buffer."

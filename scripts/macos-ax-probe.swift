@@ -33,6 +33,32 @@ struct ActionReport: Encodable {
     let error: String?
 }
 
+struct AttributeReport: Encodable {
+    let status: String
+    let value: String?
+}
+
+struct MenuElement: Encodable {
+    let role: String?
+    let title: String?
+    let description: String?
+    let value: String?
+    let childrenStatus: String
+    let shortcutAttributes: [String: AttributeReport]
+    let children: [MenuElement]
+}
+
+struct MenuReport: Encodable {
+    let trusted: Bool
+    let pid: Int32
+    let menuBarStatus: String
+    let menuBar: MenuElement?
+    let fileMenuFound: Bool
+    let fileMenu: MenuElement?
+    let newDocumentFound: Bool
+    let newDocument: MenuElement?
+}
+
 func attribute(_ element: AXUIElement, _ name: CFString) -> (AXError, CFTypeRef?) {
     var raw: CFTypeRef?
     let status = AXUIElementCopyAttributeValue(element, name, &raw)
@@ -65,6 +91,75 @@ func snapshot(_ element: AXUIElement, depth: Int = 0) -> Element {
     return Element(role: role, title: title, description: description,
                    value: value, childrenStatus: status,
                    children: descendants.map { snapshot($0, depth: depth + 1) })
+}
+
+private let shortcutAttributeNames = [
+    "AXMenuItemCmdChar", "AXMenuItemCmdModifiers",
+    "AXMenuItemCmdGlyph", "AXMenuItemCmdVirtualKey"
+]
+
+func menuSnapshot(_ element: AXUIElement, depth: Int = 0) -> MenuElement {
+    let shortcuts = Dictionary(uniqueKeysWithValues: shortcutAttributeNames.map { name in
+        let (status, raw) = attribute(element, name as CFString)
+        let value: String?
+        if status == .success, let raw {
+            value = (raw as? String) ?? String(describing: raw)
+        } else {
+            value = nil
+        }
+        return (name, AttributeReport(status: status == .success
+            ? "success" : "AXError(\(status.rawValue))", value: value))
+    })
+    guard depth < 8 else {
+        return MenuElement(role: stringAttribute(element, kAXRoleAttribute as CFString),
+                           title: stringAttribute(element, kAXTitleAttribute as CFString),
+                           description: stringAttribute(element, kAXDescriptionAttribute as CFString),
+                           value: stringAttribute(element, kAXValueAttribute as CFString),
+                           childrenStatus: "depth-limit", shortcutAttributes: shortcuts,
+                           children: [])
+    }
+    let (childrenStatus, descendants) = children(element)
+    return MenuElement(role: stringAttribute(element, kAXRoleAttribute as CFString),
+                       title: stringAttribute(element, kAXTitleAttribute as CFString),
+                       description: stringAttribute(element, kAXDescriptionAttribute as CFString),
+                       value: stringAttribute(element, kAXValueAttribute as CFString),
+                       childrenStatus: childrenStatus, shortcutAttributes: shortcuts,
+                       children: descendants.map { menuSnapshot($0, depth: depth + 1) })
+}
+
+func findFileMenu(_ element: MenuElement) -> MenuElement? {
+    if element.role == "AXMenuBarItem" && element.title == "File" { return element }
+    for child in element.children {
+        if let found = findFileMenu(child) { return found }
+    }
+    return nil
+}
+
+func findNewDocument(_ element: MenuElement) -> MenuElement? {
+    if element.role == "AXMenuItem" && element.title == "New Document" { return element }
+    for child in element.children {
+        if let found = findNewDocument(child) { return found }
+    }
+    return nil
+}
+
+func menuReport(pid: Int32, app: AXUIElement) {
+    let (status, raw) = attribute(app, kAXMenuBarAttribute as CFString)
+    guard status == .success, let raw else {
+        emit(MenuReport(trusted: AXIsProcessTrusted(), pid: pid,
+                        menuBarStatus: "AXError(\(status.rawValue))",
+                        menuBar: nil, fileMenuFound: false, fileMenu: nil,
+                        newDocumentFound: false, newDocument: nil))
+        return
+    }
+    let menuBar = raw as! AXUIElement
+    let tree = menuSnapshot(menuBar)
+    let fileMenu = findFileMenu(tree)
+    let newDocument = fileMenu.flatMap(findNewDocument)
+    emit(MenuReport(trusted: AXIsProcessTrusted(), pid: pid,
+                    menuBarStatus: "success", menuBar: tree,
+                    fileMenuFound: fileMenu != nil, fileMenu: fileMenu,
+                    newDocumentFound: newDocument != nil, newDocument: newDocument))
 }
 
 func findElement(_ element: AXUIElement, role: String, title: String,
@@ -185,13 +280,15 @@ func operate(pid: Int32, app: AXUIElement, operation: String, target: String?) {
 
 guard CommandLine.arguments.count >= 2,
       let pid = Int32(CommandLine.arguments[1]) else {
-    fputs("usage: macos-ax-probe PID [checkbox read|toggle|button TITLE|close]\n", stderr)
+    fputs("usage: macos-ax-probe PID [tree|menu|checkbox read|toggle|button TITLE|close]\n", stderr)
     exit(2)
 }
 
 let app = AXUIElementCreateApplication(pid)
 if CommandLine.arguments.count == 2 || CommandLine.arguments[2] == "tree" {
     treeReport(pid: pid, app: app)
+} else if CommandLine.arguments[2] == "menu" {
+    menuReport(pid: pid, app: app)
 } else if CommandLine.arguments.count >= 3 {
     let operation = CommandLine.arguments[2]
     let target = CommandLine.arguments.count >= 4 ? CommandLine.arguments[3] : nil
