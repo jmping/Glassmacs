@@ -107,3 +107,37 @@ Read the current `main`-derived `docs/linked-presentations-phase0` branch at the
 ### Phase 1 disposition
 
 Native lifecycle paths and representative ERT coverage have been mapped from source. **Outstanding:** exhaustive enumeration of recovery tests, all direct-display calls in remaining modules, CI/test execution, and native GUI evidence. No code changes authorized or performed.
+
+## Approved UX decision and source-execution audit
+
+The user clarified the previously ambiguous toolbar intent: **the console toolbar button must always create a new console**. The source must also offer a separate **Link Console** button. Running source code with no explicit live link must prompt to choose a console and link it before execution. This is an approved future behavior change; the currently shipped toolbar and resolver do not implement it.
+
+Current code:
+- `glassmacs-r-ui--toolbar-actions` binds “Start R / Console” to `glassmacs-r-start-or-switch-console`; this reuses a resolvable existing console. **Replace binding and label in a dedicated implementation PR**, and update tests that assert the old binding.
+- `glassmacs-r-new-console` already delegates to independent startup and targeting. Confirm real ESS process identity and distinct frame placement (coordinate with PR #96).
+- `glassmacs-r-select-session` already provides a session chooser; `glassmacs-r--set-document-target` propagates target across polymode indirect buffers. Reuse these for **Link Console** rather than introducing a second link registry.
+- `glassmacs-sessions-resolve` currently falls back to the sole live session and may use ESS-local process affinity. This must be **narrowed for source execution**: prompt and establish explicit document link before sending. Do not globally change resolver semantics without auditing console controls, queued operations, batch tests, and one-off commands.
+- `tests/test-glassmacs-r-ui.el` covers source target indicators, stale-target handling, polymode behavior, one-off sends, and ESS entry points; `tests/test-glassmacs-documents.el` covers R chunks and target propagation. Add tests for no link + one live session, no link + multiple sessions, no consoles, cancel, stale link, explicit linked execution, two source docs, and indirect chunk buffers.
+
+### Remaining direct-display inventory (additional modules)
+
+| Module | Direct display behavior | Classification / next action |
+| --- | --- | --- |
+| `glassmacs-core.el` | `display-buffer` for process/output buffers | Utility/diagnostic; no blanket native-frame policy |
+| `glassmacs-remote.el` | `display-buffer` and `pop-to-buffer` for remote workflow buffers | Remote/utility; preserve remote safeguards |
+| `glassmacs-diagnostics.el` | `display-buffer` for diagnostics | Utility; no document-window takeover without explicit request |
+| `glassmacs-sessions.el` | `display-buffer` for R directory inspection, session list, queue views | Utility; classify separately from console and help |
+| `glassmacs-recovery.el` | Direct frame construction and fallback display | Intentional restoration path, not ordinary opening |
+| `glassmacs-frames.el` | Central presenter, preferences, document opening, close | Existing primary seam |
+| `glassmacs-r-ui.el` | Uses ESS help and toolbar/menu dispatch; no direct `display-buffer` call in inspected file | Entry-point routing rather than low-level placement |
+
+### Recovery test inventory
+
+- `tests/test-glassmacs-recovery-home.el`: isolated recovery directory and external index isolation.
+- `tests/test-glassmacs-workspace.el`: opt-in restore, single restore, batch prohibition, local-only files, no repeated reads, remote exclusion, workspace/recovery interaction, clean buffer sharing.
+- `tests/test-glassmacs.el`: native frame lifecycle, document open, windowless reopen and buffer placement.
+- **Gap:** no dedicated recovery presentation test file was found among the inspected paths. Search across all test sources for recovery-specific ERT names before declaring exact coverage. GUI recovery of splits, frame geometry, duplicate prevention and process non-restart remains an acceptance gate.
+
+### Phase 1 closure
+
+The primary call paths, native lifecycle boundaries, representative test coverage, and remaining direct-display modules are now recorded. No code was modified. The R toolbar/link/execution UX decision is approved for a *subsequent, isolated runtime PR* with regression tests. The Phase 1 source inventory is complete at module/entry-point level, **not** a proven exhaustive dynamic call graph; GUI tests and CI were not run for this documentation change.
