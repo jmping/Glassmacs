@@ -1,4 +1,4 @@
-# Alpha candidate build handoff (Copilot)
+# Alpha candidate build handoff (Copilot)\n\n> **Historical handoff warning (2026-11-06):** This handoff predates the decision to remove GitHub-hosted GUI acceptance. Its requirement for a packaged GUI CI job is obsolete. The current candidate requires successful applicable batch, ESS/R and macOS build/packaging checks, followed by separate local Mac GUI acceptance. See [development](development.md) and the [acceptance matrix](acceptance-matrix.md).\n
 
 This document is the handoff for building the **unsigned, testable Alpha
 candidate**, not a declaration that Layer D manual acceptance has passed.
