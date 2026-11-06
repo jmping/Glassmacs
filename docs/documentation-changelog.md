@@ -8,6 +8,12 @@
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
 
+## 2026-11-06 — R console frame placement
+
+- **DOC-R-WORKFLOWS:** documented the console placement options, ESS startup handoff, and a reproducible local macOS procedure covering two sessions, tabs, explicit splits and session switching.
+- **DOC-ACCEPT:** added `RCONSOLE-001` to distinguish ERT evidence from native GUI acceptance; native Cocoa placement remains unverified until the local procedure is completed.
+- No product behavior or document authority changed in this documentation entry.
+
 ## 2026-11-06 — cross-document status audit (PR #95)
 
 - Removed duplicated October 27 integration banners from DOC-ARCH, DOC-DEV, DOC-MAC-LAUNCHER, DOC-R-WORKFLOWS and DOC-KEYS. These repeated old PR states and obscured the canonical document metadata.

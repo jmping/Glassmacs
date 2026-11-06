@@ -637,6 +637,21 @@ manual = ["With CRAN R installed, start R from the R menu, evaluate plot(cars): 
 rationale = "R is not installed on the macOS runner; ESS/R runs in the Linux integration job."
 
 [[check]]
+id = "RCONSOLE-001"
+title = "ESS consoles preserve configured frame and tab placement"
+severity = "P0"
+evidence = ["glassmacs:release-candidate-2885efd"]
+exposure = "ESS displays the inferior buffer during synchronous startup, which can replace or split the source view before Glassmacs applies its configured console presentation."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-r-started-console-moves-ess-view-to-separate-frame", "ert:glassmacs-r-started-console-honors-tab-placement", "ert:glassmacs-r-selecting-console-reuses-existing-window", "ert:glassmacs-r-output-integration-real-ess-concurrent-sessions"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["On the packaged macOS app with R and ESS, select separate-window placement, open one R source file, and start two R sessions. Confirm the source frame stays intact, each console has its own native window, both processes remain live, and distinct commands reach the intended process. Switch sessions repeatedly and confirm the same windows are reused. Repeat with new-tab placement, then test explicit split-below placement."]
+rationale = "ERT verifies routing through the presentation abstraction; only local macOS GUI testing can verify native window placement."
+
+[[check]]
 id = "SYNC-001"
 title = "Skim SyncTeX forward and inverse search"
 severity = "P2"
