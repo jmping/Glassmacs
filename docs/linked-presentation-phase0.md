@@ -62,3 +62,28 @@ Record: app bundle path, commit SHA, macOS version, Emacs version, profile/prefe
 - No runtime changes occur as part of Phase 0.
 - Outstanding GUI failures remain explicit, not silently promoted to PASS.
 - PR #96 is assessed and verified independently before relying on its fix as a baseline.
+
+## PR #96 handoff record — supplied 2026-11-06
+
+**Status:** Open, not merged. Base `main` at `a8f3ec1`; branch `fix/r-console-window-placement`; head `336498cc8c5b430cc7a1e0d7191bd58bfd2fe5d2`. This is a user-supplied handoff record, not independent GUI verification.
+
+**Root cause:** ESS synchronously displays its inferior R buffer before `M-x R` returns. Glassmacs registers the process afterward; its presentation helper sees the already-visible console and focuses it rather than applying the configured placement. The patch routes completed ESS startup through the existing Glassmacs placement layer, restores a displaced source view, and reuses existing console presentations on session selection.
+
+**Seven changed files:**
+1. `lisp/glassmacs-sessions.el`
+2. `tests/test-glassmacs-sessions.el`
+3. `docs/r-workflows.md`
+4. `acceptance/matrix.toml`
+5. `docs/acceptance-matrix.md` (generated)
+6. `docs/macos-acceptance-checklist.md`
+7. `docs/documentation-changelog.md`
+
+**Automated validation:** bundled macOS Emacs + ESS + R: 433 tests total, 415 passed, 18 skipped, 0 failed. Real ESS/R focused tests: 24/24 passed, including concurrent sessions. Byte compilation passed with existing obsolescence and optional ESS warnings. Acceptance-matrix checks, documentation checks, and `git diff --check` passed. A separate *host* Emacs run had three unrelated native-compilation test failures due to missing expected variables/path behavior; the bundled Emacs suite passed.
+
+**Skipped tests (18):** `documents-real-rmarkdown-render-opens-html`, `documents-real-shiny-app-serves-at-its-reported-address`, `editing-markdown-typing-is-literal`, `latex-keeps-user-customizations`, `latex-prefers-skim-for-synctex-on-macos`, `latex-smart-quotes-are-opt-in`, `latex-typing-is-literal`, `polymode-menus-evaluate-in-prose-and-chunks`, `polymode-r-markdown-uses-poly-r`, `polymode-run-chunk-from-inside-the-chunk`, `polymode-spelling-skips-chunk-code`, `polymode-sweave-uses-poly-noweb`, `polymode-target-chosen-in-a-chunk-survives-switching`, `polymode-templates-menu-needs-no-r-session`, `polymode-typing-is-literal-in-prose-and-chunks`, `r-mode-without-ess-offers-installation`, `spelling-highlights-but-never-changes-typed-text`, `spelling-real-checker-flags-only-prose-misspellings`.
+
+**GUI acceptance blocker:** Local app build reached ESS bundling, but smoke testing attempted to load a user native-code cache object signed for a different Emacs Team ID. Installed app displayed existing crash-recovery snapshots, which were left untouched. The multi-session placement reproduction was **not run**. Therefore native GUI placement remains **UNVERIFIED**, despite passing automated tests. GitHub CI status was not reported at the time of the handoff.
+
+**Worktree isolation:** `feat/project-aware-execution` remains untouched and uncommitted.
+
+**Integration constraint:** Do not merge PR #96 or treat its GUI behavior as verified without explicit authorization and native GUI acceptance. Coordinate any later new-console/link-console changes with its startup fix; preserve independent R session identity and source view restoration.
