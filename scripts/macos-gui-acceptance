@@ -917,6 +917,127 @@ class Harness:
             raise Failure(f"Unexpected native menu shortcut response: {value!r}")
         return character, modifiers
 
+    def capture_menu_accessibility_diagnostics(self, pid):
+        """Record direct AX and System Events menu views without asserting."""
+        report = {"pid": pid, "directAX": {}, "systemEvents": {}}
+        probe = os.environ.get("GLASSMACS_AX_PROBE")
+
+        def direct_snapshot(stage):
+            if not probe:
+                return {"error": "GLASSMACS_AX_PROBE not set"}
+            try:
+                result = run([probe, str(pid), "menu"], timeout=20, check=False)
+            except Exception as error:  # noqa: BLE001 - diagnostics must not change acceptance
+                return {"stage": stage, "error": str(error)}
+            try:
+                data = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                data = {"raw": (result.stdout + result.stderr).strip()}
+            data["stage"] = stage
+            data["exitCode"] = result.returncode
+            return data
+
+        report["directAX"]["beforeOpening"] = direct_snapshot("beforeOpening")
+        process_name = self.system_events_process_name(pid)
+        if not process_name:
+            report["systemEvents"]["error"] = f"Could not resolve process name for PID {pid}"
+            report["directAX"]["afterOpening"] = {
+                "error": "File was not opened because System Events process resolution failed"}
+        else:
+            process_name = process_name.replace("\\", "\\\\").replace('"', '\\"')
+            script = (
+                'on menuLine(itemRef)\n'
+                '  set itemName to ""\n'
+                '  set itemCharacter to ""\n'
+                '  set itemModifiers to ""\n'
+                '  try\n'
+                '    set itemName to name of itemRef as text\n'
+                '  on error messageText\n'
+                '    set itemName to "<name-error:" & messageText & ">"\n'
+                '  end try\n'
+                '  try\n'
+                '    set itemCharacter to value of attribute ("AXMenuItemCmdChar") of itemRef as text\n'
+                '  on error messageText\n'
+                '    set itemCharacter to "<attribute-error:" & messageText & ">"\n'
+                '  end try\n'
+                '  try\n'
+                '    set itemModifiers to value of attribute ("AXMenuItemCmdModifiers") of itemRef as text\n'
+                '  on error messageText\n'
+                '    set itemModifiers to "<attribute-error:" & messageText & ">"\n'
+                '  end try\n'
+                '  return "item|" & itemName & "|" & itemCharacter & "|" & itemModifiers & linefeed\n'
+                'end menuLine\n'
+                'tell application "System Events"\n'
+                f'  tell first process whose name is "{process_name}"\n'
+                '    set frontmost to true\n'
+                '    set fileItem to menu bar item "File" of menu bar 1\n'
+                '    set response to "menu-bar-items|"\n'
+                '    try\n'
+                '      repeat with menuRef in menu bar items of menu bar 1\n'
+                '        set response to response & (name of menuRef as text) & "|"\n'
+                '      end repeat\n'
+                '    on error messageText\n'
+                '      set response to response & "<query-error:" & messageText & ">"\n'
+                '    end try\n'
+                '    set response to response & linefeed & "file-children-before-open|" & linefeed\n'
+                '    try\n'
+                '      repeat with itemRef in menu items of menu 1 of fileItem\n'
+                '        set response to response & my menuLine(itemRef)\n'
+                '      end repeat\n'
+                '    on error messageText\n'
+                '      set response to response & "<query-error:" & messageText & ">" & linefeed\n'
+                '    end try\n'
+                '    try\n'
+                '      click fileItem\n'
+                '      delay 0.4\n'
+                '      set response to response & "opened|true" & linefeed\n'
+                '    on error messageText\n'
+                '      set response to response & "opened|false|" & messageText & linefeed\n'
+                '    end try\n'
+                '    set response to response & "file-children-after-open|" & linefeed\n'
+                '    try\n'
+                '      repeat with itemRef in menu items of menu 1 of fileItem\n'
+                '        set response to response & my menuLine(itemRef)\n'
+                '      end repeat\n'
+                '    on error messageText\n'
+                '      set response to response & "<query-error:" & messageText & ">" & linefeed\n'
+                '    end try\n'
+                '    return response\n'
+                '  end tell\n'
+                'end tell')
+            try:
+                result = run(["osascript", "-e", script], timeout=25, check=False)
+                report["systemEvents"]["returnCode"] = result.returncode
+                report["systemEvents"]["stdout"] = result.stdout.strip()
+                report["systemEvents"]["stderr"] = result.stderr.strip()
+            except Exception as error:  # noqa: BLE001 - diagnostics must not change acceptance
+                result = None
+                report["systemEvents"]["error"] = str(error)
+
+            # The System Events query leaves File open for the second direct
+            # AX snapshot. Close it afterward without changing test state.
+            report["directAX"]["afterOpening"] = direct_snapshot("afterOpening")
+            if result and "opened|true" in result.stdout:
+                close_script = (
+                    'tell application "System Events" to tell first process whose '
+                    f'name is "{process_name}" to click menu bar item "File" of menu bar 1')
+                try:
+                    close_result = run(["osascript", "-e", close_script], timeout=15, check=False)
+                    report["systemEvents"]["closeReturnCode"] = close_result.returncode
+                    report["systemEvents"]["closeStdout"] = close_result.stdout.strip()
+                    report["systemEvents"]["closeStderr"] = close_result.stderr.strip()
+                except Exception as error:  # noqa: BLE001 - diagnostics must not change acceptance
+                    report["systemEvents"]["closeError"] = str(error)
+            else:
+                report["systemEvents"]["closeSkipped"] = "System Events did not confirm opening File"
+
+        path = self.output / "menu-accessibility-diagnostics.json"
+        path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        print(f"   menu Accessibility diagnostic: {path.name}", flush=True)
+        print(f"   menu System Events query: "
+              f"{json.dumps(report['systemEvents'], ensure_ascii=False)[:5000]}", flush=True)
+        return path.name
+
     def crash_reports(self):
         directory = Path.home() / "Library/Logs/DiagnosticReports"
         if not directory.is_dir():
@@ -1434,6 +1555,8 @@ def dynamic_menu_shortcut_labels(ctx):
                       "Accessibility on the macOS runner")
     emacs = instance.emacs
     emacs.eval("(glassmacs-set-keyboard-profile 'glassmacs-hybrid)")
+    diagnostic = harness.capture_menu_accessibility_diagnostics(instance.pid)
+    ctx.note(f"AX menu diagnostic artifact: {diagnostic}")
     actual = harness.menu_item_shortcut(instance.pid, "File", "New Document")
     ctx.expect(actual is not None and actual[0].lower() == "n" and actual[1] == "0",
                f"Hybrid New Document shortcut was {actual!r}, expected Command-N")
