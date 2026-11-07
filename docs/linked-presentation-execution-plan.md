@@ -81,9 +81,9 @@ Build exact PR #98 head SHA with bundled Emacs, ESS and R, isolated native-compi
 | --- | --- | --- |
 | S0 | CI verified | GitHub Actions run 42331782502 on 231546f: Emacs 407 passed / 33 skipped / 0 failed; real ESS/R 439 passed / 1 skipped / 0 failed; all four jobs green |
 | S1 | Implemented; further verification ongoing | Toolbar New/Link/Show, explicit source-only target resolver, ESS-advised execution, multi-session and indirect-buffer tests; CI green on 231546f. Additional error-preservation fix and regression test after green commit require fresh CI. Native GUI remains pending. |
-| S2 | Initial implementation; CI pending | Added read-only `glassmacs-presentation-buffer-role` in `lisp/glassmacs-presentation-model.el`, with initial document/R source/indirect/utility/dead-buffer ERT. No hooks, advice or window mutations. Expand role cases and verify CI before calling S2 complete. |
-| S3 | Initial implementation; CI pending | Pure intent-to-placement resolver and read-only existing-view suitability predicate added; ERT covers intent, destination, frame suitability and no-reuse operations. Not yet wired into runtime presenters. |
-| S4 | Planned | Existing presenters inventoried in Phase 1 |
+| S2 | CI verified at 62a4dba | Added read-only `glassmacs-presentation-buffer-role` in `lisp/glassmacs-presentation-model.el`, with initial document/R source/indirect/utility/dead-buffer ERT. No hooks, advice or window mutations. Expand role cases and verify CI before calling S2 complete. |
+| S3 | CI verified at 62a4dba | Pure intent-to-placement resolver and read-only existing-view suitability predicate added; ERT covers intent, destination, frame suitability and no-reuse operations. Not yet wired into runtime presenters. |
+| S4 | In progress; CI pending | Document and R console presenters now consult shared suitability; explicit new-view with reuse-current creates a separate split; focused ERT added. Other presenters and GUI acceptance pending. |
 | S5 | Planned | Native menus and placement require regression tests |
 | S6 | Planned | Existing lifecycle and recovery audit recorded |
 | S7 | Pending | Native GUI test blocked previously by signed native-code cache mismatch |
@@ -107,3 +107,7 @@ Created the isolated, read-only buffer role classifier and initial ERT coverage.
 ## S2–S3 implementation checkpoint — 2026-11-06
 
 Added role coverage for R consoles, R help and preferences, plus a pure `glassmacs-presentation-policy-action` and read-only `glassmacs-presentation-view-suitable-p` in `lisp/glassmacs-presentation-model.el`. The predicate rejects reuse for explicit new-view/move/split/tab/replace intents, enforces destination-frame identity and requires a sole ordinary frame window for `new-frame` reuse. Added focused ERT. **These changes are not yet CI-validated and do not change user-facing presentation behavior.** The integration run for the earlier S2 checkpoint is still in progress at last check. Next gate: verify tests, then migrate one presenter seam at a time; defer native GUI acceptance to the integrated macOS run.
+
+## S4 initial runtime integration — 2026-11-07
+
+GitHub Actions run `42338680974` completed successfully on `62a4dba`: `changes`, `emacs-batch`, `ess-r-integration`, and `macos-launcher` all green. This verifies the S2/S3 checkpoint only. Subsequently, `glassmacs-present-buffer` began consulting `glassmacs-presentation-view-suitable-p` before focusing an existing view; the explicit `new-view` intent now creates a separate split under `reuse-current` instead of replacing the original. `glassmacs-r-display-console` now consults the same predicate and loads the model explicitly. Added focused document/console presenter ERT. **These S4 commits are not yet CI-validated and no native GUI checks have been run.** Next: inspect CI for regressions, then migrate help/preferences and explicit placement seams individually.
