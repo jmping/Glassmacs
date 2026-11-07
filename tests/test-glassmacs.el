@@ -59,6 +59,23 @@
       (dolist (buffer (list console help preferences))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
+(ert-deftest glassmacs-presentation-view-requires-current-tab ()
+  "A stale or hidden-tab view cannot satisfy presentation reuse."
+  (require 'glassmacs-presentation-model)
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer " *glassmacs-tab-identity*")))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer buffer)
+            (let ((window (selected-window)))
+              (should (glassmacs-presentation-current-tab-view-p window))
+              (cl-letf (((symbol-function 'glassmacs-presentation-current-tab-view-p)
+                         (lambda (_window) nil)))
+                (should-not (glassmacs-presentation-view-suitable-p
+                             window buffer 'open 'reuse-current)))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
 (ert-deftest glassmacs-presentation-find-suitable-view-skips-unsuitable-first-view ()
   "Search all visible views rather than trusting the first buffer window."
   (require 'glassmacs-presentation-model)
