@@ -70,6 +70,27 @@
     (cons process buffer)))
 
 
+(ert-deftest glassmacs-r-console-display-checks-view-suitability ()
+  "An existing console view is reused only when policy deems it suitable."
+  (save-window-excursion
+    (let ((console (generate-new-buffer " *glassmacs-console-suitability*"))
+          (glassmacs-r-console-placement 'current-window)
+          (checked nil))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer console)
+            (cl-letf (((symbol-function 'glassmacs-presentation-view-suitable-p)
+                       (lambda (window buffer intent placement &optional _destination)
+                         (setq checked (list window buffer intent placement))
+                         t))
+                      ((symbol-function 'select-frame-set-input-focus) #'ignore))
+              (glassmacs-r-display-console console))
+            (should (eq (nth 1 checked) console))
+            (should (eq (nth 2 checked) 'focus))
+            (should (eq (nth 3 checked) 'reuse-current)))
+        (when (buffer-live-p console) (kill-buffer console))))))
+
 (ert-deftest glassmacs-r-source-target-prompts-with-one-console-and-persists ()
   (with-temp-buffer
     (let* ((session (glassmacs-session--make :id "r-1" :state 'ready))
