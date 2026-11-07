@@ -50,9 +50,15 @@ On macOS, preserve the source document by opening a new frame."
 
 (defun glassmacs--display-preferences (buffer _alist)
   "Show BUFFER without replacing a document on graphical macOS."
-  (let ((existing (get-buffer-window buffer t)))
+  (let* ((existing (get-buffer-window buffer t))
+         (placement (if (and (display-graphic-p)
+                             (eq glassmacs-preferences-opening-policy 'new-frame))
+                        'new-frame 'reuse-current)))
     (cond
-     (existing existing)
+     ((and existing
+           (glassmacs-presentation-view-suitable-p
+            existing buffer 'open placement))
+      existing)
      ((and (display-graphic-p)
            (eq glassmacs-preferences-opening-policy 'new-frame))
       (display-buffer-pop-up-frame buffer nil))
