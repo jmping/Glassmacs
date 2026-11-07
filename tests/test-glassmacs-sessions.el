@@ -74,6 +74,7 @@
   (with-temp-buffer
     (let* ((session (glassmacs-session--make :id "r-1" :state 'ready))
            (prompts 0)
+           (glassmacs-sessions--list (list session))
            (glassmacs-r-target-session nil))
       (cl-letf (((symbol-function 'glassmacs-sessions-refresh)
                  (lambda () (list session)))
@@ -103,6 +104,7 @@
   (with-temp-buffer
     (let ((glassmacs-r-target-session "dead")
           (session (glassmacs-session--make :id "r-new" :state 'ready))
+          (glassmacs-sessions--list nil)
           (prompts 0))
       (cl-letf (((symbol-function 'glassmacs-sessions-refresh) #'ignore)
                 ((symbol-function 'glassmacs-sessions-live)
