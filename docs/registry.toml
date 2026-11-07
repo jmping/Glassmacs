@@ -65,3 +65,9 @@ id = "DOC-LINKED-PHASE1"
 path = "docs/linked-presentation-phase1-audit.md"
 category = "development"
 status = "informational"
+
+[[document]]
+id = "DOC-LINKED-EXECUTION-PLAN"
+path = "docs/linked-presentation-execution-plan.md"
+category = "development"
+status = "informational"
