@@ -181,3 +181,7 @@ Future entries should state date, affected document IDs, old/new coverage or aut
 ## 2026-11-06 — Integrated window presentation program
 
 The integration branch incorporates the unmerged ESS console placement patch from PR #96 and the linked-presentation architecture, Phase 0 baseline, and Phase 1 source audit from PR #97. The latter three are informational design/audit documents registered in DOC-INDEX and docs/registry.toml. This integration is not a native GUI acceptance claim. The approved R console interaction contract requires New Console to always create an independent session, a separate Link Console action, and explicit link selection before source execution; implementation and tests are pending.
+
+## 2026-11-06 — Persistent PR #98 execution plan
+
+Added `DOC-LINKED-EXECUTION-PLAN` at `docs/linked-presentation-execution-plan.md`, registered in the documentation index and machine registry. The plan tracks stages S0–S7, approved R console creation/linking behavior, automated and GUI acceptance gates, and the current integration status. This document is informational; it does not claim runtime implementation or verification.
