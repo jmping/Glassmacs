@@ -15,6 +15,7 @@
 (require 'comint)
 (require 'project)
 (require 'subr-x)
+(require 'glassmacs-presentation-model)
 
 (defgroup glassmacs-sessions nil
   "R session registry and command queue."
@@ -90,6 +91,11 @@ enough scrollback to review earlier results without unbounded growth."
 (defvar inferior-ess-primary-prompt)
 (defvar inferior-ess-secondary-prompt)
 (defvar glassmacs-r-executable)
+
+(declare-function glassmacs-present-buffer "glassmacs-frames"
+                  (buffer &optional intent placement destination))
+(declare-function glassmacs-move-buffer-to "glassmacs-buffer-placement"
+                  (placement &optional frame source))
 
 (defcustom glassmacs-sessions-history-limit 10000
   "Maximum number of lifecycle events kept in the R execution history.
@@ -466,6 +472,29 @@ session, the only live session, or the session matching ESS's
                        live)))
      (t (glassmacs-sessions--prompt live)))))
 
+(defun glassmacs-r-resolve-source-target ()
+  "Resolve a source document's explicitly linked live R session.
+If the document has no link, ask for a live console even if only one
+exists, then persist the selection across the base and indirect buffers.
+Never start R, guess from ESS process-local state, or fall back from a
+stale explicit link.  Cancellation does not modify the document target."
+  (glassmacs-sessions-refresh)
+  (let* ((base (or (buffer-base-buffer) (current-buffer)))
+         (id (with-current-buffer base glassmacs-r-target-session))
+         (live (glassmacs-sessions-live)))
+    (cond
+     (id
+      (let ((session (glassmacs-sessions-find id)))
+        (unless (and session (memq session live))
+          (user-error "Linked R session %s is no longer live; link another console explicitly" id))
+        session))
+     ((null live)
+      (user-error "No live R console; create one with New R Console first"))
+     (t
+      (let ((session (glassmacs-sessions--prompt live)))
+        (glassmacs-r--set-document-target (glassmacs-session-id session))
+        session)))))
+
 (defun glassmacs-sessions--prompt (live)
   (when noninteractive
     (user-error "Several R sessions are live; select one explicitly"))
@@ -547,9 +576,14 @@ placements remain available for users who prefer Emacs pane layouts."
 
 (defun glassmacs-r--display-help (buffer _alist)
   "Present ESS R Help BUFFER according to the single Help policy."
-  (let ((existing (get-buffer-window buffer t)))
+  (let* ((placement (if (and (display-graphic-p)
+                             (eq glassmacs-r-help-placement 'separate-window))
+                        'new-frame 'reuse-current))
+         (existing (glassmacs-presentation-find-suitable-view
+                    buffer 'open placement)))
     (cond
-     (existing existing)
+     (existing
+      existing)
      ((and (display-graphic-p)
            (eq glassmacs-r-help-placement 'separate-window))
       (display-buffer-pop-up-frame
@@ -577,26 +611,53 @@ placements remain available for users who prefer Emacs pane layouts."
   (if (eq system-type 'darwin) 'separate-window 'split-below)
   "How Glassmacs displays ESS R consoles."
   :type '(choice (const :tag "Separate macOS window" separate-window)
+                 (const :tag "New tab" new-tab)
                  (const :tag "Split below" split-below)
                  (const :tag "Split right" split-right)
                  (const :tag "Current window" current-window))
   :group 'glassmacs-r)
 
+(defun glassmacs-r--present-started-console (buffer origin-window origin-buffer)
+  "Apply the configured presentation policy to a newly started R BUFFER.
+ESS has already initialized and displayed BUFFER by the time `R' returns.
+Restore the source if ESS replaced it, then move ESS's temporary view when
+the configured policy calls for a dedicated frame or tab."
+  (when (and (window-live-p origin-window)
+             (buffer-live-p origin-buffer)
+             (eq (window-buffer origin-window) buffer))
+    (set-window-buffer origin-window origin-buffer))
+  (pcase glassmacs-r-console-placement
+    ((or 'separate-window 'new-tab)
+     (let* ((placement (if (eq glassmacs-r-console-placement 'new-tab)
+                           'new-tab 'new-frame))
+            (source (get-buffer-window buffer t))
+            (destination (and (eq placement 'new-tab)
+                              (and (window-live-p origin-window)
+                                   (window-frame origin-window)))))
+       (if source
+           (glassmacs-move-buffer-to placement destination source)
+         (glassmacs-present-buffer buffer 'move placement destination))))
+    (_ (glassmacs-r-display-console buffer))))
+
 (defun glassmacs-r-display-console (buffer)
   "Show ESS console BUFFER according to the R window placement preference."
   (unless (buffer-live-p buffer)
     (user-error "The R console buffer no longer exists"))
-  (let ((existing (get-buffer-window buffer t)))
+  (let* ((placement (pcase glassmacs-r-console-placement
+                      ('separate-window 'new-frame)
+                      ('new-tab 'new-tab)
+                      (_ 'reuse-current)))
+         (existing (glassmacs-presentation-find-suitable-view
+                    buffer 'focus placement)))
     (cond
      (existing
       (select-frame-set-input-focus (window-frame existing))
       (select-window existing))
      ((and (display-graphic-p)
            (eq glassmacs-r-console-placement 'separate-window))
-      (let ((frame (make-frame)))
-        (with-selected-frame frame
-          (switch-to-buffer buffer))
-        (select-frame-set-input-focus frame)))
+      (glassmacs-present-buffer buffer 'open 'new-frame))
+     ((eq glassmacs-r-console-placement 'new-tab)
+      (glassmacs-present-buffer buffer 'open 'new-tab))
      ((eq glassmacs-r-console-placement 'split-right)
       (let ((window (split-window-right)))
         (set-window-buffer window buffer)
@@ -752,16 +813,14 @@ buffer; existing splits and other windows are never deleted."
       (unless (glassmacs-sessions--process-live-p proc)
         (user-error "R started but no live ESS process was found"))
       (let ((id (glassmacs-session-id (glassmacs-sessions-register proc))))
-        (when (and (eq system-type 'darwin)
-                   (display-graphic-p)
-                   (eq glassmacs-r-console-placement 'separate-window))
-          ;; ESS can replace the source in its original window while
-          ;; starting R.  Restore only that window, not the entire layout.
-          (when (and (window-live-p origin-window)
-                     (buffer-live-p origin-buffer)
-                     (eq (window-buffer origin-window) console))
-            (set-window-buffer origin-window origin-buffer))
-          (glassmacs-r-display-console console)
+        (when (or (eq glassmacs-r-console-placement 'new-tab)
+                  (and (display-graphic-p)
+                       (eq glassmacs-r-console-placement 'separate-window)))
+          ;; ESS owns startup and may first display the process in a source
+          ;; frame or split.  Once R returns, relocate that view through the
+          ;; shared buffer-presentation layer.
+          (glassmacs-r--present-started-console
+           console origin-window origin-buffer)
           ;; If ESS selected another frame, retain the document frame's
           ;; layout and never collapse its splits as a side effect.
           (when (and (frame-live-p origin-frame)

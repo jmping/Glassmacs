@@ -48,17 +48,12 @@ Without ESS, offer once per session to install the optional packages."
   (call-interactively (intern "R")))
 
 (defun glassmacs-r--with-target (operation)
-  "Invoke OPERATION with the source buffer's explicit ESS session target.
-When no target is selected, preserve ESS's normal process selection.
-An invalid explicit target is an error, never a reason to send to another R."
-  (if (and (boundp 'glassmacs-r-target-session)
-           glassmacs-r-target-session)
-      (progn
-        (unless (fboundp 'glassmacs-sessions-resolve)
-          (user-error "Glassmacs R session management is unavailable"))
-        (let* ((session (glassmacs-sessions-resolve))
-               (ess-local-process-name (glassmacs-session-name session)))
-          (funcall operation)))
+  "Invoke OPERATION with the document's linked live ESS process.
+An unlinked source prompts for a console and retains the link."
+  (unless (fboundp 'glassmacs-r-resolve-source-target)
+    (user-error "Glassmacs R session management is unavailable"))
+  (let* ((session (glassmacs-r-resolve-source-target))
+         (ess-local-process-name (glassmacs-session-name session)))
     (funcall operation)))
 
 (defcustom glassmacs-r-queue-editor-submissions t
@@ -74,8 +69,9 @@ native interactive input; commands typed directly there are not queued."
       (progn
         (unless (fboundp 'glassmacs-queue-submit)
           (user-error "Glassmacs R execution queue is unavailable"))
-        (glassmacs-queue-submit
-         source nil (list :buffer (buffer-name) :operation operation)))
+        (let ((session (glassmacs-r-resolve-source-target)))
+          (glassmacs-queue-submit
+           source session (list :buffer (buffer-name) :operation operation))))
     (glassmacs-r--with-target fallback)))
 
 (defun glassmacs-r-send-region (start end)

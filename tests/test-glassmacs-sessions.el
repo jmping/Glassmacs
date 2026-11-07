@@ -69,6 +69,140 @@
     (set-process-buffer process buffer)
     (cons process buffer)))
 
+
+(ert-deftest glassmacs-r-help-display-checks-view-suitability ()
+  "ESS help reuse requires a suitable existing view."
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer "*R Help Suitability*"))
+          (glassmacs-r-help-placement 'side-right)
+          (checks 0))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer buffer)
+            (cl-letf (((symbol-function 'glassmacs-presentation-view-suitable-p)
+                       (lambda (&rest _) (cl-incf checks) t)))
+              (should (eq (glassmacs-r--display-help buffer nil)
+                          (selected-window)))
+              (should (= checks 1))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest glassmacs-r-console-display-checks-view-suitability ()
+  "An existing console view is reused only when policy deems it suitable."
+  (save-window-excursion
+    (let ((console (generate-new-buffer " *glassmacs-console-suitability*"))
+          (glassmacs-r-console-placement 'current-window)
+          (checked nil))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer console)
+            (cl-letf (((symbol-function 'glassmacs-presentation-view-suitable-p)
+                       (lambda (window buffer intent placement &optional _destination)
+                         (setq checked (list window buffer intent placement))
+                         t))
+                      ((symbol-function 'select-frame-set-input-focus) #'ignore))
+              (glassmacs-r-display-console console))
+            (should (eq (nth 1 checked) console))
+            (should (eq (nth 2 checked) 'focus))
+            (should (eq (nth 3 checked) 'reuse-current)))
+        (when (buffer-live-p console) (kill-buffer console))))))
+
+(ert-deftest glassmacs-r-source-target-prompts-with-one-console-and-persists ()
+  (with-temp-buffer
+    (let* ((session (glassmacs-session--make :id "r-1" :state 'ready))
+           (prompts 0)
+           (glassmacs-sessions--list (list session))
+           (glassmacs-r-target-session nil))
+      (cl-letf (((symbol-function 'glassmacs-sessions-refresh)
+                 (lambda () (list session)))
+                ((symbol-function 'glassmacs-sessions-live)
+                 (lambda () (list session)))
+                ((symbol-function 'glassmacs-sessions--prompt)
+                 (lambda (_live) (cl-incf prompts) session)))
+        (should (eq (glassmacs-r-resolve-source-target) session))
+        (should (equal glassmacs-r-target-session "r-1"))
+        (should (= prompts 1))
+        (should (eq (glassmacs-r-resolve-source-target) session))
+        (should (= prompts 1))))))
+
+(ert-deftest glassmacs-r-source-target-cancel-does-not-link ()
+  (with-temp-buffer
+    (let ((session (glassmacs-session--make :id "r-1" :state 'ready))
+          (glassmacs-r-target-session nil))
+      (cl-letf (((symbol-function 'glassmacs-sessions-refresh) #'ignore)
+                ((symbol-function 'glassmacs-sessions-live)
+                 (lambda () (list session)))
+                ((symbol-function 'glassmacs-sessions--prompt)
+                 (lambda (_live) (signal 'quit nil))))
+        (should (eq (condition-case nil
+                        (progn (glassmacs-r-resolve-source-target) 'returned)
+                      (quit 'cancelled))
+                    'cancelled))
+        (should-not glassmacs-r-target-session)))))
+
+(ert-deftest glassmacs-r-source-target-stale-link-never-falls-back ()
+  (with-temp-buffer
+    (let ((glassmacs-r-target-session "dead")
+          (session (glassmacs-session--make :id "r-new" :state 'ready))
+          (glassmacs-sessions--list nil)
+          (prompts 0))
+      (cl-letf (((symbol-function 'glassmacs-sessions-refresh) #'ignore)
+                ((symbol-function 'glassmacs-sessions-live)
+                 (lambda () (list session)))
+                ((symbol-function 'glassmacs-sessions--prompt)
+                 (lambda (_live) (cl-incf prompts) session)))
+        (should-error (glassmacs-r-resolve-source-target) :type 'user-error)
+        (should (= prompts 0))
+        (should (equal glassmacs-r-target-session "dead"))))))
+
+(ert-deftest glassmacs-r-source-target-requires-existing-console ()
+  (with-temp-buffer
+    (let ((glassmacs-r-target-session nil))
+      (cl-letf (((symbol-function 'glassmacs-sessions-refresh) #'ignore)
+                ((symbol-function 'glassmacs-sessions-live) #'ignore))
+        (should-error (glassmacs-r-resolve-source-target) :type 'user-error)
+        (should-not glassmacs-r-target-session)))))
+
+(ert-deftest glassmacs-r-source-target-multiple-consoles-selects-explicitly ()
+  (with-temp-buffer
+    (let* ((first (glassmacs-session--make :id "r-first" :state 'ready))
+           (second (glassmacs-session--make :id "r-second" :state 'ready))
+           (glassmacs-sessions--list (list first second))
+           (glassmacs-r-target-session nil)
+           (prompts 0))
+      (cl-letf (((symbol-function 'glassmacs-sessions-refresh) #'ignore)
+                ((symbol-function 'glassmacs-sessions-live)
+                 (lambda () (list first second)))
+                ((symbol-function 'glassmacs-sessions--prompt)
+                 (lambda (_live) (cl-incf prompts) second)))
+        (should (eq (glassmacs-r-resolve-source-target) second))
+        (should (equal glassmacs-r-target-session "r-second"))
+        (should (= prompts 1))
+        (should (eq (glassmacs-r-resolve-source-target) second))
+        (should (= prompts 1))))))
+
+(ert-deftest glassmacs-r-source-target-indirect-buffer-links-base-document ()
+  (let ((base (generate-new-buffer " *glassmacs-r-target-base*"))
+        indirect)
+    (unwind-protect
+        (progn
+          (setq indirect (make-indirect-buffer base " *glassmacs-r-target-chunk*" t))
+          (let* ((session (glassmacs-session--make :id "r-chunk" :state 'ready))
+                 (glassmacs-sessions--list (list session)))
+            (cl-letf (((symbol-function 'glassmacs-sessions-refresh) #'ignore)
+                      ((symbol-function 'glassmacs-sessions-live)
+                       (lambda () (list session)))
+                      ((symbol-function 'glassmacs-sessions--prompt)
+                       (lambda (_live) session)))
+              (with-current-buffer indirect
+                (should (eq (glassmacs-r-resolve-source-target) session))
+                (should (equal glassmacs-r-target-session "r-chunk")))
+              (with-current-buffer base
+                (should (equal glassmacs-r-target-session "r-chunk"))))))
+      (when (buffer-live-p indirect) (kill-buffer indirect))
+      (when (buffer-live-p base) (kill-buffer base)))))
+
 (ert-deftest glassmacs-sessions-identity-and-registration ()
   (gs-test--with-env
    (let* ((a (gs-test--proc "R")) (b (gs-test--proc "R:2"))
@@ -697,6 +831,106 @@
 (defun gs-test--ess-and-r-p ()
   (and (executable-find "R") (locate-library "ess-site")
        (not (getenv "GLASSMACS_SKIP_INTEGRATION"))))
+
+(ert-deftest glassmacs-r-started-console-moves-ess-view-to-separate-frame ()
+  "A startup-time ESS view is relocated without displacing its source."
+  (let* ((glassmacs-r-console-placement 'separate-window)
+         (source (generate-new-buffer " *glassmacs-start-source*"))
+         (console-a (generate-new-buffer " *glassmacs-start-console-a*"))
+         (console-b (generate-new-buffer " *glassmacs-start-console-b*"))
+         (buffers (make-hash-table :test #'eq))
+         (moves nil)
+         (presentations nil))
+    (unwind-protect
+        (progn
+          (puthash 'source-window source buffers)
+          (cl-letf (((symbol-function 'window-live-p)
+                     (lambda (window)
+                       (memq window '(source-window console-window))))
+                    ((symbol-function 'window-buffer)
+                     (lambda (window) (gethash window buffers)))
+                    ((symbol-function 'set-window-buffer)
+                     (lambda (window buffer) (puthash window buffer buffers)))
+                    ((symbol-function 'get-buffer-window)
+                     (lambda (buffer &optional _all-frames)
+                       (cl-loop for window in '(source-window console-window)
+                                when (eq (gethash window buffers) buffer)
+                                return window)))
+                    ((symbol-function 'glassmacs-move-buffer-to)
+                     (lambda (placement destination source-window)
+                       (push (list placement destination source-window) moves)))
+                    ((symbol-function 'glassmacs-present-buffer)
+                     (lambda (buffer intent placement &optional destination)
+                       (push (list buffer intent placement destination)
+                             presentations))))
+            ;; ESS replaces the source for session A, but opens session B in
+            ;; a split beside the intact source.
+            (puthash 'source-window console-a buffers)
+            (glassmacs-r--present-started-console
+             console-a 'source-window source)
+            (should (eq (gethash 'source-window buffers) source))
+            (puthash 'console-window console-b buffers)
+            (glassmacs-r--present-started-console
+             console-b 'source-window source)
+            (should (eq (gethash 'source-window buffers) source))
+            (should (equal presentations
+                           `((,console-a move new-frame nil))))
+            (should (equal moves '((new-frame nil console-window))))))
+      (kill-buffer source)
+      (kill-buffer console-a)
+      (kill-buffer console-b))))
+
+(ert-deftest glassmacs-r-started-console-honors-tab-placement ()
+  "A new console follows the configured tab policy through shared placement."
+  (let* ((glassmacs-r-console-placement 'new-tab)
+         (source (generate-new-buffer " *glassmacs-tab-source*"))
+         (console (generate-new-buffer " *glassmacs-tab-console*"))
+         (buffers (make-hash-table :test #'eq))
+         (move nil))
+    (unwind-protect
+        (progn
+          (puthash 'source-window console buffers)
+          (cl-letf (((symbol-function 'window-live-p)
+                     (lambda (window) (eq window 'source-window)))
+                    ((symbol-function 'window-buffer)
+                     (lambda (window) (gethash window buffers)))
+                    ((symbol-function 'set-window-buffer)
+                     (lambda (window buffer) (puthash window buffer buffers)))
+                    ((symbol-function 'window-frame)
+                     (lambda (_window) 'source-frame))
+                    ((symbol-function 'get-buffer-window)
+                     (lambda (buffer &optional _all-frames)
+                       (and (eq buffer console) 'source-window)))
+                    ((symbol-function 'glassmacs-move-buffer-to)
+                     (lambda (placement destination source-window)
+                       (setq move (list placement destination source-window)))))
+            (glassmacs-r--present-started-console
+             console 'source-window source)
+            (should (eq (gethash 'source-window buffers) source))
+            (should (equal move '(new-tab source-frame source-window)))))
+      (kill-buffer source)
+      (kill-buffer console))))
+
+(ert-deftest glassmacs-r-selecting-console-reuses-existing-window ()
+  "Session selection focuses its existing view instead of making a duplicate."
+  (let ((buffer (generate-new-buffer " *glassmacs-existing-console*"))
+        (focused nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'get-buffer-window)
+                   (lambda (_buffer &optional _all-frames) 'console-window))
+                  ((symbol-function 'window-frame)
+                   (lambda (_window) 'console-frame))
+                  ((symbol-function 'select-frame-set-input-focus)
+                   (lambda (frame) (should (eq frame 'console-frame))))
+                  ((symbol-function 'select-window)
+                   (lambda (window) (setq focused window)))
+                  ((symbol-function 'make-frame)
+                   (lambda () (ert-fail "Selecting a session made a new frame")))
+                  ((symbol-function 'display-graphic-p) (lambda (&optional _) t)))
+          (glassmacs-r-display-console buffer)
+          (should (eq focused 'console-window))
+          (should (buffer-live-p buffer)))
+      (kill-buffer buffer))))
 
 (ert-deftest glassmacs-sessions-integration-real-ess ()
   (skip-unless (gs-test--ess-and-r-p))

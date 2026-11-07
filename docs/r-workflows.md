@@ -31,6 +31,30 @@ ESS's `inferior-ess-r-program` setting. No platform-specific R path is
 assumed. ESS provides completion, help, syntax highlighting, and project-aware
 session behavior.
 
+### R console window placement
+
+Customize `glassmacs-r-console-placement` to choose **Separate macOS window**
+(`separate-window`), **New tab** (`new-tab`), **Split below**, **Split right**,
+or **Current window**. On graphical macOS, separate-window is the default.
+ESS first creates and displays its inferior buffer as part of `M-x R`; after
+ESS finishes startup, Glassmacs routes that buffer through the shared buffer
+placement layer. This preserves the source view and moves an ESS-created split
+when needed. Selecting an already visible session focuses its existing
+console, so switching sessions does not create duplicate windows. Closing a
+console frame closes its view and leaves its R process running.
+
+**Local macOS acceptance procedure:** with the packaged app and ESS/R
+available, select separate-window placement, open an `.R` source file, then
+start two sessions from that source. Confirm that the source frame remains
+unchanged and each console appears in its own native window. Evaluate a distinct
+marker command in each session, check the corresponding console output, switch
+between sessions twice, and verify both original console windows remain. Repeat
+using `new-tab`; confirm both consoles are independently reachable from tabs
+without changing session targets. Also try `split-below` explicitly. ERT
+verifies placement decisions and buffer/process reuse, but it cannot establish
+native Cocoa window behavior; record the actual GUI result in the
+[acceptance matrix](acceptance-matrix.md).
+
 ### R Help window safety (Alpha)
 
 On graphical macOS, **R Help…** opens ESS R documentation in a separate

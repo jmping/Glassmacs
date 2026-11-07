@@ -2,6 +2,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'glassmacs-presentation-model)
 
 (defgroup glassmacs-frames nil
   "Document opening behavior for Glassmacs."
@@ -49,9 +50,14 @@ On macOS, preserve the source document by opening a new frame."
 
 (defun glassmacs--display-preferences (buffer _alist)
   "Show BUFFER without replacing a document on graphical macOS."
-  (let ((existing (get-buffer-window buffer t)))
+  (let* ((placement (if (and (display-graphic-p)
+                             (eq glassmacs-preferences-opening-policy 'new-frame))
+                        'new-frame 'reuse-current))
+         (existing (glassmacs-presentation-find-suitable-view
+                    buffer 'open placement)))
     (cond
-     (existing existing)
+     (existing
+      existing)
      ((and (display-graphic-p)
            (eq glassmacs-preferences-opening-policy 'new-frame))
       (display-buffer-pop-up-frame buffer nil))
@@ -105,25 +111,26 @@ selecting a dedicated frame first protects the source document."
 
 (defun glassmacs-present-buffer (buffer &optional intent placement destination)
   "Present BUFFER according to INTENT and PLACEMENT, returning its window.
-INTENT is one of open, focus, move, split, tab, or replace.  An open
-or focus operation first reuses a visible view of BUFFER.  PLACEMENT
+INTENT is one of open, focus, new-view, move, split, tab, or replace.
+An open or focus operation reuses only a suitable visible view of BUFFER.  PLACEMENT
 defaults to the document opening policy; DESTINATION is an explicit frame
 for intentional consolidation.  This API does not advise Emacs primitives."
   (unless (buffer-live-p buffer)
     (user-error "Cannot present a dead buffer"))
   (let* ((intent (or intent 'open))
-         (existing (get-buffer-window buffer t))
          (placement (or placement
                         (and (eq intent 'open)
                              (glassmacs--document-opening-action buffer))
-                        'reuse-current)))
+                        'reuse-current))
+         (existing (glassmacs-presentation-find-suitable-view
+                    buffer intent placement destination)))
     (cond
-     ((and (memq intent '(open focus)) existing)
+     (existing
       (select-frame-set-input-focus (window-frame existing))
       (select-window existing)
       existing)
      ((eq intent 'focus)
-      (glassmacs-present-buffer buffer 'open placement destination))
+      (glassmacs-present-buffer buffer 'new-view placement destination))
      ((and (memq intent '(open focus))
            (fboundp 'glassmacs--ensure-visible-frame)
            (glassmacs--ensure-visible-frame))
@@ -141,6 +148,13 @@ for intentional consolidation.  This API does not advise Emacs primitives."
                 ('replace 'replace)
                 (_ placement))
        destination))
+     ((and (eq intent 'new-view) (eq placement 'reuse-current))
+      ;; A new view must not silently replace the existing one.
+      ;; In a terminal, a split is the closest supported presentation.
+      (let ((window (split-window (selected-window) nil 'below)))
+        (set-window-buffer window buffer)
+        (select-window window)
+        window))
      ((eq placement 'new-frame)
       (let ((frame (make-frame)))
         (with-selected-frame frame
@@ -340,6 +354,19 @@ otherwise the frame.  Closing the final frame keeps Glassmacs running
      (t
       (delete-frame frame)))))
 
+(defun glassmacs-close-current-tab ()
+  "Close the current tab through Glassmacs document and console review.
+Never bypass the save/discard/cancel decision or terminate an R process.
+When only one tab remains, use the regular document-close operation."
+  (interactive)
+  (if (not (glassmacs--frame-has-hidden-tabs-p (selected-frame)))
+      (glassmacs-close-document)
+    (let ((windows (window-list (selected-frame) 'never)))
+      (if (and (glassmacs--confirm-console-windows-close windows)
+               (glassmacs--close-documents-in-windows windows))
+          (tab-bar-close-tab)
+        (message "Close canceled")))))
+
 (defun glassmacs-close-document ()
   "Close the selected window and its document, as Command-W does on a Mac.
 If the window shows an ordinary document that no other window shows,
@@ -356,15 +383,27 @@ tab, or its frame."
         (glassmacs--close-view window)
       (message "Close canceled"))))
 
+(defun glassmacs--frame-has-hidden-tabs-p (frame)
+  "Whether FRAME has tabs beyond its currently selected tab.
+Closing the native frame while other tabs exist must not bypass their
+individual document-save and R-console checks."
+  (and (frame-live-p frame)
+       (bound-and-true-p tab-bar-mode)
+       (> (length (funcall tab-bar-tabs-function frame)) 1)))
+
 (defun glassmacs-close-frame-documents (frame)
   "Close the documents shown only in FRAME before the frame closes.
 Used for the window close button.  Return nil when the user cancels,
 in which case the frame must stay open."
   (or (not (framep frame))
       (not (frame-live-p frame))
-      (let ((windows (window-list frame 'never)))
-        (and (glassmacs--confirm-console-windows-close windows)
-             (glassmacs--close-documents-in-windows windows)))))
+      (if (glassmacs--frame-has-hidden-tabs-p frame)
+          (progn
+            (message "Close the other tabs before closing this window")
+            nil)
+        (let ((windows (window-list frame 'never)))
+          (and (glassmacs--confirm-console-windows-close windows)
+               (glassmacs--close-documents-in-windows windows))))))
 
 (defun glassmacs-save-document-as (filename)
   "Save the current document as FILENAME using Emacs' native file safeguards.
