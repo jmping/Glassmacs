@@ -76,5 +76,25 @@ This is read-only: it never selects or mutates WINDOW."
           (not (window-minibuffer-p window)))
          (_ (not (window-minibuffer-p window))))))
 
+(defun glassmacs-presentation-find-suitable-view (buffer intent placement
+                                                        &optional destination)
+  "Find a suitable visible view of BUFFER, not merely its first view.
+Prefer a view in DESTINATION, then the selected frame, before searching
+other frames.  Never change selection or create windows.  This only
+examines windows in their currently selected tabs; callers must not
+silently switch tabs to locate a buffer."
+  (when (buffer-live-p buffer)
+    (let* ((frames (if (and destination (frame-live-p destination))
+                       (list destination)
+                     (cons (selected-frame)
+                           (delq (selected-frame) (frame-list))))))
+      (cl-loop for frame in frames
+               thereis
+               (cl-find-if
+                (lambda (window)
+                  (glassmacs-presentation-view-suitable-p
+                   window buffer intent placement destination))
+                (window-list frame 'never)))))
+
 (provide 'glassmacs-presentation-model)
 ;;; glassmacs-presentation-model.el ends here
