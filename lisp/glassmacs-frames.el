@@ -370,15 +370,27 @@ tab, or its frame."
         (glassmacs--close-view window)
       (message "Close canceled"))))
 
+(defun glassmacs--frame-has-hidden-tabs-p (frame)
+  "Whether FRAME has tabs beyond its currently selected tab.
+Closing the native frame while other tabs exist must not bypass their
+individual document-save and R-console checks."
+  (and (frame-live-p frame)
+       (bound-and-true-p tab-bar-mode)
+       (> (length (funcall tab-bar-tabs-function frame)) 1)))
+
 (defun glassmacs-close-frame-documents (frame)
   "Close the documents shown only in FRAME before the frame closes.
 Used for the window close button.  Return nil when the user cancels,
 in which case the frame must stay open."
   (or (not (framep frame))
       (not (frame-live-p frame))
-      (let ((windows (window-list frame 'never)))
-        (and (glassmacs--confirm-console-windows-close windows)
-             (glassmacs--close-documents-in-windows windows)))))
+      (if (glassmacs--frame-has-hidden-tabs-p frame)
+          (progn
+            (message "Close the other tabs before closing this window")
+            nil)
+        (let ((windows (window-list frame 'never)))
+          (and (glassmacs--confirm-console-windows-close windows)
+               (glassmacs--close-documents-in-windows windows))))))
 
 (defun glassmacs-save-document-as (filename)
   "Save the current document as FILENAME using Emacs' native file safeguards.
