@@ -403,6 +403,25 @@
     (should (eq (caar display-buffer-alist)
                 'glassmacs-r--help-buffer-p))))
 
+(ert-deftest glassmacs-r-ui-ess-function-preserves-console-selection-error ()
+  "A missing console is not misreported as a missing R function."
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (insert "(defun example () 42)\n")
+    (goto-char (point-min))
+    (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
+               (lambda () t))
+              ((symbol-function 'glassmacs-r-ui--submit-region)
+               (lambda (&rest _) (user-error "No live R console"))))
+      (should-error
+       (glassmacs-r-ui--around-ess-eval-function #'ignore)
+       :type 'user-error)
+      (should (equal
+               (condition-case err
+                   (glassmacs-r-ui--around-ess-eval-function #'ignore)
+                 (user-error (error-message-string err)))
+               "No live R console")))))
+
 (provide 'test-glassmacs-r-ui)
 ;;; test-glassmacs-r-ui.el ends here
 
