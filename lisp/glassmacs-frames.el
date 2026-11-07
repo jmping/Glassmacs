@@ -144,6 +144,13 @@ for intentional consolidation.  This API does not advise Emacs primitives."
                 ('replace 'replace)
                 (_ placement))
        destination))
+     ((and (eq intent 'new-view) (eq placement 'reuse-current))
+      ;; A new view must not silently replace the existing one.
+      ;; In a terminal, a split is the closest supported presentation.
+      (let ((window (split-window (selected-window) nil 'below)))
+        (set-window-buffer window buffer)
+        (select-window window)
+        window))
      ((eq placement 'new-frame)
       (let ((frame (make-frame)))
         (with-selected-frame frame
