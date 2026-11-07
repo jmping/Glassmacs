@@ -471,6 +471,29 @@ session, the only live session, or the session matching ESS's
                        live)))
      (t (glassmacs-sessions--prompt live)))))
 
+(defun glassmacs-r-resolve-source-target ()
+  "Resolve a source document's explicitly linked live R session.
+If the document has no link, ask for a live console even if only one
+exists, then persist the selection across the base and indirect buffers.
+Never start R, guess from ESS process-local state, or fall back from a
+stale explicit link.  Cancellation does not modify the document target."
+  (glassmacs-sessions-refresh)
+  (let* ((base (or (buffer-base-buffer) (current-buffer)))
+         (id (with-current-buffer base glassmacs-r-target-session))
+         (live (glassmacs-sessions-live)))
+    (cond
+     (id
+      (let ((session (glassmacs-sessions-find id)))
+        (unless (and session (memq session live))
+          (user-error "Linked R session %s is no longer live; link another console explicitly" id))
+        session))
+     ((null live)
+      (user-error "No live R console; create one with New R Console first"))
+     (t
+      (let ((session (glassmacs-sessions--prompt live)))
+        (glassmacs-r--set-document-target (glassmacs-session-id session))
+        session)))))
+
 (defun glassmacs-sessions--prompt (live)
   (when noninteractive
     (user-error "Several R sessions are live; select one explicitly"))
