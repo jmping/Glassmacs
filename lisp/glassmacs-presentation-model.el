@@ -35,5 +35,46 @@ itself an R source chunk."
          ((string-prefix-p "*" name) 'utility)
          (t 'document))))))
 
+(defun glassmacs-presentation-policy-action (intent placement role)
+  "Resolve a presentation action without changing any windows.
+INTENT is open, focus, new-view, move, split, tab or replace.
+PLACEMENT is the requested policy.  ROLE is informational and may
+be nil; it never implies ownership of an existing view."
+  (unless (memq intent '(open focus new-view move split tab replace))
+    (user-error "Unsupported presentation intent: %s" intent))
+  (unless (memq role '(nil document r-source r-console r-help preferences utility internal))
+    (user-error "Unsupported presentation role: %s" role))
+  (pcase intent
+    ('move (or placement 'new-frame))
+    ('split (if (memq placement '(split-right split-below))
+                placement 'split-below))
+    ('tab 'new-tab)
+    ('replace 'replace)
+    (_ (or placement 'reuse-current))))
+
+(defun glassmacs-presentation-view-suitable-p (window buffer intent placement
+                                                     &optional destination)
+  "Whether WINDOW is an appropriate existing view for BUFFER.
+Only open and focus may reuse an existing view.  Explicit new-view,
+move, split, tab and replace intents never reuse it.  For a new-frame
+policy, the view must be the frame's sole ordinary window; a
+destination, when supplied, must be the view's own frame.
+This is read-only: it never selects or mutates WINDOW."
+  (and (window-live-p window)
+       (buffer-live-p buffer)
+       (eq (window-buffer window) buffer)
+       (memq intent '(open focus))
+       (or (null destination) (eq (window-frame window) destination))
+       (pcase (glassmacs-presentation-policy-action
+               intent placement (glassmacs-presentation-buffer-role buffer))
+         ('new-frame
+          (and (not (window-minibuffer-p window))
+               (eq window (frame-root-window (window-frame window)))))
+         ('new-tab
+          ;; A view in a different tab may still be reused by focusing it.
+          ;; Tab identity is resolved by the caller, not by buffer ownership.
+          (not (window-minibuffer-p window)))
+         (_ (not (window-minibuffer-p window))))))
+
 (provide 'glassmacs-presentation-model)
 ;;; glassmacs-presentation-model.el ends here
