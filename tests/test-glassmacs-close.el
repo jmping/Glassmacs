@@ -96,6 +96,36 @@ The extra window means closing deletes a window rather than the frame."
   (should (advice-member-p #'glassmacs-recovery--reviewed-quit-advice
                            'kill-emacs)))
 
+(ert-deftest glassmacs-reviewed-tab-close-cancel-preserves-tab ()
+  "A canceled document review must leave the current tab intact."
+  (let ((closed nil))
+    (cl-letf (((symbol-function 'glassmacs--frame-has-hidden-tabs-p)
+               (lambda (_frame) t))
+              ((symbol-function 'glassmacs--confirm-console-windows-close)
+               (lambda (_windows) t))
+              ((symbol-function 'glassmacs--close-documents-in-windows)
+               (lambda (_windows) nil))
+              ((symbol-function 'tab-bar-close-tab)
+               (lambda (&rest _) (setq closed t))))
+      (glassmacs-close-current-tab)
+      (should-not closed))))
+
+(ert-deftest glassmacs-reviewed-tab-close-protects-r-process ()
+  "The reviewed tab close delegates only to view closing, not session exit."
+  (let ((closed nil)
+        (reviewed nil))
+    (cl-letf (((symbol-function 'glassmacs--frame-has-hidden-tabs-p)
+               (lambda (_frame) t))
+              ((symbol-function 'glassmacs--confirm-console-windows-close)
+               (lambda (_windows) (setq reviewed t) t))
+              ((symbol-function 'glassmacs--close-documents-in-windows)
+               (lambda (_windows) t))
+              ((symbol-function 'tab-bar-close-tab)
+               (lambda (&rest _) (setq closed t))))
+      (glassmacs-close-current-tab)
+      (should reviewed)
+      (should closed))))
+
 (ert-deftest glassmacs-native-frame-close-vetoes-hidden-tabs ()
   "A native close must not skip documents in other tabs."
   (let ((tab-bar-mode t)
