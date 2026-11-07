@@ -127,7 +127,7 @@ for intentional consolidation.  This API does not advise Emacs primitives."
       existing)
      ((eq intent 'focus)
       (glassmacs-present-buffer buffer 'new-view placement destination))
-     ((and (memq intent '(open focus new-view))
+     ((and (memq intent '(open focus))
            (fboundp 'glassmacs--ensure-visible-frame)
            (glassmacs--ensure-visible-frame))
       (switch-to-buffer buffer)
