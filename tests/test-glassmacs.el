@@ -12,6 +12,31 @@
 (require 'glassmacs)
 
 
+(ert-deftest glassmacs-presentation-classifier-is-read-only ()
+  (require 'glassmacs-presentation-model)
+  (let ((document (generate-new-buffer "glassmacs-role-document"))
+        (utility (generate-new-buffer "*Glassmacs Role Utility*"))
+        (internal (generate-new-buffer " *glassmacs-role-internal*"))
+        (source (generate-new-buffer "glassmacs-role-source"))
+        (indirect nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer document
+            (setq buffer-file-name "/tmp/notes.txt"))
+          (setq indirect (make-indirect-buffer document "glassmacs-role-indirect" t))
+          (with-current-buffer source
+            (setq buffer-file-name "/tmp/analysis.R"))
+          (should (eq (glassmacs-presentation-buffer-role document) 'document))
+          (should (eq (glassmacs-presentation-buffer-role indirect) 'document))
+          (should (eq (glassmacs-presentation-buffer-role source) 'r-source))
+          (should (eq (glassmacs-presentation-buffer-role utility) 'utility))
+          (should (eq (glassmacs-presentation-buffer-role internal) 'internal))
+          (should (equal (buffer-name document) "glassmacs-role-document")))
+      (when (buffer-live-p indirect) (kill-buffer indirect))
+      (dolist (buffer (list document utility internal source))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))
+    (should-not (glassmacs-presentation-buffer-role document))))
+
 (ert-deftest glassmacs-toolbar-replacement-pngs-are-present ()
   (should (file-directory-p glassmacs-toolbar-image-directory))
   (dolist (item glassmacs-aquamacs-toolbar-items)
