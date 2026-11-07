@@ -70,6 +70,23 @@
     (cons process buffer)))
 
 
+(ert-deftest glassmacs-r-help-display-checks-view-suitability ()
+  "ESS help reuse requires a suitable existing view."
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer "*R Help Suitability*"))
+          (glassmacs-r-help-placement 'side-right)
+          (checks 0))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer buffer)
+            (cl-letf (((symbol-function 'glassmacs-presentation-view-suitable-p)
+                       (lambda (&rest _) (cl-incf checks) t)))
+              (should (eq (glassmacs-r--display-help buffer nil)
+                          (selected-window)))
+              (should (= checks 1))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
 (ert-deftest glassmacs-r-console-display-checks-view-suitability ()
   "An existing console view is reused only when policy deems it suitable."
   (save-window-excursion
