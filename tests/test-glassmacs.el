@@ -37,6 +37,51 @@
         (when (buffer-live-p buffer) (kill-buffer buffer))))
     (should-not (glassmacs-presentation-buffer-role document))))
 
+(ert-deftest glassmacs-presentation-policy-actions-are-pure ()
+  (require 'glassmacs-presentation-model)
+  (should (eq (glassmacs-presentation-policy-action 'open 'new-frame 'document)
+              'new-frame))
+  (should (eq (glassmacs-presentation-policy-action 'new-view 'new-frame 'r-console)
+              'new-frame))
+  (should (eq (glassmacs-presentation-policy-action 'tab nil 'document)
+              'new-tab))
+  (should (eq (glassmacs-presentation-policy-action 'split nil 'document)
+              'split-below))
+  (should (eq (glassmacs-presentation-policy-action 'replace nil 'r-help)
+              'replace))
+  (should-error (glassmacs-presentation-policy-action 'unknown nil 'document)
+                :type 'user-error))
+
+(ert-deftest glassmacs-presentation-suitability-respects-intent-and-destination ()
+  (require 'glassmacs-presentation-model)
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer "glassmacs-role-view")))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer buffer)
+            (let ((window (selected-window)))
+              (should (glassmacs-presentation-view-suitable-p
+                       window buffer 'open 'new-frame))
+              (should (glassmacs-presentation-view-suitable-p
+                       window buffer 'focus 'reuse-current (selected-frame)))
+              (should-not (glassmacs-presentation-view-suitable-p
+                           window buffer 'new-view 'new-frame))
+              (should-not (glassmacs-presentation-view-suitable-p
+                           window buffer 'move 'new-frame))
+              (should-not (glassmacs-presentation-view-suitable-p
+                           window buffer 'open 'new-frame 'different-frame))
+              (should-not (glassmacs-presentation-view-suitable-p
+                           window (get-buffer-create " *other-role*")
+                           'open 'reuse-current))
+              (let ((other (split-window-right)))
+                (should (window-live-p other))
+                (should-not (glassmacs-presentation-view-suitable-p
+                             window buffer 'open 'new-frame))
+                (delete-window other))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))
+        (when (get-buffer " *other-role*") (kill-buffer " *other-role*"))))))
+
 (ert-deftest glassmacs-toolbar-replacement-pngs-are-present ()
   (should (file-directory-p glassmacs-toolbar-image-directory))
   (dolist (item glassmacs-aquamacs-toolbar-items)
