@@ -576,14 +576,13 @@ placements remain available for users who prefer Emacs pane layouts."
 
 (defun glassmacs-r--display-help (buffer _alist)
   "Present ESS R Help BUFFER according to the single Help policy."
-  (let* ((existing (get-buffer-window buffer t))
-         (placement (if (and (display-graphic-p)
+  (let* ((placement (if (and (display-graphic-p)
                              (eq glassmacs-r-help-placement 'separate-window))
-                        'new-frame 'reuse-current)))
+                        'new-frame 'reuse-current))
+         (existing (glassmacs-presentation-find-suitable-view
+                    buffer 'open placement)))
     (cond
-     ((and existing
-           (glassmacs-presentation-view-suitable-p
-            existing buffer 'open placement))
+     (existing
       existing)
      ((and (display-graphic-p)
            (eq glassmacs-r-help-placement 'separate-window))
@@ -644,15 +643,14 @@ the configured policy calls for a dedicated frame or tab."
   "Show ESS console BUFFER according to the R window placement preference."
   (unless (buffer-live-p buffer)
     (user-error "The R console buffer no longer exists"))
-  (let* ((existing (get-buffer-window buffer t))
-         (placement (pcase glassmacs-r-console-placement
+  (let* ((placement (pcase glassmacs-r-console-placement
                       ('separate-window 'new-frame)
                       ('new-tab 'new-tab)
-                      (_ 'reuse-current))))
+                      (_ 'reuse-current)))
+         (existing (glassmacs-presentation-find-suitable-view
+                    buffer 'focus placement)))
     (cond
-     ((and existing
-           (glassmacs-presentation-view-suitable-p
-            existing buffer 'focus placement))
+     (existing
       (select-frame-set-input-focus (window-frame existing))
       (select-window existing))
      ((and (display-graphic-p)
