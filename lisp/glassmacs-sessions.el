@@ -576,9 +576,15 @@ placements remain available for users who prefer Emacs pane layouts."
 
 (defun glassmacs-r--display-help (buffer _alist)
   "Present ESS R Help BUFFER according to the single Help policy."
-  (let ((existing (get-buffer-window buffer t)))
+  (let* ((existing (get-buffer-window buffer t))
+         (placement (if (and (display-graphic-p)
+                             (eq glassmacs-r-help-placement 'separate-window))
+                        'new-frame 'reuse-current)))
     (cond
-     (existing existing)
+     ((and existing
+           (glassmacs-presentation-view-suitable-p
+            existing buffer 'open placement))
+      existing)
      ((and (display-graphic-p)
            (eq glassmacs-r-help-placement 'separate-window))
       (display-buffer-pop-up-frame
