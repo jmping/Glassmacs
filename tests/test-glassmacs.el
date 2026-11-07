@@ -180,8 +180,8 @@
                     'glassmacs-r-send-function))
         (should (eq (lookup-key map [glassmacs-run-buffer])
                     'glassmacs-r-send-buffer))
-        (should (eq (lookup-key map [glassmacs-show-console])
-                    'glassmacs-r-start-or-switch-console))))))
+        (should (eq (lookup-key map [glassmacs-new-console])
+                    'glassmacs-r-new-console))))))
 
 (ert-deftest glassmacs-r-console-launch-is-available-without-session ()
   (with-temp-buffer
@@ -189,8 +189,21 @@
     (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
                (lambda () t)))
       (let ((map (glassmacs-r-ui--toolbar-map)))
+        (should (eq (lookup-key map [glassmacs-new-console])
+                    'glassmacs-r-new-console))))))
+
+(ert-deftest glassmacs-r-source-toolbar-separates-new-link-and-show ()
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
+               (lambda () t)))
+      (let ((map (glassmacs-r-ui--toolbar-map)))
+        (should (eq (lookup-key map [glassmacs-new-console])
+                    'glassmacs-r-new-console))
+        (should (eq (lookup-key map [glassmacs-link-console])
+                    'glassmacs-r-select-session))
         (should (eq (lookup-key map [glassmacs-show-console])
-                    'glassmacs-r-start-or-switch-console))))))
+                    'glassmacs-r-inspect-session))))))
 
 (ert-deftest glassmacs-preferences-default-to-new-frame-on-macos ()
   (when (eq system-type 'darwin)
