@@ -63,6 +63,7 @@ This is read-only: it never selects or mutates WINDOW."
   (and (window-live-p window)
        (buffer-live-p buffer)
        (eq (window-buffer window) buffer)
+       (glassmacs-presentation-current-tab-view-p window)
        (memq intent '(open focus))
        (or (null destination) (eq (window-frame window) destination))
        (pcase (glassmacs-presentation-policy-action
@@ -95,6 +96,13 @@ silently switch tabs to locate a buffer."
                   (glassmacs-presentation-view-suitable-p
                    window buffer intent placement destination))
                 (window-list frame 'never))))))
+
+(defun glassmacs-presentation-current-tab-view-p (window)
+  "Return non-nil when WINDOW belongs to its frame's selected tab.
+A buffer displayed in a hidden tab must not be mistaken for a visible
+window by document or console presentation logic."
+  (and (window-live-p window)
+       (memq window (window-list (window-frame window) 'never))))
 
 (provide 'glassmacs-presentation-model)
 ;;; glassmacs-presentation-model.el ends here
