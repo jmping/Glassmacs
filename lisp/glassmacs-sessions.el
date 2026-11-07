@@ -637,9 +637,15 @@ the configured policy calls for a dedicated frame or tab."
   "Show ESS console BUFFER according to the R window placement preference."
   (unless (buffer-live-p buffer)
     (user-error "The R console buffer no longer exists"))
-  (let ((existing (get-buffer-window buffer t)))
+  (let* ((existing (get-buffer-window buffer t))
+         (placement (pcase glassmacs-r-console-placement
+                      ('separate-window 'new-frame)
+                      ('new-tab 'new-tab)
+                      (_ 'reuse-current))))
     (cond
-     (existing
+     ((and existing
+           (glassmacs-presentation-view-suitable-p
+            existing buffer 'focus placement))
       (select-frame-set-input-focus (window-frame existing))
       (select-window existing))
      ((and (display-graphic-p)
