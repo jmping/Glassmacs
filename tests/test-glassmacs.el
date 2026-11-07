@@ -2925,6 +2925,23 @@ example) can run first and delay the sentinel."
                   (selected-window)))
       (should-not created))))
 
+(ert-deftest glassmacs-preferences-display-checks-view-suitability ()
+  "Preferences reuse requires a suitable existing view."
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer "*Customize Group: Glassmacs Test*"))
+          (glassmacs-preferences-opening-policy 'reuse-current)
+          (checks 0))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer buffer)
+            (cl-letf (((symbol-function 'glassmacs-presentation-view-suitable-p)
+                       (lambda (&rest _) (cl-incf checks) t)))
+              (should (eq (glassmacs--display-preferences buffer nil)
+                          (selected-window)))
+              (should (= checks 1))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
 (ert-deftest glassmacs-present-buffer-obeys-unsuitable-existing-view ()
   "An unsuitable visible view must not be focused or reused implicitly."
   (save-window-excursion
