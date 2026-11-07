@@ -79,8 +79,8 @@ Build exact PR #98 head SHA with bundled Emacs, ESS and R, isolated native-compi
 
 | Stage | State | Evidence / blocker |
 | --- | --- | --- |
-| S0 | Integrated; branch CI/test rerun pending | PR #98 initial integration head `2395f485`; inherited #96 test report only |
-| S1 | In progress; unverified | Source toolbar New/Link/Show split; source-only explicit resolver; Glassmacs source and ESS-advised entry points updated; initial ERT added. Full regression run, R/ESS integration and additional polymode/opt-out tests pending. |
+| S0 | CI verified | GitHub Actions run 42331782502 on 231546f: Emacs 407 passed / 33 skipped / 0 failed; real ESS/R 439 passed / 1 skipped / 0 failed; all four jobs green |
+| S1 | Implemented; further verification ongoing | Toolbar New/Link/Show, explicit source-only target resolver, ESS-advised execution, multi-session and indirect-buffer tests; CI green on 231546f. Additional error-preservation fix and regression test after green commit require fresh CI. Native GUI remains pending. |
 | S2 | Planned | No classifier runtime file yet |
 | S3 | Planned | No suitability resolver yet |
 | S4 | Planned | Existing presenters inventoried in Phase 1 |
@@ -95,3 +95,7 @@ Implemented initial source-only link-on-first-execution resolver in `glassmacs-s
 ## CI regression triage — 2026-11-06
 
 GitHub Actions run `42329573798` on `3837214` reported `ess-r-integration` **success**, `macos-launcher` **success**, and `emacs-batch` **failure**. Emacs batch ran 438 tests: 395 expected results, 9 failures, 1 QUIT, 33 skips. Failures included seven source-editor tests using obsolete queue/target mocks, two toolbar tests expecting old actions, and a new cancellation test treating `quit` as a normal error. Documentation checker rejected four linked-presentation files lacking required blockquote metadata. Corrections have been committed to PR #98: metadata format, updated toolbar expectations, updated source-target test doubles, explicit quit handling, and multi-session/indirect-buffer coverage. **These corrections are not yet validated by a subsequent CI run.** Native GUI acceptance remains pending.
+
+## CI green checkpoint and follow-up — 2026-11-06
+
+CI run [42331782502](https://github.com/jmping/Glassmacs/actions/runs/42331782502) at `231546f`: all four jobs successful. `emacs-batch` ran 440 tests, 407 expected, 0 unexpected, 33 skipped; `ess-r-integration` ran 440 tests, 439 expected, 0 unexpected, 1 skipped. This verifies the S1 regression remediation at that SHA, **not** later changes or native GUI behavior. Subsequent source review found that ESS function-evaluation advice caught errors thrown by console selection and replaced them with a misleading 'No R function' message. Fixed error-handler scope and added a focused regression test; fresh CI required. Next: S2 read-only role classification and S3 suitability policy, maintaining stage gates.
