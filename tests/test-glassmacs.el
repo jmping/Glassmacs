@@ -2959,10 +2959,9 @@ example) can run first and delay the sentinel."
               (cl-letf (((symbol-function 'glassmacs--ensure-visible-frame)
                          (lambda () nil)))
                 (glassmacs-present-buffer buffer 'new-view 'reuse-current))
-              ;; Reuse-current is a replacement policy, not a promise to
-              ;; create a second view.  The new-view intent must still
-              ;; avoid short-circuiting on the existing-window branch.
-              (should (eq (selected-window) old))))
+              (should-not (eq (selected-window) old))
+              (should (eq (window-buffer (selected-window)) buffer))
+              (should (eq (window-buffer old) buffer)))))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest glassmacs-alpha3-interactive-find-file-is-remapped ()
