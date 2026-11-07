@@ -119,15 +119,14 @@ for intentional consolidation.  This API does not advise Emacs primitives."
   (unless (buffer-live-p buffer)
     (user-error "Cannot present a dead buffer"))
   (let* ((intent (or intent 'open))
-         (existing (get-buffer-window buffer t))
          (placement (or placement
                         (and (eq intent 'open)
                              (glassmacs--document-opening-action buffer))
-                        'reuse-current)))
+                        'reuse-current))
+         (existing (glassmacs-presentation-find-suitable-view
+                    buffer intent placement destination)))
     (cond
-     ((and (memq intent '(open focus)) existing
-           (glassmacs-presentation-view-suitable-p
-            existing buffer intent placement destination))
+     (existing
       (select-frame-set-input-focus (window-frame existing))
       (select-window existing)
       existing)
