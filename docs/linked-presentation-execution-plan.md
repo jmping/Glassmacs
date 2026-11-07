@@ -72,10 +72,14 @@ Build exact PR #98 head SHA with bundled Emacs, ESS and R, isolated native-compi
 | Stage | State | Evidence / blocker |
 | --- | --- | --- |
 | S0 | Integrated; branch CI/test rerun pending | PR #98 initial integration head `2395f485`; inherited #96 test report only |
-| S1 | Planned | Explicit R toolbar/link/source routing contract approved |
+| S1 | In progress; unverified | Source toolbar New/Link/Show split; source-only explicit resolver; Glassmacs source and ESS-advised entry points updated; initial ERT added. Full regression run, R/ESS integration and additional polymode/opt-out tests pending. |
 | S2 | Planned | No classifier runtime file yet |
 | S3 | Planned | No suitability resolver yet |
 | S4 | Planned | Existing presenters inventoried in Phase 1 |
 | S5 | Planned | Native menus and placement require regression tests |
 | S6 | Planned | Existing lifecycle and recovery audit recorded |
 | S7 | Pending | Native GUI test blocked previously by signed native-code cache mismatch |
+
+## S1 implementation checkpoint — 2026-11-06
+
+Implemented initial source-only link-on-first-execution resolver in `glassmacs-sessions.el` without altering the generic queue/session resolver. The `glassmacs-r.el` editor commands resolve a session explicitly before submitting; ESS-advised region/line/function/buffer routes resolve likewise. The source toolbar now separates New R Console, Link Console and Show Console. Added initial toolbar and resolver ERT. **No tests have been run against these commits; this is not a completed S1 gate.** Remaining: review all affected legacy ERT assumptions, run bundled Emacs suite and real ESS/R integration, confirm cancellation/indirect-buffer behavior and native presentation interactions. The older `glassmacs-r-start-or-switch-console` compatibility command remains available but is no longer used by the source toolbar.
