@@ -1,5 +1,13 @@
 # Linked presentations — Phase 0 baseline and non-regression contract
 
+> **Document ID:** DOC-LINKED-PHASE0  
+> **Status:** Informational  
+> **Owner:** Glassmacs maintainers  
+> **Last reviewed:** 2026-11-06  
+> **Coverage:** Linked presentation architecture and implementation tracking  
+> **Supersedes:** None
+
+
 Document ID: DOC-LINKED-PHASE0
 Status: Baseline recorded; native GUI recheck pending
 Last reviewed: 2026-11-06
