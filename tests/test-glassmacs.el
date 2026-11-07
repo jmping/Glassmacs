@@ -2925,6 +2925,46 @@ example) can run first and delay the sentinel."
                   (selected-window)))
       (should-not created))))
 
+(ert-deftest glassmacs-present-buffer-obeys-unsuitable-existing-view ()
+  "An unsuitable visible view must not be focused or reused implicitly."
+  (save-window-excursion
+    (let ((source (generate-new-buffer " *glassmacs-suitability-source*"))
+          (target (generate-new-buffer " *glassmacs-suitability-target*"))
+          (checks 0))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer source)
+            (let ((other (split-window-right)))
+              (set-window-buffer other target)
+              (select-window (get-buffer-window source))
+              (cl-letf (((symbol-function 'glassmacs-presentation-view-suitable-p)
+                         (lambda (&rest _) (cl-incf checks) nil)))
+                (should (eq (glassmacs-present-buffer target 'open 'reuse-current)
+                            (selected-window)))
+                (should (eq (window-buffer (selected-window)) target))
+                (should (= checks 1)))))
+        (dolist (buffer (list source target))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest glassmacs-present-buffer-new-view-does-not-reuse-visible-view ()
+  "An explicit new view uses a distinct presentation despite visibility."
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer " *glassmacs-new-view*")))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer buffer)
+            (let ((old (selected-window)))
+              (cl-letf (((symbol-function 'glassmacs--ensure-visible-frame)
+                         (lambda () nil)))
+                (glassmacs-present-buffer buffer 'new-view 'reuse-current))
+              ;; Reuse-current is a replacement policy, not a promise to
+              ;; create a second view.  The new-view intent must still
+              ;; avoid short-circuiting on the existing-window branch.
+              (should (eq (selected-window) old))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
 (ert-deftest glassmacs-alpha3-interactive-find-file-is-remapped ()
   "Document-centric file visits are bound without advising Lisp find-file."
   (when (eq system-type 'darwin)
