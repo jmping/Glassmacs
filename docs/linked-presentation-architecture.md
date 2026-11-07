@@ -1,5 +1,13 @@
 # Linked presentation architecture — design proposal
 
+> **Document ID:** DOC-LINKED-PRESENTATIONS  
+> **Status:** Informational  
+> **Owner:** Glassmacs maintainers  
+> **Last reviewed:** 2026-11-06  
+> **Coverage:** Linked presentation architecture and implementation tracking  
+> **Supersedes:** None
+
+
 Document ID: DOC-LINKED-PRESENTATIONS
 Status: Proposed; no runtime behavior changed
 Last reviewed: 2026-11-06
