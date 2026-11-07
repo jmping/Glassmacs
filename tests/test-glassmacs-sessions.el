@@ -97,7 +97,10 @@
                  (lambda () (list session)))
                 ((symbol-function 'glassmacs-sessions--prompt)
                  (lambda (_live) (signal 'quit nil))))
-        (should-error (glassmacs-r-resolve-source-target) :type 'quit)
+        (should (eq (condition-case nil
+                        (progn (glassmacs-r-resolve-source-target) 'returned)
+                      (quit 'cancelled))
+                    'cancelled))
         (should-not glassmacs-r-target-session)))))
 
 (ert-deftest glassmacs-r-source-target-stale-link-never-falls-back ()
