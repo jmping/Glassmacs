@@ -15,6 +15,7 @@
 (require 'comint)
 (require 'project)
 (require 'subr-x)
+(require 'glassmacs-presentation-model)
 
 (defgroup glassmacs-sessions nil
   "R session registry and command queue."
