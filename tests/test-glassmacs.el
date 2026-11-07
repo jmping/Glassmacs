@@ -59,6 +59,30 @@
       (dolist (buffer (list console help preferences))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
+(ert-deftest glassmacs-presentation-find-suitable-view-skips-unsuitable-first-view ()
+  "Search all visible views rather than trusting the first buffer window."
+  (require 'glassmacs-presentation-model)
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer " *glassmacs-multiview*")))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer buffer)
+            (let* ((first (selected-window))
+                   (second (split-window-right)))
+              (set-window-buffer second buffer)
+              (should-not (glassmacs-presentation-view-suitable-p
+                           first buffer 'open 'new-frame))
+              (should (eq (glassmacs-presentation-find-suitable-view
+                           buffer 'open 'reuse-current)
+                          first))
+              (should-not (glassmacs-presentation-find-suitable-view
+                           buffer 'open 'new-frame))
+              (should-not (glassmacs-presentation-find-suitable-view
+                           buffer 'move 'reuse-current))
+              (should (eq (selected-window) first))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
 (ert-deftest glassmacs-presentation-policy-actions-are-pure ()
   (require 'glassmacs-presentation-model)
   (should (eq (glassmacs-presentation-policy-action 'open 'new-frame 'document)
