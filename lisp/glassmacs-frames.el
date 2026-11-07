@@ -354,6 +354,19 @@ otherwise the frame.  Closing the final frame keeps Glassmacs running
      (t
       (delete-frame frame)))))
 
+(defun glassmacs-close-current-tab ()
+  "Close the current tab through Glassmacs document and console review.
+Never bypass the save/discard/cancel decision or terminate an R process.
+When only one tab remains, use the regular document-close operation."
+  (interactive)
+  (if (not (glassmacs--frame-has-hidden-tabs-p (selected-frame)))
+      (glassmacs-close-document)
+    (let ((windows (window-list (selected-frame) 'never)))
+      (if (and (glassmacs--confirm-console-windows-close windows)
+               (glassmacs--close-documents-in-windows windows))
+          (tab-bar-close-tab)
+        (message "Close canceled")))))
+
 (defun glassmacs-close-document ()
   "Close the selected window and its document, as Command-W does on a Mac.
 If the window shows an ordinary document that no other window shows,
