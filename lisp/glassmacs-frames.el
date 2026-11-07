@@ -2,6 +2,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'glassmacs-presentation-model)
 
 (defgroup glassmacs-frames nil
   "Document opening behavior for Glassmacs."
@@ -105,8 +106,8 @@ selecting a dedicated frame first protects the source document."
 
 (defun glassmacs-present-buffer (buffer &optional intent placement destination)
   "Present BUFFER according to INTENT and PLACEMENT, returning its window.
-INTENT is one of open, focus, move, split, tab, or replace.  An open
-or focus operation first reuses a visible view of BUFFER.  PLACEMENT
+INTENT is one of open, focus, new-view, move, split, tab, or replace.
+An open or focus operation reuses only a suitable visible view of BUFFER.  PLACEMENT
 defaults to the document opening policy; DESTINATION is an explicit frame
 for intentional consolidation.  This API does not advise Emacs primitives."
   (unless (buffer-live-p buffer)
@@ -118,13 +119,15 @@ for intentional consolidation.  This API does not advise Emacs primitives."
                              (glassmacs--document-opening-action buffer))
                         'reuse-current)))
     (cond
-     ((and (memq intent '(open focus)) existing)
+     ((and (memq intent '(open focus)) existing
+           (glassmacs-presentation-view-suitable-p
+            existing buffer intent placement destination))
       (select-frame-set-input-focus (window-frame existing))
       (select-window existing)
       existing)
      ((eq intent 'focus)
-      (glassmacs-present-buffer buffer 'open placement destination))
-     ((and (memq intent '(open focus))
+      (glassmacs-present-buffer buffer 'new-view placement destination))
+     ((and (memq intent '(open focus new-view))
            (fboundp 'glassmacs--ensure-visible-frame)
            (glassmacs--ensure-visible-frame))
       (switch-to-buffer buffer)
