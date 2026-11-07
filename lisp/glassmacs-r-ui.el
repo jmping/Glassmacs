@@ -476,17 +476,21 @@ menus everywhere; only the R entries are added buffer-locally."
   "Route R source function evaluation through explicit console selection."
   (if (glassmacs-r-ui--source-buffer-p)
       (save-excursion
-        (let ((origin (point)))
-          (condition-case nil
-              (progn
-                (beginning-of-defun)
-                (let ((start (point)))
-                  (end-of-defun)
-                  (let ((end (point)))
-                    (unless (<= start origin end)
-                      (user-error "No R function at point"))
-                    (glassmacs-r-ui--submit-region start end 'ess-function))))
-            (error (user-error "No R function found at point")))))
+        (let* ((origin (point))
+               (bounds (condition-case nil
+                           (progn
+                             (beginning-of-defun)
+                             (let ((start (point)))
+                               (end-of-defun)
+                               (cons start (point))))
+                         (error nil))))
+          (unless (and bounds (<= (car bounds) origin (cdr bounds)))
+            (user-error "No R function found at point"))
+          ;; Resolve the console outside the navigation error handler:
+          ;; cancellation and stale-link errors must never be disguised
+          ;; as a missing R function.
+          (glassmacs-r-ui--submit-region
+           (car bounds) (cdr bounds) 'ess-function)))
     (apply original arguments)))
 
 (defun glassmacs-r-ui--around-ess-eval-buffer (original &rest arguments)
