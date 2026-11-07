@@ -67,3 +67,5 @@ See [documentation governance](documentation-governance.md) for the required PR 
 - [Phase 1 source audit](linked-presentation-phase1-audit.md) — DOC-LINKED-PHASE1; static call-path inventory, informational.
 
 These documents are subordinate to the existing canonical architecture and acceptance authorities until formally promoted.
+
+- [Integration execution plan](linked-presentation-execution-plan.md) — DOC-LINKED-EXECUTION-PLAN; active PR #98 stage sequence, verification gates and progress ledger; informational until promoted.
