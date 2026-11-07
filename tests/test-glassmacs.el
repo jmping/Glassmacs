@@ -37,6 +37,28 @@
         (when (buffer-live-p buffer) (kill-buffer buffer))))
     (should-not (glassmacs-presentation-buffer-role document))))
 
+(ert-deftest glassmacs-presentation-classifier-special-roles ()
+  (require 'glassmacs-presentation-model)
+  (let ((console (generate-new-buffer "*glassmacs-role-console*"))
+        (help (generate-new-buffer "*R Help*"))
+        (preferences (generate-new-buffer "*Customize Group: glassmacs*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer console
+            (let ((parent (get 'inferior-ess-r-mode 'derived-mode-parent)))
+              (unwind-protect
+                  (progn
+                    (put 'inferior-ess-r-mode 'derived-mode-parent 'fundamental-mode)
+                    (setq major-mode 'inferior-ess-r-mode)
+                    (should (eq (glassmacs-presentation-buffer-role console)
+                                'r-console)))
+                (put 'inferior-ess-r-mode 'derived-mode-parent parent))))
+          (should (eq (glassmacs-presentation-buffer-role help) 'r-help))
+          (should (eq (glassmacs-presentation-buffer-role preferences)
+                      'preferences)))
+      (dolist (buffer (list console help preferences))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
 (ert-deftest glassmacs-presentation-policy-actions-are-pure ()
   (require 'glassmacs-presentation-model)
   (should (eq (glassmacs-presentation-policy-action 'open 'new-frame 'document)
