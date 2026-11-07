@@ -81,7 +81,7 @@ Build exact PR #98 head SHA with bundled Emacs, ESS and R, isolated native-compi
 | --- | --- | --- |
 | S0 | CI verified | GitHub Actions run 42331782502 on 231546f: Emacs 407 passed / 33 skipped / 0 failed; real ESS/R 439 passed / 1 skipped / 0 failed; all four jobs green |
 | S1 | Implemented; further verification ongoing | Toolbar New/Link/Show, explicit source-only target resolver, ESS-advised execution, multi-session and indirect-buffer tests; CI green on 231546f. Additional error-preservation fix and regression test after green commit require fresh CI. Native GUI remains pending. |
-| S2 | Planned | No classifier runtime file yet |
+| S2 | Initial implementation; CI pending | Added read-only `glassmacs-presentation-buffer-role` in `lisp/glassmacs-presentation-model.el`, with initial document/R source/indirect/utility/dead-buffer ERT. No hooks, advice or window mutations. Expand role cases and verify CI before calling S2 complete. |
 | S3 | Planned | No suitability resolver yet |
 | S4 | Planned | Existing presenters inventoried in Phase 1 |
 | S5 | Planned | Native menus and placement require regression tests |
@@ -99,3 +99,7 @@ GitHub Actions run `42329573798` on `3837214` reported `ess-r-integration` **suc
 ## CI green checkpoint and follow-up — 2026-11-06
 
 CI run [42331782502](https://github.com/jmping/Glassmacs/actions/runs/42331782502) at `231546f`: all four jobs successful. `emacs-batch` ran 440 tests, 407 expected, 0 unexpected, 33 skipped; `ess-r-integration` ran 440 tests, 439 expected, 0 unexpected, 1 skipped. This verifies the S1 regression remediation at that SHA, **not** later changes or native GUI behavior. Subsequent source review found that ESS function-evaluation advice caught errors thrown by console selection and replaced them with a misleading 'No R function' message. Fixed error-handler scope and added a focused regression test; fresh CI required. Next: S2 read-only role classification and S3 suitability policy, maintaining stage gates.
+
+## S2 initial checkpoint — 2026-11-06
+
+Created the isolated, read-only buffer role classifier and initial ERT coverage. It is intentionally not wired into existing presentation policy; there are no new startup hooks, global advice, frame operations, or changes to user-visible placement. This follows the staged migration constraint. Tests on this new commit remain pending; the last verified green SHA is `231546f`.
