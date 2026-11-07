@@ -94,7 +94,7 @@ silently switch tabs to locate a buffer."
                 (lambda (window)
                   (glassmacs-presentation-view-suitable-p
                    window buffer intent placement destination))
-                (window-list frame 'never)))))
+                (window-list frame 'never))))))
 
 (provide 'glassmacs-presentation-model)
 ;;; glassmacs-presentation-model.el ends here
