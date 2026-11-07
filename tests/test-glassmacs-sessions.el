@@ -126,6 +126,45 @@
         (should-error (glassmacs-r-resolve-source-target) :type 'user-error)
         (should-not glassmacs-r-target-session)))))
 
+(ert-deftest glassmacs-r-source-target-multiple-consoles-selects-explicitly ()
+  (with-temp-buffer
+    (let* ((first (glassmacs-session--make :id "r-first" :state 'ready))
+           (second (glassmacs-session--make :id "r-second" :state 'ready))
+           (glassmacs-sessions--list (list first second))
+           (glassmacs-r-target-session nil)
+           (prompts 0))
+      (cl-letf (((symbol-function 'glassmacs-sessions-refresh) #'ignore)
+                ((symbol-function 'glassmacs-sessions-live)
+                 (lambda () (list first second)))
+                ((symbol-function 'glassmacs-sessions--prompt)
+                 (lambda (_live) (cl-incf prompts) second)))
+        (should (eq (glassmacs-r-resolve-source-target) second))
+        (should (equal glassmacs-r-target-session "r-second"))
+        (should (= prompts 1))
+        (should (eq (glassmacs-r-resolve-source-target) second))
+        (should (= prompts 1))))))
+
+(ert-deftest glassmacs-r-source-target-indirect-buffer-links-base-document ()
+  (let ((base (generate-new-buffer " *glassmacs-r-target-base*"))
+        indirect)
+    (unwind-protect
+        (progn
+          (setq indirect (make-indirect-buffer base " *glassmacs-r-target-chunk*" t))
+          (let* ((session (glassmacs-session--make :id "r-chunk" :state 'ready))
+                 (glassmacs-sessions--list (list session)))
+            (cl-letf (((symbol-function 'glassmacs-sessions-refresh) #'ignore)
+                      ((symbol-function 'glassmacs-sessions-live)
+                       (lambda () (list session)))
+                      ((symbol-function 'glassmacs-sessions--prompt)
+                       (lambda (_live) session)))
+              (with-current-buffer indirect
+                (should (eq (glassmacs-r-resolve-source-target) session))
+                (should (equal glassmacs-r-target-session "r-chunk")))
+              (with-current-buffer base
+                (should (equal glassmacs-r-target-session "r-chunk"))))))
+      (when (buffer-live-p indirect) (kill-buffer indirect))
+      (when (buffer-live-p base) (kill-buffer base)))))
+
 (ert-deftest glassmacs-sessions-identity-and-registration ()
   (gs-test--with-env
    (let* ((a (gs-test--proc "R")) (b (gs-test--proc "R:2"))
