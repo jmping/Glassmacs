@@ -1,5 +1,13 @@
 # Linked presentations — Phase 1 source-call-path inventory
 
+> **Document ID:** DOC-LINKED-PHASE1  
+> **Status:** Informational  
+> **Owner:** Glassmacs maintainers  
+> **Last reviewed:** 2026-11-06  
+> **Coverage:** Linked presentation architecture and implementation tracking  
+> **Supersedes:** None
+
+
 Document ID: DOC-LINKED-PHASE1
 Status: Initial source audit; no runtime modifications
 Last reviewed: 2026-11-06
