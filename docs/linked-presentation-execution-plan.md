@@ -1,5 +1,13 @@
 # Linked window presentations — integration execution plan
 
+> **Document ID:** DOC-LINKED-EXECUTION-PLAN  
+> **Status:** Informational  
+> **Owner:** Glassmacs maintainers  
+> **Last reviewed:** 2026-11-06  
+> **Coverage:** Linked presentation architecture and implementation tracking  
+> **Supersedes:** None
+
+
 **Document ID:** DOC-LINKED-EXECUTION-PLAN  
 **Status:** Active implementation plan  
 **Updated:** 2026-11-06  
