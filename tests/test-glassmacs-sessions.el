@@ -69,6 +69,58 @@
     (set-process-buffer process buffer)
     (cons process buffer)))
 
+
+(ert-deftest glassmacs-r-source-target-prompts-with-one-console-and-persists ()
+  (with-temp-buffer
+    (let* ((session (glassmacs-session--make :id "r-1" :state 'ready))
+           (prompts 0)
+           (glassmacs-r-target-session nil))
+      (cl-letf (((symbol-function 'glassmacs-sessions-refresh)
+                 (lambda () (list session)))
+                ((symbol-function 'glassmacs-sessions-live)
+                 (lambda () (list session)))
+                ((symbol-function 'glassmacs-sessions--prompt)
+                 (lambda (_live) (cl-incf prompts) session)))
+        (should (eq (glassmacs-r-resolve-source-target) session))
+        (should (equal glassmacs-r-target-session "r-1"))
+        (should (= prompts 1))
+        (should (eq (glassmacs-r-resolve-source-target) session))
+        (should (= prompts 1))))))
+
+(ert-deftest glassmacs-r-source-target-cancel-does-not-link ()
+  (with-temp-buffer
+    (let ((session (glassmacs-session--make :id "r-1" :state 'ready))
+          (glassmacs-r-target-session nil))
+      (cl-letf (((symbol-function 'glassmacs-sessions-refresh) #'ignore)
+                ((symbol-function 'glassmacs-sessions-live)
+                 (lambda () (list session)))
+                ((symbol-function 'glassmacs-sessions--prompt)
+                 (lambda (_live) (signal 'quit nil))))
+        (should-error (glassmacs-r-resolve-source-target) :type 'quit)
+        (should-not glassmacs-r-target-session)))))
+
+(ert-deftest glassmacs-r-source-target-stale-link-never-falls-back ()
+  (with-temp-buffer
+    (let ((glassmacs-r-target-session "dead")
+          (session (glassmacs-session--make :id "r-new" :state 'ready))
+          (prompts 0))
+      (cl-letf (((symbol-function 'glassmacs-sessions-refresh) #'ignore)
+                ((symbol-function 'glassmacs-sessions-live)
+                 (lambda () (list session)))
+                ((symbol-function 'glassmacs-sessions--prompt)
+                 (lambda (_live) (cl-incf prompts) session)))
+        (should-error (glassmacs-r-resolve-source-target) :type 'user-error)
+        (should (= prompts 0))
+        (should (equal glassmacs-r-target-session "dead"))))))
+
+(ert-deftest glassmacs-r-source-target-requires-existing-console ()
+  (with-temp-buffer
+    (let ((glassmacs-r-target-session nil))
+      (cl-letf (((symbol-function 'glassmacs-sessions-refresh) #'ignore)
+                ((symbol-function 'glassmacs-sessions-live) #'ignore))
+        (should-error (glassmacs-r-resolve-source-target) :type 'user-error)
+        (should-not glassmacs-r-target-session)))))
+
 (ert-deftest glassmacs-sessions-identity-and-registration ()
   (gs-test--with-env
    (let* ((a (gs-test--proc "R")) (b (gs-test--proc "R:2"))
