@@ -3019,7 +3019,7 @@ example) can run first and delay the sentinel."
                 (glassmacs-present-buffer buffer 'new-view 'reuse-current))
               (should-not (eq (selected-window) old))
               (should (eq (window-buffer (selected-window)) buffer))
-              (should (eq (window-buffer old) buffer)))))
+              (should (eq (window-buffer old) buffer))))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest glassmacs-alpha3-interactive-find-file-is-remapped ()
