@@ -418,7 +418,7 @@ documents are skipped, without launching any R processes."
                            (memq active restored-indices)
                            (bound-and-true-p tab-bar-mode))
                   (tab-bar-select-tab
-                   (1+ (cl-position active (nreverse restored-indices)))))
+                   (1+ (cl-position active (reverse restored-indices)))))
                 (when (and width height)
                   (condition-case nil
                       (set-frame-size frame width height)
