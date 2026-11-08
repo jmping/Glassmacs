@@ -2953,6 +2953,46 @@ example) can run first and delay the sentinel."
     (should-not (assq 'glassmacs-r-ui--ess-help-buffer-p
                       display-buffer-alist))))
 
+(ert-deftest glassmacs-focus-hidden-tab-restores-selection-on-miss ()
+  "A failed tab search leaves the original tab selected."
+  (let ((tab-bar-mode t)
+        (current 2)
+        (buffer (generate-new-buffer " *glassmacs-missing-tab*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'tab-bar--current-tab-index)
+                   (lambda () (1- current)))
+                  ((symbol-function 'tab-bar-tabs-function)
+                   (lambda (_frame) '(one two three)))
+                  ((symbol-function 'tab-bar-select-tab)
+                   (lambda (index) (setq current index)))
+                  ((symbol-function 'get-buffer-window)
+                   (lambda (&rest _) nil)))
+          (should-not (glassmacs--focus-buffer-in-existing-tab
+                       buffer (selected-frame)))
+          (should (= current 2)))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-focus-hidden-tab-selects-matching-view ()
+  "An existing tab view is focused without manufacturing a new view."
+  (let ((tab-bar-mode t)
+        (current 1)
+        (buffer (window-buffer (selected-window))))
+    (cl-letf (((symbol-function 'tab-bar--current-tab-index)
+               (lambda () (1- current)))
+              ((symbol-function 'tab-bar-tabs-function)
+               (lambda (_frame) '(one two)))
+              ((symbol-function 'tab-bar-select-tab)
+               (lambda (index) (setq current index)))
+              ((symbol-function 'get-buffer-window)
+               (lambda (_buffer _frame)
+                 (and (= current 2) (selected-window))))
+              ((symbol-function 'select-frame-set-input-focus)
+               (lambda (&rest _) nil)))
+      (should (eq (glassmacs--focus-buffer-in-existing-tab
+                   buffer (selected-frame))
+                  (selected-window)))
+      (should (= current 2)))))
+
 (ert-deftest glassmacs-alpha3-presentation-reuses-visible-document ()
   "Opening a visible buffer must not replace another buffer or make a frame."
   (let ((buffer (window-buffer (selected-window)))
