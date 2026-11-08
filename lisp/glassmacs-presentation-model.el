@@ -19,7 +19,6 @@ itself an R source chunk."
              (base-file (and base (buffer-file-name base))))
         (cond
          ((derived-mode-p 'inferior-ess-r-mode) 'r-console)
-         ((and (boundp 'ess-help-mode) ess-help-mode) 'r-help)
          ((or (derived-mode-p 'ess-help-mode)
               (string-match-p "\\*help\\[R\\]\\|\\*R Help\\|\\*help\\[R" name))
           'r-help)
@@ -27,7 +26,7 @@ itself an R source chunk."
               (and (or buffer-file-name base-file)
                    (string-match-p "\\.[Rr]\\'" (or buffer-file-name base-file))))
           'r-source)
-         ((or (derived-mode-p 'Custom-mode)
+         ((or (derived-mode-p 'Custom-mode 'custom-mode)
               (string-match-p "\\*Customize\\|\\*Glassmacs Preferences" name))
           'preferences)
          ((or buffer-file-name base-file) 'document)
