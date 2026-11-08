@@ -519,10 +519,13 @@ Restore the original tab even if a tab-selection hook signals an error."
         (nreverse buffers)))))
 
 (defun glassmacs--buffer-visible-in-other-frame-p (buffer frame)
-  "Whether BUFFER has a live view outside FRAME."
-  (cl-some (lambda (window)
-             (not (eq (window-frame window) frame)))
-           (get-buffer-window-list buffer nil t)))
+  "Whether BUFFER has a view in any other frame, including inactive tabs."
+  (cl-some (lambda (other)
+             (and (frame-live-p other)
+                  (not (eq other frame))
+                  (or (get-buffer-window buffer other)
+                      (glassmacs--buffer-in-inactive-tab-p buffer other))))
+           (frame-list)))
 
 (defun glassmacs--review-frame-tab-buffers (frame buffers)
   "Review BUFFERS from all tabs before closing FRAME.
