@@ -391,16 +391,99 @@ individual document-save and R-console checks."
        (bound-and-true-p tab-bar-mode)
        (> (length (funcall tab-bar-tabs-function frame)) 1)))
 
+(defun glassmacs--frame-tab-buffers (frame)
+  "Collect unique buffers shown in every tab of FRAME.
+Restore the original tab even if a tab-selection hook signals an error."
+  (with-selected-frame frame
+    (if (not (glassmacs--frame-has-hidden-tabs-p frame))
+        (delete-dups (mapcar #'window-buffer (window-list frame 'never)))
+      (let ((original (1+ (tab-bar--current-tab-index)))
+            (count (length (funcall tab-bar-tabs-function frame)))
+            buffers)
+        (unwind-protect
+            (dotimes (index count)
+              (tab-bar-select-tab (1+ index))
+              (dolist (window (window-list frame 'never))
+                (cl-pushnew (window-buffer window) buffers)))
+          (tab-bar-select-tab original))
+        (nreverse buffers)))))
+
+(defun glassmacs--buffer-visible-in-other-frame-p (buffer frame)
+  "Whether BUFFER has a live view outside FRAME."
+  (cl-some (lambda (window)
+             (not (eq (window-frame window) frame)))
+           (get-buffer-window-list buffer nil t)))
+
+(defun glassmacs--review-frame-tab-buffers (frame buffers)
+  "Review BUFFERS from all tabs before closing FRAME.
+All cancelable decisions precede document kills.  Saving a document
+may write to disk before a later cancellation; no R process is killed."
+  (let ((documents (cl-remove-if-not
+                    (lambda (buffer)
+                      (and (glassmacs--ordinary-document-buffer-p buffer)
+                           (not (glassmacs--buffer-visible-in-other-frame-p
+                                 buffer frame))))
+                    buffers))
+        (consoles (cl-remove-if-not
+                   (lambda (buffer)
+                     (and (glassmacs--live-r-console-p buffer)
+                          (not (glassmacs--buffer-visible-in-other-frame-p
+                                buffer frame))))
+                   buffers))
+        discard)
+    (if (catch 'cancel
+            (dolist (buffer consoles)
+              (unless (eq (condition-case nil
+                              (car (read-multiple-choice
+                                    (format "Hide R console %s? R keeps running. "
+                                            (buffer-name buffer))
+                                    '((?h "hide" "Keep R running")
+                                      (?c "cancel" "Keep window open"))))
+                            ((quit error) ?c))
+                          ?h)
+                (throw 'cancel t)))
+            (dolist (buffer documents)
+              (when (buffer-modified-p buffer)
+                (pcase (condition-case nil
+                           (car (read-multiple-choice
+                                 (format "Save changes to %s before closing? "
+                                         (buffer-name buffer))
+                                 '((?s "save" "Save changes")
+                                   (?d "don't save" "Discard changes")
+                                   (?c "cancel" "Keep window open"))))
+                         ((quit error) ?c))
+                  (?s (unless (condition-case nil
+                                  (with-current-buffer buffer
+                                    (save-buffer)
+                                    (not (buffer-modified-p)))
+                                ((quit error) nil))
+                        (throw 'cancel t)))
+                  (?d (push buffer discard))
+                  (_ (throw 'cancel t)))))
+            nil)
+        nil
+      (catch 'veto
+      (dolist (buffer documents t)
+        (when (buffer-live-p buffer)
+          (let ((discard-p (memq buffer discard))
+                killed)
+            (unwind-protect
+                (progn
+                  (when discard-p
+                    (with-current-buffer buffer (set-buffer-modified-p nil)))
+                  (setq killed (kill-buffer buffer)))
+              (when (and discard-p (buffer-live-p buffer))
+                (with-current-buffer buffer (set-buffer-modified-p t))))
+            (unless killed (throw 'veto nil))))))))
+
 (defun glassmacs-close-frame-documents (frame)
-  "Close the documents shown only in FRAME before the frame closes.
-Used for the window close button.  Return nil when the user cancels,
-in which case the frame must stay open."
+  "Review all tabs before closing FRAME through the native close button.
+Cancel keeps the frame open.  Live R processes are never terminated."
   (or (not (framep frame))
       (not (frame-live-p frame))
       (if (glassmacs--frame-has-hidden-tabs-p frame)
-          (progn
-            (message "Close the other tabs before closing this window")
-            nil)
+          (glassmacs--review-frame-tab-buffers
+           frame (glassmacs--frame-tab-buffers frame))
         (let ((windows (window-list frame 'never)))
           (and (glassmacs--confirm-console-windows-close windows)
                (glassmacs--close-documents-in-windows windows))))))
