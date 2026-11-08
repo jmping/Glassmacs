@@ -295,6 +295,24 @@ Do not advise `find-file' globally: packages depend on its semantics."
 ;; hides the window and leaves the edited buffer alive and invisible until
 ;; Quit, which is easy to lose track of with one window per document.
 
+(defun glassmacs--buffer-in-inactive-tab-p (buffer frame)
+  "Whether an inactive tab in FRAME has a view of BUFFER.
+Selection is restored even when tab-switch hooks raise an error."
+  (when (and (frame-live-p frame)
+             (glassmacs--frame-has-hidden-tabs-p frame))
+    (with-selected-frame frame
+      (let ((original (1+ (tab-bar--current-tab-index)))
+            (count (length (funcall tab-bar-tabs-function frame)))
+            found)
+        (unwind-protect
+            (dotimes (index count)
+              (unless (= (1+ index) original)
+                (tab-bar-select-tab (1+ index))
+                (when (get-buffer-window buffer frame)
+                  (setq found t))))
+          (tab-bar-select-tab original))
+        found))))
+
 (defun glassmacs--buffer-shown-elsewhere-p (buffer windows)
   "Return non-nil when BUFFER has a view outside WINDOWS.
 Include inactive tab views, which ordinary window enumeration omits.
@@ -307,12 +325,16 @@ while another tab still owns a view of that buffer."
          (and (frame-live-p frame)
               (glassmacs--frame-has-hidden-tabs-p frame)
               (memq buffer (glassmacs--frame-tab-buffers frame))
-              (not (memq buffer
-                         (mapcar #'window-buffer
-                                 (cl-remove-if-not
-                                  (lambda (window)
-                                    (eq (window-frame window) frame))
-                                  windows))))))
+              ;; If BUFFER occupies a view in this frame that is not one of
+              ;; the closing windows, keep the buffer alive.  A selected-tab
+              ;; view outside WINDOWS is handled by the first clause.
+              (or (not (memq buffer
+                             (mapcar #'window-buffer
+                                     (cl-remove-if-not
+                                      (lambda (window)
+                                        (eq (window-frame window) frame))
+                                      windows))))
+                  (glassmacs--buffer-in-inactive-tab-p buffer frame))))
        (frame-list))))
 
 (defcustom glassmacs-confirm-console-window-close t
