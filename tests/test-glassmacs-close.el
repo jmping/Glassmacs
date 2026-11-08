@@ -96,6 +96,28 @@ The extra window means closing deletes a window rather than the frame."
   (should (advice-member-p #'glassmacs-recovery--reviewed-quit-advice
                            'kill-emacs)))
 
+(ert-deftest glassmacs-close-coordinator-view-cancel-preserves-layout ()
+  "A vetoed review never invokes view deletion."
+  (let ((deleted nil))
+    (cl-letf (((symbol-function 'glassmacs--review-close-windows)
+               (lambda (_windows) nil))
+              ((symbol-function 'glassmacs--close-view)
+               (lambda (_window) (setq deleted t))))
+      (should-not (glassmacs--close-reviewed 'view (selected-window)))
+      (should-not deleted))))
+
+(ert-deftest glassmacs-close-coordinator-frame-delegates-all-tabs ()
+  "The frame scope must review all tabs before native frame deletion."
+  (let ((seen nil))
+    (cl-letf (((symbol-function 'glassmacs--frame-has-hidden-tabs-p)
+               (lambda (_frame) t))
+              ((symbol-function 'glassmacs--frame-tab-buffers)
+               (lambda (_frame) '(one two)))
+              ((symbol-function 'glassmacs--review-frame-tab-buffers)
+               (lambda (_frame buffers) (setq seen buffers) t)))
+      (should (glassmacs--close-reviewed 'frame (selected-frame)))
+      (should (equal seen '(one two))))))
+
 (ert-deftest glassmacs-reviewed-tab-close-menu-command ()
   "The Window menu exposes the guarded close, not raw tab-bar close."
   (let ((system-type 'darwin))
