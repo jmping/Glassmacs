@@ -3400,3 +3400,34 @@ example) can run first and delay the sentinel."
   (should-not (glassmacs-recovery--safe-frame-dimension
                1000000000 -10000 10000)))
 
+
+(ert-deftest glassmacs-focus-open-document-rejects-utility-buffers ()
+  "Explicit document navigation never treats an R console as a document."
+  (let ((buffer (generate-new-buffer "*glassmacs-navigation-utility*")))
+    (unwind-protect
+        (should-error (glassmacs-focus-open-document buffer)
+                      :type 'user-error)
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-focus-open-document-delegates-to-focus-intent ()
+  "Navigation uses the explicit focus intent, not ordinary opening."
+  (let ((buffer (generate-new-buffer "glassmacs-navigation-document"))
+        called)
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'glassmacs-present-buffer)
+                     (lambda (&rest args) (setq called args) 'found)))
+            (should (eq (glassmacs-focus-open-document buffer) 'found)))
+          (should (equal called (list buffer 'focus))))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-window-menu-exposes-document-navigation ()
+  "The native Window menu provides explicit tab-aware document focus."
+  (let ((global-map (copy-keymap global-map))
+        (system-type 'darwin))
+    (cl-letf (((symbol-function 'display-graphic-p)
+               (lambda (&optional _) t)))
+      (glassmacs--install-macos-menus))
+    (should (eq (lookup-key global-map
+                            [menu-bar window glassmacs-focus-open-document])
+                'glassmacs-focus-open-document))))
