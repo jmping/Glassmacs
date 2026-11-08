@@ -109,6 +109,39 @@ selecting a dedicated frame first protects the source document."
              (glassmacs--ordinary-document-buffer-p buffer))
     glassmacs-document-opening-policy))
 
+(defun glassmacs--focus-buffer-in-existing-tab (buffer &optional destination)
+  "Focus BUFFER in an existing tab without replacing any window contents.
+This is an explicit navigation operation, not a presentation-policy
+lookup.  Restore each frame's selected tab when BUFFER is absent."
+  (require 'tab-bar)
+  (let ((frames (if destination (list destination)
+                  (cons (selected-frame)
+                        (delq (selected-frame) (frame-list)))))
+        found)
+    (catch 'found
+      (dolist (frame frames)
+        (when (and (frame-live-p frame) (frame-visible-p frame)
+                   (bound-and-true-p tab-bar-mode))
+          (with-selected-frame frame
+            (let ((original (1+ (tab-bar--current-tab-index)))
+                  (count (length (funcall tab-bar-tabs-function frame)))
+                  (matched nil))
+              (unwind-protect
+                  (dotimes (index count)
+                    (tab-bar-select-tab (1+ index))
+                    (let ((window (get-buffer-window buffer frame)))
+                      (when (and (window-live-p window)
+                                 (eq (window-buffer window) buffer))
+                        (setq matched window)
+                        (throw 'found
+                               (progn
+                                 (select-frame-set-input-focus frame)
+                                 (select-window window)
+                                 window)))))
+                (unless matched
+                  (tab-bar-select-tab original)))))))
+      nil)))
+
 (defun glassmacs-present-buffer (buffer &optional intent placement destination)
   "Present BUFFER according to INTENT and PLACEMENT, returning its window.
 INTENT is one of open, focus, new-view, move, split, tab, or replace.
@@ -130,7 +163,8 @@ for intentional consolidation.  This API does not advise Emacs primitives."
       (select-window existing)
       existing)
      ((eq intent 'focus)
-      (glassmacs-present-buffer buffer 'new-view placement destination))
+      (or (glassmacs--focus-buffer-in-existing-tab buffer destination)
+          (glassmacs-present-buffer buffer 'new-view placement destination)))
      ((and (memq intent '(open focus))
            (fboundp 'glassmacs--ensure-visible-frame)
            (glassmacs--ensure-visible-frame))
