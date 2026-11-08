@@ -579,8 +579,22 @@ placements remain available for users who prefer Emacs pane layouts."
   (let* ((placement (if (and (display-graphic-p)
                              (eq glassmacs-r-help-placement 'separate-window))
                         'new-frame 'reuse-current))
-         (existing (glassmacs-presentation-find-suitable-view
-                    buffer 'open placement)))
+         (side (pcase glassmacs-r-help-placement
+                 ('side-bottom 'bottom)
+                 ('side-right 'right)))
+         (existing (if side
+                       (cl-loop for frame in (cons (selected-frame)
+                                                   (delq (selected-frame)
+                                                         (frame-list)))
+                                thereis (cl-find-if
+                                         (lambda (window)
+                                           (and (eq (window-parameter window 'window-side)
+                                                    side)
+                                                (glassmacs-presentation-view-suitable-p
+                                                 window buffer 'open placement)))
+                                         (window-list frame 'never)))
+                     (glassmacs-presentation-find-suitable-view
+                      buffer 'open placement))))
     (cond
      (existing
       existing)
