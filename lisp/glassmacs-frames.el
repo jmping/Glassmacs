@@ -142,6 +142,24 @@ lookup.  Restore each frame's selected tab when BUFFER is absent."
                   (tab-bar-select-tab original)))))))
       nil)))
 
+(defun glassmacs-focus-open-document (buffer)
+  "Navigate to an open document, including a view in an inactive tab.
+This is an explicit user command: unlike automatic presentation, it may
+select a different tab or frame.  If no view exists, create one using
+the configured document opening policy."
+  (interactive
+   (let* ((buffers (cl-remove-if-not
+                    #'glassmacs--ordinary-document-buffer-p (buffer-list)))
+          (names (mapcar #'buffer-name buffers)))
+     (unless names
+       (user-error "No open documents"))
+     (list (get-buffer
+            (completing-read "Show open document: " names nil t)))))
+  (unless (and (buffer-live-p buffer)
+               (glassmacs--ordinary-document-buffer-p buffer))
+    (user-error "Document is no longer open"))
+  (glassmacs-present-buffer buffer 'focus))
+
 (defun glassmacs-present-buffer (buffer &optional intent placement destination)
   "Present BUFFER according to INTENT and PLACEMENT, returning its window.
 INTENT is one of open, focus, new-view, move, split, tab, or replace.
