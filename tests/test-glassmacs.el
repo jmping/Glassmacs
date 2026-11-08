@@ -3431,3 +3431,50 @@ example) can run first and delay the sentinel."
     (should (eq (lookup-key global-map
                             [menu-bar window glassmacs-focus-open-document])
                 'glassmacs-focus-open-document))))
+
+(ert-deftest glassmacs-recovery-tab-record-captures-document-view ()
+  "A tab snapshot contains IDs and point, never arbitrary buffer objects."
+  (let ((buffer (generate-new-buffer "glassmacs-recovery-tab-doc")))
+    (unwind-protect
+        (save-window-excursion
+          (with-current-buffer buffer (insert "line one\nline two\n"))
+          (set-window-buffer (selected-window) buffer)
+          (set-window-point (selected-window) 6)
+          (let ((record (glassmacs-recovery--tab-window-record
+                         (selected-frame))))
+            (should (listp record))
+            (should (= (length (plist-get record :buffers)) 1))
+            (should (stringp (car (plist-get record :buffers))))
+            (should (equal (plist-get record :selected)
+                           (car (plist-get record :buffers))))
+            (should (= (plist-get (car (plist-get record :views)) :point) 6))))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-recovery-skips-malformed-tab-buffer-lists ()
+  "Invalid tab fields cannot create blank frames during restoration."
+  (let ((created 0))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+              ((symbol-function 'make-frame)
+               (lambda (&rest _) (cl-incf created)
+                 (error "Unexpected frame"))))
+      (glassmacs-recovery--restore-window-layout
+       '(:windows ((:tabs ((:buffers "invalid")
+                           (:buffers (123)))
+                    :width 90 :height 30))))
+      (should (= created 0)))))
+
+(ert-deftest glassmacs-recovery-snapshots-tabs-and-active-index ()
+  "Recovery frame record captures an ordered tab list and active index."
+  (let ((frame (selected-frame))
+        (record '(:buffers ("one") :selected "one" :views nil)))
+    (cl-letf (((symbol-function 'glassmacs-recovery--frame-tab-records)
+               (lambda (_frame) (list record record)))
+              ((symbol-function 'tab-bar-tabs-function)
+               (lambda (_frame) '((name . "one") (name . "two")))))
+      (let ((tab-bar-mode t))
+        (let ((result (cl-find-if
+                       (lambda (entry) (plist-member entry :tabs))
+                       (glassmacs-recovery--open-window-records))))
+          (should result)
+          (should (= (length (plist-get result :tabs)) 2))
+          (should (integerp (plist-get result :active-tab))))))))
