@@ -427,7 +427,7 @@ documents are skipped, without launching any R processes."
                 (when (and left top)
                   (condition-case nil
                       (set-frame-position frame left top)
-                    (error nil))))))))))
+                    (error nil)))))))))))
 
 (defun glassmacs-recovery-restore-crash ()
   "Restore the crash index without modifying the preserved-buffer index."
