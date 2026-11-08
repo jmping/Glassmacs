@@ -388,6 +388,7 @@ documents are skipped, without launching any R processes."
                (recoverable (cl-remove-if-not
                              (lambda (tab)
                                (and (listp tab)
+                                    (listp (plist-get tab :buffers))
                                     (cl-some #'glassmacs-recovery--buffer-for-id
                                              (plist-get tab :buffers))))
                              tabs))
