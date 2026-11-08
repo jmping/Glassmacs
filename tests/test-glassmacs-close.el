@@ -134,17 +134,45 @@ The extra window means closing deletes a window rather than the frame."
       (should reviewed)
       (should closed))))
 
-(ert-deftest glassmacs-native-frame-close-vetoes-hidden-tabs ()
-  "A native close must not skip documents in other tabs."
-  (let ((tab-bar-mode t)
-        (prompted nil))
+(ert-deftest glassmacs-native-frame-close-reviews-hidden-tabs ()
+  "A native multi-tab close routes through the all-tab review."
+  (let ((reviewed nil)
+        (tab-bar-mode t))
     (cl-letf (((symbol-function 'tab-bar-tabs-function)
                (lambda (_frame) '((name . "one") (name . "two"))))
-              ((symbol-function 'glassmacs--confirm-console-windows-close)
-               (lambda (&rest _) (setq prompted t) t)))
-      (should (glassmacs--frame-has-hidden-tabs-p (selected-frame)))
+              ((symbol-function 'glassmacs--frame-tab-buffers)
+               (lambda (_frame) '(first second)))
+              ((symbol-function 'glassmacs--review-frame-tab-buffers)
+               (lambda (_frame buffers)
+                 (setq reviewed buffers)
+                 nil)))
       (should-not (glassmacs-close-frame-documents (selected-frame)))
-      (should-not prompted))))
+      (should (equal reviewed '(first second))))))
+
+(ert-deftest glassmacs-native-frame-review-cancel-keeps-documents ()
+  "Cancel after one approval must not kill any document."
+  (let ((first (generate-new-buffer "glassmacs-frame-first"))
+        (second (generate-new-buffer "glassmacs-frame-second"))
+        (answers '(?d ?c)))
+    (unwind-protect
+        (progn
+          (with-current-buffer first (insert "one"))
+          (with-current-buffer second (insert "two"))
+          (cl-letf (((symbol-function 'glassmacs--buffer-visible-in-other-frame-p)
+                     (lambda (&rest _) nil))
+                    ((symbol-function 'read-multiple-choice)
+                     (lambda (&rest _) (prog1 (list (car answers))
+                                         (setq answers (cdr answers))))))
+            (should-not (glassmacs--review-frame-tab-buffers
+                         (selected-frame) (list first second)))
+            (should (buffer-live-p first))
+            (should (buffer-live-p second))
+            (should (buffer-modified-p first))
+            (should (buffer-modified-p second))))
+      (dolist (buffer (list first second))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer))))))
 
 (ert-deftest glassmacs-native-frame-close-single-tab-continues-review ()
   "A frame with one tab still performs its usual close checks."
