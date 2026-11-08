@@ -96,6 +96,14 @@ The extra window means closing deletes a window rather than the frame."
   (should (advice-member-p #'glassmacs-recovery--reviewed-quit-advice
                            'kill-emacs)))
 
+(ert-deftest glassmacs-reviewed-tab-close-menu-command ()
+  "The Window menu exposes the guarded close, not raw tab-bar close."
+  (let ((system-type 'darwin))
+    (glassmacs--install-reviewed-tab-close-menu)
+    (let ((item (lookup-key global-map [menu-bar window glassmacs-close-tab])))
+      (should (eq (car item) 'menu-item))
+      (should (eq (nth 2 item) 'glassmacs-close-current-tab)))))
+
 (ert-deftest glassmacs-reviewed-tab-close-cancel-preserves-tab ()
   "A canceled document review must leave the current tab intact."
   (let ((closed nil))
