@@ -372,7 +372,7 @@ Return non-nil if the tab has any recoverable documents."
                                           selected-id))
                                  (window-list frame 'never)))))
             (when selected (select-window selected))))
-        t))))
+        t)))))
 
 (defun glassmacs-recovery--restore-window-layout (manifest)
   "Recreate saved document frames and tabs using bounded data-only records.
