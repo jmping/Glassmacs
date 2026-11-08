@@ -296,9 +296,24 @@ Do not advise `find-file' globally: packages depend on its semantics."
 ;; Quit, which is easy to lose track of with one window per document.
 
 (defun glassmacs--buffer-shown-elsewhere-p (buffer windows)
-  "Return non-nil when BUFFER is visible in a window not in WINDOWS."
-  (cl-some (lambda (window) (not (memq window windows)))
-           (get-buffer-window-list buffer nil t)))
+  "Return non-nil when BUFFER has a view outside WINDOWS.
+Include inactive tab views, which ordinary window enumeration omits.
+This avoids killing a document or prompting to hide a live R session
+while another tab still owns a view of that buffer."
+  (or (cl-some (lambda (window) (not (memq window windows)))
+               (get-buffer-window-list buffer nil t))
+      (cl-some
+       (lambda (frame)
+         (and (frame-live-p frame)
+              (glassmacs--frame-has-hidden-tabs-p frame)
+              (memq buffer (glassmacs--frame-tab-buffers frame))
+              (not (memq buffer
+                         (mapcar #'window-buffer
+                                 (cl-remove-if-not
+                                  (lambda (window)
+                                    (eq (window-frame window) frame))
+                                  windows))))))
+       (frame-list))))
 
 (defcustom glassmacs-confirm-console-window-close t
   "Ask before hiding the last visible window of a live R console.
