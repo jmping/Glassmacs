@@ -655,6 +655,15 @@ Unlike document opening, this never creates a frame or replaces a view."
     (select-window window)
     window))
 
+(defun glassmacs--install-reviewed-tab-close-menu ()
+  "Expose reviewed tab closing without advising upstream tab-bar APIs.
+The explicit Glassmacs menu command preserves the native frame-close
+guard and does not intercept package-internal tab operations."
+  (when (eq system-type 'darwin)
+    (define-key global-map [menu-bar window glassmacs-close-tab]
+      '(menu-item "Close Current Tab Safely" glassmacs-close-current-tab
+                  :enable (menu-bar-non-minibuffer-window-p)))))
+
 (defun glassmacs--install-window-navigation-menu ()
   "Expose non-destructive native window navigation."
   (when (eq system-type 'darwin)
@@ -662,7 +671,8 @@ Unlike document opening, this never creates a frame or replaces a view."
       '(menu-item "Focus Open Window…" glassmacs-focus-open-window))))
 
 (with-eval-after-load 'menu-bar
-  (glassmacs--install-window-navigation-menu))
+  (glassmacs--install-window-navigation-menu)
+  (glassmacs--install-reviewed-tab-close-menu))
 
 (defvar glassmacs--mode-line-original-mouse-1 nil)
 (defvar glassmacs--mode-line-original-mouse-3 nil)
