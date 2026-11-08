@@ -354,34 +354,55 @@ otherwise the frame.  Closing the final frame keeps Glassmacs running
      (t
       (delete-frame frame)))))
 
+(defun glassmacs--review-close-windows (windows)
+  "Review the affected WINDOWS before removing their views.
+Cancel or a kill-buffer veto leaves the window layout intact."
+  (and (glassmacs--confirm-console-windows-close windows)
+       (glassmacs--close-documents-in-windows windows)))
+
+(defun glassmacs--close-reviewed (scope &optional target)
+  "Close SCOPE after its document and console review.
+SCOPE is `view', `tab', or `frame'.  TARGET is a window for `view'
+or a frame for the other scopes.  Return non-nil only on success.
+The native frame-close handler uses `frame' to review, but leaves the
+actual Cocoa frame deletion to its caller."
+  (pcase scope
+    ('view
+     (let ((window (or target (selected-window))))
+       (when (and (window-live-p window)
+                  (glassmacs--review-close-windows (list window)))
+         (glassmacs--close-view window)
+         t)))
+    ('tab
+     (let ((frame (or target (selected-frame))))
+       (with-selected-frame frame
+         (if (not (glassmacs--frame-has-hidden-tabs-p frame))
+             (glassmacs--close-reviewed 'view (selected-window))
+           (when (glassmacs--review-close-windows (window-list frame 'never))
+             (tab-bar-close-tab)
+             t)))))
+    ('frame
+     (let ((frame (or target (selected-frame))))
+       (or (not (frame-live-p frame))
+           (if (glassmacs--frame-has-hidden-tabs-p frame)
+               (glassmacs--review-frame-tab-buffers
+                frame (glassmacs--frame-tab-buffers frame))
+             (glassmacs--review-close-windows (window-list frame 'never))))))
+    (_ (user-error "Unknown close scope: %s" scope))))
+
 (defun glassmacs-close-current-tab ()
-  "Close the current tab through Glassmacs document and console review.
-Never bypass the save/discard/cancel decision or terminate an R process.
-When only one tab remains, use the regular document-close operation."
+  "Review and close the selected tab without terminating R processes."
   (interactive)
-  (if (not (glassmacs--frame-has-hidden-tabs-p (selected-frame)))
-      (glassmacs-close-document)
-    (let ((windows (window-list (selected-frame) 'never)))
-      (if (and (glassmacs--confirm-console-windows-close windows)
-               (glassmacs--close-documents-in-windows windows))
-          (tab-bar-close-tab)
-        (message "Close canceled")))))
+  (unless (glassmacs--close-reviewed 'tab)
+    (message "Close canceled")))
 
 (defun glassmacs-close-document ()
-  "Close the selected window and its document, as Command-W does on a Mac.
-If the window shows an ordinary document that no other window shows,
-ask whether to save unsaved changes (Save, Don't Save, Cancel) and
-then close the document.  Special buffers such as R consoles and Help
-are never killed; only their window closes.  Then close the window, its
-tab, or its frame."
+  "Review and close the selected view, tab, or frame as Command-W does."
   (interactive)
   (when (active-minibuffer-window)
     (abort-recursive-edit))
-  (let ((window (selected-window)))
-    (if (and (glassmacs--confirm-console-windows-close (list window))
-             (glassmacs--close-documents-in-windows (list window)))
-        (glassmacs--close-view window)
-      (message "Close canceled"))))
+  (unless (glassmacs--close-reviewed 'view)
+    (message "Close canceled")))
 
 (defun glassmacs--frame-has-hidden-tabs-p (frame)
   "Whether FRAME has tabs beyond its currently selected tab.
@@ -478,16 +499,8 @@ may write to disk before a later cancellation; no R process is killed."
             (unless killed (throw 'veto nil)))))))))
 
 (defun glassmacs-close-frame-documents (frame)
-  "Review all tabs before closing FRAME through the native close button.
-Cancel keeps the frame open.  Live R processes are never terminated."
-  (or (not (framep frame))
-      (not (frame-live-p frame))
-      (if (glassmacs--frame-has-hidden-tabs-p frame)
-          (glassmacs--review-frame-tab-buffers
-           frame (glassmacs--frame-tab-buffers frame))
-        (let ((windows (window-list frame 'never)))
-          (and (glassmacs--confirm-console-windows-close windows)
-               (glassmacs--close-documents-in-windows windows))))))
+  "Review every affected tab before the native close handler removes FRAME."
+  (glassmacs--close-reviewed 'frame frame))
 
 (defun glassmacs-save-document-as (filename)
   "Save the current document as FILENAME using Emacs' native file safeguards.
