@@ -474,7 +474,7 @@ may write to disk before a later cancellation; no R process is killed."
                   (setq killed (kill-buffer buffer)))
               (when (and discard-p (buffer-live-p buffer))
                 (with-current-buffer buffer (set-buffer-modified-p t))))
-            (unless killed (throw 'veto nil))))))))
+            (unless killed (throw 'veto nil)))))))))
 
 (defun glassmacs-close-frame-documents (frame)
   "Review all tabs before closing FRAME through the native close button.
