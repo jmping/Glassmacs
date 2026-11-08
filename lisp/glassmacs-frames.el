@@ -432,7 +432,8 @@ may write to disk before a later cancellation; no R process is killed."
                    buffers))
         discard)
     (if (catch 'cancel
-            (dolist (buffer consoles)
+            (dolist (buffer (if glassmacs-confirm-console-window-close
+                                consoles nil))
               (unless (eq (condition-case nil
                               (car (read-multiple-choice
                                     (format "Hide R console %s? R keeps running. "
