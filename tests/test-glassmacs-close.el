@@ -468,3 +468,44 @@ The extra window means closing deletes a window rather than the frame."
 
 (provide 'test-glassmacs-close)
 ;;; test-glassmacs-close.el ends here
+
+(ert-deftest glassmacs-close-preserves-document-in-inactive-tab ()
+  "Closing one view must not kill a document kept in another tab."
+  (let ((buffer (generate-new-buffer "glassmacs-inactive-tab-document")))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (set-window-buffer (selected-window) buffer)
+          (let ((window (selected-window)))
+            (cl-letf (((symbol-function 'glassmacs--frame-has-hidden-tabs-p)
+                       (lambda (_frame) t))
+                      ((symbol-function 'glassmacs--frame-tab-buffers)
+                       (lambda (_frame) (list buffer)))
+                      ((symbol-function 'glassmacs--buffer-in-inactive-tab-p)
+                       (lambda (candidate _frame) (eq candidate buffer))))
+              (should (glassmacs--buffer-shown-elsewhere-p
+                       buffer (list window)))
+              (should (glassmacs--close-documents-in-windows
+                       (list window)))
+              (should (buffer-live-p buffer)))))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-frame-close-preserves-document-in-other-hidden-tab ()
+  "Closing a frame cannot kill buffers displayed in another frame's tab."
+  (let ((buffer (generate-new-buffer "glassmacs-other-frame-tab-document"))
+        (current (selected-frame))
+        (other (make-symbol "mock-other-frame")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'frame-list)
+                   (lambda () (list current other)))
+                  ((symbol-function 'frame-live-p)
+                   (lambda (frame) (or (eq frame current)
+                                       (eq frame other))))
+                  ((symbol-function 'get-buffer-window)
+                   (lambda (_buffer _frame) nil))
+                  ((symbol-function 'glassmacs--buffer-in-inactive-tab-p)
+                   (lambda (candidate frame)
+                     (and (eq candidate buffer) (eq frame other)))))
+          (should (glassmacs--buffer-visible-in-other-frame-p
+                   buffer current)))
+      (kill-buffer buffer))))
