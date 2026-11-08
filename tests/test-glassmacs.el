@@ -2956,13 +2956,12 @@ example) can run first and delay the sentinel."
 (ert-deftest glassmacs-focus-hidden-tab-restores-selection-on-miss ()
   "A failed tab search leaves the original tab selected."
   (let ((tab-bar-mode t)
+        (tab-bar-tabs-function (lambda (_frame) '(one two three)))
         (current 2)
         (buffer (generate-new-buffer " *glassmacs-missing-tab*")))
     (unwind-protect
         (cl-letf (((symbol-function 'tab-bar--current-tab-index)
                    (lambda () (1- current)))
-                  ((symbol-function 'tab-bar-tabs-function)
-                   (lambda (_frame) '(one two three)))
                   ((symbol-function 'tab-bar-select-tab)
                    (lambda (index) (setq current index)))
                   ((symbol-function 'get-buffer-window)
@@ -2975,12 +2974,11 @@ example) can run first and delay the sentinel."
 (ert-deftest glassmacs-focus-hidden-tab-selects-matching-view ()
   "An existing tab view is focused without manufacturing a new view."
   (let ((tab-bar-mode t)
+        (tab-bar-tabs-function (lambda (_frame) '(one two)))
         (current 1)
         (buffer (window-buffer (selected-window))))
     (cl-letf (((symbol-function 'tab-bar--current-tab-index)
                (lambda () (1- current)))
-              ((symbol-function 'tab-bar-tabs-function)
-               (lambda (_frame) '(one two)))
               ((symbol-function 'tab-bar-select-tab)
                (lambda (index) (setq current index)))
               ((symbol-function 'get-buffer-window)
