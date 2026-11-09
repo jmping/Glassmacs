@@ -92,8 +92,11 @@ silently switch tabs to locate a buffer."
                thereis
                (cl-find-if
                 (lambda (window)
-                  (glassmacs-presentation-view-suitable-p
-                   window buffer intent placement destination))
+                  ;; Only views of BUFFER are candidates; the policy
+                  ;; predicate decides among them, never other windows.
+                  (and (eq (window-buffer window) buffer)
+                       (glassmacs-presentation-view-suitable-p
+                        window buffer intent placement destination)))
                 (window-list frame 'never))))))
 
 (defun glassmacs-presentation-current-tab-view-p (window)

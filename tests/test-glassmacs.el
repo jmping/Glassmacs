@@ -440,6 +440,16 @@
                      glassmacs-appearance))
     (should (featurep feature))))
 
+;; Several lifecycle tests stand in symbols such as `a' or `hid' for frames.
+;; Code that enumerates a frame's windows would signal on those, so give
+;; mock frames an empty window list and delegate real frames unchanged.
+(defun glassmacs-test--mock-frame-window-list (original)
+  "Return a `window-list' replacement wrapping ORIGINAL for mock frames."
+  (lambda (&optional frame &rest args)
+    (if (and frame (symbolp frame) (not (memq frame '(t visible))))
+        nil
+      (apply original frame args))))
+
 (defmacro glassmacs-test-with-close-event (frames visible &rest body)
   "Run BODY with mocked FRAMES, of which VISIBLE are visible."
   (declare (indent 2))
@@ -447,6 +457,9 @@
          (glassmacs--hidden-final-frame nil)
          hidden)
      (cl-letf (((symbol-function 'frame-list) (lambda () ,frames))
+               ((symbol-function 'window-list)
+                (glassmacs-test--mock-frame-window-list
+                 (symbol-function 'window-list)))
                ((symbol-function 'frame-live-p)
                 (lambda (candidate) (memq candidate ,frames)))
                ((symbol-function 'frame-visible-p)
@@ -1702,6 +1715,9 @@ otherwise never build."
      (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
                ((symbol-function 'called-interactively-p) (lambda (&rest _) t))
                ((symbol-function 'frame-list) (lambda () '(hid)))
+               ((symbol-function 'window-list)
+                (glassmacs-test--mock-frame-window-list
+                 (symbol-function 'window-list)))
                ((symbol-function 'frame-live-p) (lambda (f) (eq f 'hid)))
                ((symbol-function 'frame-parent) (lambda (_f) nil))
                ((symbol-function 'frame-visible-p) (lambda (_f) visible))
@@ -1756,6 +1772,9 @@ otherwise never build."
     (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
               ((symbol-function 'called-interactively-p) (lambda (&rest _) t))
               ((symbol-function 'frame-list) (lambda () '(vis)))
+              ((symbol-function 'window-list)
+               (glassmacs-test--mock-frame-window-list
+                (symbol-function 'window-list)))
               ((symbol-function 'frame-live-p) (lambda (f) (eq f 'vis)))
               ((symbol-function 'frame-parent) (lambda (_f) nil))
               ((symbol-function 'frame-visible-p) (lambda (_f) t))

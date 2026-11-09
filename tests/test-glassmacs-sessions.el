@@ -71,7 +71,7 @@
 
 
 (ert-deftest glassmacs-r-help-display-checks-view-suitability ()
-  "ESS help reuse requires a suitable existing view."
+  "ESS help reuse requires a suitable view on the configured side."
   (save-window-excursion
     (let ((buffer (generate-new-buffer "*R Help Suitability*"))
           (glassmacs-r-help-placement 'side-right)
@@ -79,12 +79,31 @@
       (unwind-protect
           (progn
             (delete-other-windows)
+            (let ((side (display-buffer-in-side-window
+                         buffer '((side . right) (slot . 0)))))
+              (cl-letf (((symbol-function 'glassmacs-presentation-view-suitable-p)
+                         (lambda (&rest _) (cl-incf checks) t)))
+                (should (eq (glassmacs-r--display-help buffer nil) side))
+                (should (= checks 1)))
+              ;; An unsuitable side view is not reused implicitly.
+              (cl-letf (((symbol-function 'glassmacs-presentation-view-suitable-p)
+                         (lambda (&rest _) nil)))
+                (should (window-live-p
+                         (glassmacs-r--display-help buffer nil))))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest glassmacs-r-help-side-policy-ignores-ordinary-view ()
+  "A Help view in an ordinary window is not reused under a side policy."
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer "*R Help Ordinary*"))
+          (glassmacs-r-help-placement 'side-right))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
             (switch-to-buffer buffer)
-            (cl-letf (((symbol-function 'glassmacs-presentation-view-suitable-p)
-                       (lambda (&rest _) (cl-incf checks) t)))
-              (should (eq (glassmacs-r--display-help buffer nil)
-                          (selected-window)))
-              (should (= checks 1))))
+            (let ((window (glassmacs-r--display-help buffer nil)))
+              (should-not (eq window (selected-window)))
+              (should (eq (window-parameter window 'window-side) 'right))))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest glassmacs-r-console-display-checks-view-suitability ()
@@ -916,8 +935,11 @@
   (let ((buffer (generate-new-buffer " *glassmacs-existing-console*"))
         (focused nil))
     (unwind-protect
-        (cl-letf (((symbol-function 'get-buffer-window)
-                   (lambda (_buffer &optional _all-frames) 'console-window))
+        (cl-letf (((symbol-function 'glassmacs-presentation-find-suitable-view)
+                   (lambda (candidate intent &rest _)
+                     (should (eq candidate buffer))
+                     (should (eq intent 'focus))
+                     'console-window))
                   ((symbol-function 'window-frame)
                    (lambda (_window) 'console-frame))
                   ((symbol-function 'select-frame-set-input-focus)

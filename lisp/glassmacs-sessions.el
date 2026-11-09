@@ -423,7 +423,7 @@ console buffer's `default-directory'.  It is not a claim about R's getwd()."
           (or (glassmacs-session-display-label session)
               (glassmacs-session-id session))
           (glassmacs-session-name session)
-          (if-let ((dir (glassmacs-sessions--console-directory session)))
+          (if-let* ((dir (glassmacs-sessions--console-directory session)))
               (abbreviate-file-name dir)
             "(unknown)")
           (if (glassmacs-session-paused session) " (paused)" "")))

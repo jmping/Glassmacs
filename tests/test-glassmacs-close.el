@@ -74,7 +74,9 @@ The extra window means closing deletes a window rather than the frame."
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
 (ert-deftest glassmacs-native-quit-command-routes-through-review ()
-  (let ((routed nil)
+  ;; The GUI path only: batch Emacs deliberately bypasses review.
+  (let ((noninteractive nil)
+        (routed nil)
         (original-called nil))
     (cl-letf (((symbol-function 'glassmacs-recovery-quit)
                (lambda () (setq routed t))))
@@ -82,6 +84,18 @@ The extra window means closing deletes a window rather than the frame."
        (lambda (&rest _) (setq original-called t)))
       (should routed)
       (should-not original-called))))
+
+(ert-deftest glassmacs-batch-kill-emacs-preserves-exit-status ()
+  "Batch `kill-emacs' must reach the original with its exit status."
+  (let ((noninteractive t)
+        (routed nil)
+        (forwarded nil))
+    (cl-letf (((symbol-function 'glassmacs-recovery-quit)
+               (lambda () (setq routed t))))
+      (glassmacs-recovery--reviewed-quit-advice
+       (lambda (&rest args) (setq forwarded args)) 1)
+      (should-not routed)
+      (should (equal forwarded '(1))))))
 
 (ert-deftest glassmacs-reviewed-quit-command-calls-original ()
   (let ((glassmacs-recovery--save-reviewed-quit t)
@@ -122,7 +136,9 @@ The extra window means closing deletes a window rather than the frame."
   "The Window menu exposes the guarded close, not raw tab-bar close."
   (let ((system-type 'darwin))
     (glassmacs--install-reviewed-tab-close-menu)
-    (let ((item (lookup-key global-map [menu-bar window glassmacs-close-tab])))
+    ;; `lookup-key' strips the menu-item wrapper, so inspect the raw entry.
+    (let ((item (cdr (assq 'glassmacs-close-tab
+                           (lookup-key global-map [menu-bar window])))))
       (should (eq (car item) 'menu-item))
       (should (eq (nth 2 item) 'glassmacs-close-current-tab)))))
 
@@ -158,11 +174,13 @@ The extra window means closing deletes a window rather than the frame."
 
 (ert-deftest glassmacs-native-frame-close-reviews-hidden-tabs ()
   "A native multi-tab close routes through the all-tab review."
+  ;; `tab-bar-tabs-function' is a variable holding the tab enumerator.
   (let ((reviewed nil)
-        (tab-bar-mode t))
-    (cl-letf (((symbol-function 'tab-bar-tabs-function)
-               (lambda (_frame) '((name . "one") (name . "two"))))
-              ((symbol-function 'glassmacs--frame-tab-buffers)
+        (tab-bar-mode t)
+        (tab-bar-tabs-function
+         (lambda (&optional _frame)
+           '((current-tab (name . "one")) (tab (name . "two"))))))
+    (cl-letf (((symbol-function 'glassmacs--frame-tab-buffers)
                (lambda (_frame) '(first second)))
               ((symbol-function 'glassmacs--review-frame-tab-buffers)
                (lambda (_frame buffers)
@@ -308,9 +326,16 @@ The extra window means closing deletes a window rather than the frame."
         (should-not closed-tab)
         (setq deleted nil)
         (set-window-buffer (selected-window) (get-buffer-create "*scratch*"))
+        ;; Tabs are alists; the inactive tab holds no view of the buffer.
         (let ((tab-bar-mode t)
-              (tab-bar-tabs-function (lambda (&optional _) '(tab-a tab-b))))
-          (glassmacs-close-document))
+              (tab-bar-tabs-function
+               (lambda (&optional _)
+                 '((current-tab (name . "a")) (tab (name . "b"))))))
+          (cl-letf (((symbol-function 'glassmacs--frame-tab-buffers)
+                     (lambda (_frame) (list (window-buffer))))
+                    ((symbol-function 'glassmacs--buffer-in-inactive-tab-p)
+                     #'ignore))
+            (glassmacs-close-document)))
         (should closed-tab)
         (should-not deleted)))
     (should-not (buffer-live-p buffer))))
@@ -381,6 +406,10 @@ The extra window means closing deletes a window rather than the frame."
   (let ((scratch (get-buffer-create "*scratch*")))
     (unwind-protect
         (glassmacs-close-test--with-split scratch
+          ;; If the other window also showed *scratch*, closing this view
+          ;; would correctly keep the buffer without any prompt.
+          (set-window-buffer (next-window window 'never)
+                             (get-buffer-create " *glassmacs-close-other*"))
           (with-current-buffer scratch
             (goto-char (point-max))
             (insert "scratch unsaved edit"))
