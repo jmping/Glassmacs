@@ -30,6 +30,57 @@ Sources:
 - [Posit: RStudio release history](https://posit.co/blog/announcing-rstudio-v1-0)
 - [Posit: About the RStudio Project (2011)](https://posit.co/blog/about-the-rstudio-project)
 
+## From a community of tools to a default IDE
+
+### How R work was assembled
+
+For R researchers in the 2000s, the workflow often meant assembling components: writing `.R` and Sweave/LaTeX documents in a text editor, sending expressions to an independent R console through ESS or another integration, opening R's own graphics devices, using ordinary shells and scripts, and maintaining a personal collection of keyboard commands and conventions. Some used the base Mac or Windows R GUI; others used Emacs, including Aquamacs on Macs; still others used different editors and command-line setups. The arrangements were practical, capable, and often idiosyncratic. They were also harder to teach, document, and keep synchronized across machines.
+
+Aquamacs, first developed in 2004, translated a deep Emacs tradition into Mac application conventions, combining familiar document and window behavior with ESS, AUCTeX, and the wider Emacs ecosystem. It was never the only historical R interface and should not be presented as the principal editor for all R users. It *was* a recognizable approach among technically demanding research and writing users. See [Aquamacs: About](https://aquamacs.org/about).
+
+### The transition was institutional as well as technical
+
+RStudio's initial public beta appeared on **28 February 2011** (version 0.92), after the project had been under development since 2008. It integrated source editing, live R interaction, history, and Sweave authoring in a deliberately accessible interface. Its founders also explicitly described an organizational model: an open-source product supported by a company that would sell complementary services, training, consulting and hosting. The open-source nature of RStudio matters; the contrast is *not* volunteer free software versus proprietary IDE software.
+
+The institutional comparison matters. A small project that maintains native macOS integration around a moving GNU Emacs codebase must continually absorb upstream changes, OS behavior changes, dependency updates and user support. A product with paid, sustained engineering capacity can more readily provide coordinated releases, onboarding, documentation and platform compatibility. This is a structural explanation for different maintenance pressures, **not proof that financing was the sole reason Aquamacs's user base changed**, or that it never received meaningful outside contributions.
+
+Aquamacs's own history complicates any story of immediate disappearance. In his [August 19, 2019 maintainer handoff](https://groups.google.com/g/aquamacs-devel/c/4JWzwz8Ytmo), original maintainer David Reitter reported that his last measurement still showed **more than 12,000 distinct users per week** and discussed the need for cleanup, newer Emacs integration, and future maintainers. That count is his self-report, not an independently audited active-user series, but it shows substantial ongoing usage years after RStudio's debut. The project's [about page](https://aquamacs.org/about) identifies Win Treese as its current maintainer, so describe continuing maintenance challenges rather than falsely implying it became wholly unmaintained in 2019.
+
+There is **no defensible known migration breakdown** showing what fraction of Aquamacs users adopted RStudio, vanilla GNU Emacs, VS Code, other tools, or simply stayed. Likely pathways can be hypothesized by use case: R-first users often benefited from the new integrated IDE; deeply invested ESS users had reason to stay in Emacs; writing-focused users had additional options. Treat these as interpretations, not quantitative findings.
+
+### A first-person timeline, not an invented migration statistic
+
+The Glassmacs creator recalls learning these tools in graduate school and seeing previews of RStudio-style environments by graduation in **2011**. By then, an Aquamacs/ESS workflow was already established through years of use. For that user, the arrival of a more organized IDE was not a clean replacement for a familiar arrangement of source files, independent R sessions, shells, documents and graphics. The story helps explain *why the tool is being built*, not how the entire Aquamacs community behaved. Use the creator's own recollection as first-person testimony, not a generalized history or a quote attributed to anyone else.
+
+A later attempted move from Aquamacs to Positron also did not fully replace that established multi-process workflow. This is an individual fit assessment, not a broad claim that Positron cannot handle multiple interpreters, process-oriented work, or parallel R.
+
+This yields a useful historical narrative: **R computing used to be assembled from interoperable parts; integrated IDEs made that experience easier and broadly accessible; the older Mac/ESS branch retained useful affordances but faced a different long-term maintenance problem; Glassmacs tries to recover those affordances on a more maintainable upstream foundation.**
+
+Primary sources and contemporary accounts:
+- [RStudio, new open-source IDE for R — February 28, 2011](https://posit.co/blog/rstudio-new-open-source-ide-for-r)
+- [About the RStudio Project — February 27, 2011](https://posit.co/blog/about-the-rstudio-project)
+- [RStudio v1.0 retrospective and release history](https://posit.co/blog/announcing-rstudio-v1-0)
+- [Aquamacs: About / maintainers and origins](https://aquamacs.org/about)
+- [David Reitter, stepping down as Aquamacs maintainer — August 19, 2019](https://groups.google.com/g/aquamacs-devel/c/4JWzwz8Ytmo)
+
+## Where the wider editor ecosystem fits
+
+The comparison should not suggest that independent processes are exclusive to Emacs. RStudio, Positron, VS Code with R extensions, JupyterLab, Neovim with R plugins, R's own GUI and plain terminal R all offer useful but different combinations of editing, process execution, object inspection, graphics and document publication. VS Code is a general-purpose editor configured for R through extensions; Positron uses a Code OSS foundation but provides a more integrated data-science interface. JupyterLab organizes work around notebook documents and kernels. Neovim and terminal R are natural options for Unix-oriented workflows. RKWard is an additional graphical R front-end, particularly relevant to users who want menus for statistical operations.
+
+Do not rank these from best to worst, depict Positron as only a cosmetically modified RStudio, or imply that VS Code cannot support multiple R sessions or remote work. The distinct Glassmacs pitch is Mac-native, document-oriented Emacs/ESS with explicit session identity and independent tools—not a monopoly on multiprocessing.
+
+| Approach | Illustrative options | Typical organizing idea |
+| --- | --- | --- |
+| R-first integrated | RStudio | One discoverable R analysis workspace, with support for external/parallel processes |
+| Multilingual integrated | Positron | Data-science workflow organized around interoperable interpreters and tools |
+| Extensible editor | VS Code + R extensions | Configure editor features, language servers, terminals and remote tools |
+| Notebook-first | JupyterLab | A notebook document plus language kernels, including R |
+| Emacs/ESS | GNU Emacs, Aquamacs, Glassmacs | Independent statistical processes associated with editable documents |
+| Terminal/editor-centric | Neovim, terminal R | Shells, scripts, plugins, and OS-level process control |
+| Menu-oriented R frontend | R GUI, RKWard | Graphical console or guided statistical interaction |
+
+ in a category indicates an ecosystem or configuration option, not a bundled Glassmacs feature. The public article should keep this landscape condensed; detailed version-sensitive feature claims need ongoing review.
+
 ## The relevant tradeoff
 
 | Question | Integrated IDE emphasis | Loosely coupled Emacs/ESS emphasis |
