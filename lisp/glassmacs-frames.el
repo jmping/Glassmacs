@@ -778,29 +778,6 @@ cycling unrelated buffers into the current document window.  Choose
                  (const :tag "Standard Emacs buffer cycling" emacs))
   :group 'glassmacs-frames)
 
-(defun glassmacs-focus-open-document ()
-  "Choose an open document or R console and focus its existing frame.
-A buffer without a visible view is opened using its document policy."
-  (interactive)
-  (let* ((buffers (cl-remove-if-not
-                   (lambda (buffer)
-                     (or (glassmacs--ordinary-document-buffer-p buffer)
-                         (with-current-buffer buffer
-                           (derived-mode-p 'inferior-ess-r-mode))))
-                   (buffer-list)))
-         (choices (mapcar (lambda (buffer)
-                            (cons (format "%s%s" (buffer-name buffer)
-                                          (if (buffer-file-name buffer)
-                                              (format " — %s" (abbreviate-file-name
-                                                                 (buffer-file-name buffer)))
-                                            ""))
-                                  buffer))
-                          buffers))
-         (selection (completing-read "Open document/window: " choices nil t)))
-    (unless (assoc selection choices)
-      (user-error "No document selected"))
-    (glassmacs-present-buffer (cdr (assoc selection choices)) 'focus)))
-
 (defun glassmacs--window-navigation-choices ()
   "Return visible, live application windows with stable descriptive labels.
 Do not include hidden minibuffer windows or manufacture buffer views."
