@@ -23,6 +23,7 @@ The existing [documentation index and authority register](index.md) (**DOC-INDEX
 ## Linked presentation integration (PR #98)
 
 - [Implementation and verification record](linked-presentation-implementation-record.md) — completed source changes, runtime invariants, CI evidence and unresolved native GUI gates.
+- [Candidate failure and remediation ledger](linked-presentation-candidate-triage.md) — false-green ERT, 16 failing assertions, GUI findings and acceptance blockers.
 - [Copilot candidate handoff](copilot-candidate-handoff.md) — exact-SHA macOS build, packaged GUI harness, manual test matrix, candidate archive and evidence requirements.
 - [Execution plan](linked-presentation-execution-plan.md) — stage history and integration constraints.
 
