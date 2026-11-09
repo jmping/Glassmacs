@@ -32,3 +32,5 @@ If the Cloudflare interface offers a Pages-specific workflow instead, use root `
 - The Download button leads to GitHub Releases, where availability can be checked.
 - Maintain a clear distinction between Aquamacs inspiration and any official affiliation.
 - No third-party analytics or external font dependencies.
+
+<!-- Deployment trigger: verify Cloudflare website/** watch paths and build root after PR #98 merge. -->
