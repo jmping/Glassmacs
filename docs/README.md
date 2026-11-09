@@ -20,6 +20,11 @@ The existing [documentation index and authority register](index.md) (**DOC-INDEX
 - [Contributing](../CONTRIBUTING.md) — contributor workflow.
 - [Development](development.md) — build and test details.
 
+## Research philosophy and website copy
+
+- [R beyond the IDE: historical and product rationale](website-r-beyond-ide.md) — sourced history of pre-RStudio research computing, balanced integrated IDE tradeoffs, base R/tidyverse discussion and the boundaries of verified Glassmacs features.
+- [Public website article](../website/src/pages/r-beyond-the-ide/index.astro) — visitor-facing companion to the editorial source; linked from the homepage.
+
 ## Linked presentation integration (PR #98)
 
 - [Implementation and verification record](linked-presentation-implementation-record.md) — completed source changes, runtime invariants, CI evidence and unresolved native GUI gates.
