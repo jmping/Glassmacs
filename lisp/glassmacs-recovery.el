@@ -325,24 +325,73 @@ Return the number of recorded buffers.  Never write original documents."
       (when (and (integerp start) (<= 1 start limit))
         (set-window-start window start t)))))
 
+(defun glassmacs-recovery--buffer-for-id (id)
+  "Resolve a durable recovery ID to an existing live document buffer."
+  (when (stringp id)
+    (cl-find-if (lambda (candidate)
+                  (and (buffer-live-p candidate)
+                       (equal (buffer-local-value
+                               'glassmacs-recovery--id candidate) id)))
+                (buffer-list))))
+
+(defun glassmacs-recovery--restore-tab (frame record)
+  "Restore one document tab RECORD in FRAME, without starting processes.
+Return non-nil if the tab has any recoverable documents."
+  (when (and (listp record) (listp (plist-get record :buffers)))
+    (let ((buffers (delq nil
+                         (mapcar #'glassmacs-recovery--buffer-for-id
+                                 (plist-get record :buffers)))))
+      (when buffers
+        (with-selected-frame frame
+          (delete-other-windows)
+          (set-window-buffer (selected-window) (car buffers))
+          (dolist (buffer (cdr buffers))
+            (condition-case nil
+                (let ((window (split-window (selected-window) nil 'right)))
+                  (set-window-buffer window buffer)
+                  (select-window window))
+              (error
+               (display-buffer buffer))))
+          (dolist (window (window-list frame 'never))
+            (let* ((buffer (window-buffer window))
+                   (id (and (buffer-live-p buffer)
+                            (buffer-local-value
+                             'glassmacs-recovery--id buffer)))
+                   (view (cl-find id (plist-get record :views)
+                                  :key (lambda (entry)
+                                         (plist-get entry :id))
+                                  :test #'equal)))
+              (glassmacs-recovery--restore-view window view)))
+          (let* ((selected-id (plist-get record :selected))
+                 (selected (and (stringp selected-id)
+                                (cl-find-if
+                                 (lambda (window)
+                                   (equal (buffer-local-value
+                                           'glassmacs-recovery--id
+                                           (window-buffer window))
+                                          selected-id))
+                                 (window-list frame 'never)))))
+            (when selected (select-window selected))))
+        t))))
+
 (defun glassmacs-recovery--restore-window-layout (manifest)
-  "Recreate one frame per saved frame, preserving document splits and size.
-Only data-only buffer IDs and bounded geometry are read.  Missing documents
-are skipped; no process is launched and no original file is overwritten."
+  "Recreate saved document frames and tabs using bounded data-only records.
+Legacy frame records without :tabs restore exactly one layout.  Missing
+documents are skipped, without launching any R processes."
   (when (display-graphic-p)
     (dolist (record (plist-get manifest :windows))
-      (when (and (listp record) (listp (plist-get record :buffers)))
-        (let* ((buffers
-                (cl-loop for id in (plist-get record :buffers)
-                         for buffer = (and (stringp id)
-                                           (cl-find-if
-                                            (lambda (candidate)
-                                              (and (buffer-live-p candidate)
-                                                   (equal (buffer-local-value
-                                                           'glassmacs-recovery--id candidate)
-                                                          id)))
-                                            (buffer-list)))
-                         when buffer collect buffer))
+      (when (listp record)
+        (let* ((tabs (if (and (plist-member record :tabs)
+                              (listp (plist-get record :tabs)))
+                         (plist-get record :tabs)
+                       (list record)))
+               (recoverable (cl-remove-if-not
+                             (lambda (tab)
+                               (and (listp tab)
+                                    (listp (plist-get tab :buffers))
+                                    (cl-some #'glassmacs-recovery--buffer-for-id
+                                             (plist-get tab :buffers))))
+                             tabs))
                (width (glassmacs-recovery--safe-frame-dimension
                        (plist-get record :width) 20 500))
                (height (glassmacs-recovery--safe-frame-dimension
@@ -350,51 +399,35 @@ are skipped; no process is launched and no original file is overwritten."
                (left (glassmacs-recovery--safe-frame-dimension
                       (plist-get record :left) -10000 10000))
                (top (glassmacs-recovery--safe-frame-dimension
-                     (plist-get record :top) -10000 10000)))
-          (when buffers
-            (let ((frame (make-frame)))
+                     (plist-get record :top) -10000 10000))
+               (active (plist-get record :active-tab)))
+          (when recoverable
+            (let ((frame (make-frame))
+                  (restored-indices nil))
               (with-selected-frame frame
-                (delete-other-windows)
-                (set-window-buffer (selected-window) (car buffers))
-                (dolist (buffer (cdr buffers))
-                  (condition-case nil
-                      (let ((window (split-window (selected-window) nil 'right)))
-                        (set-window-buffer window buffer)
-                        (select-window window))
-                    (error
-                     ;; Keep the recovered buffer accessible even when a
-                     ;; small display cannot accommodate another split.
-                     (display-buffer buffer))))
+                (cl-loop for tab in tabs
+                         for index from 1
+                         when (memq tab recoverable)
+                         do (progn
+                              (when restored-indices
+                                (require 'tab-bar)
+                                (tab-bar-mode 1)
+                                (tab-bar-new-tab))
+                              (when (glassmacs-recovery--restore-tab frame tab)
+                                (push index restored-indices))))
+                (when (and (integerp active)
+                           (memq active restored-indices)
+                           (bound-and-true-p tab-bar-mode))
+                  (tab-bar-select-tab
+                   (1+ (cl-position active (reverse restored-indices)))))
                 (when (and width height)
                   (condition-case nil
                       (set-frame-size frame width height)
                     (error nil)))
-                ;; Window-manager placement is best-effort.  Never accept
-                ;; arbitrary Lisp forms from an on-disk recovery index.
                 (when (and left top)
                   (condition-case nil
                       (set-frame-position frame left top)
-                    (error nil)))
-                (dolist (window (window-list frame 'never))
-                  (let* ((buffer (window-buffer window))
-                         (id (and (buffer-live-p buffer)
-                                  (buffer-local-value
-                                   'glassmacs-recovery--id buffer)))
-                         (view (cl-find id (plist-get record :views)
-                                        :key (lambda (entry)
-                                               (plist-get entry :id))
-                                        :test #'equal)))
-                    (glassmacs-recovery--restore-view window view)))
-                (let* ((selected-id (plist-get record :selected))
-                       (selected (cl-find-if
-                                  (lambda (window)
-                                    (equal (buffer-local-value
-                                            'glassmacs-recovery--id
-                                            (window-buffer window))
-                                           selected-id))
-                                  (window-list frame 'never))))
-                  (when (and (stringp selected-id) selected)
-                    (select-window selected)))))))))))
+                    (error nil)))))))))))
 
 (defun glassmacs-recovery-restore-crash ()
   "Restore the crash index without modifying the preserved-buffer index."
@@ -821,7 +854,10 @@ termination; when disabled, refuse a direct dirty-buffer termination."
 (defun glassmacs-recovery--reviewed-quit-advice (original &rest args)
   "Route native direct quit calls through Glassmacs review.
 ORIGINAL and ARGS are used only for the guarded, already-reviewed quit."
-  (if glassmacs-recovery--save-reviewed-quit
+  (if (or noninteractive glassmacs-recovery--save-reviewed-quit)
+      ;; ERT uses (kill-emacs 1) to report failed assertions.  Intercepting
+      ;; that call via the GUI quit coordinator discarded its status and made
+      ;; failing CI runs appear green.  Batch Emacs has no native quit dialog.
       (apply original args)
     (glassmacs-recovery-quit)))
 
@@ -831,40 +867,74 @@ ORIGINAL and ARGS are used only for the guarded, already-reviewed quit."
             #'glassmacs-recovery--reviewed-quit-advice)
 (add-hook 'kill-emacs-query-functions #'glassmacs-recovery--quit-safety-check)
 
+(defun glassmacs-recovery--tab-window-record (frame)
+  "Snapshot the current tab of FRAME using only document identifiers.
+A tab without recoverable documents is omitted; R processes and special
+buffers are not serialized or restarted."
+  (let* ((windows (window-list frame 'never))
+         (buffers (cl-remove-duplicates
+                   (cl-loop for window in windows
+                            for buffer = (window-buffer window)
+                            when (glassmacs-recovery--eligible-p buffer)
+                            collect (with-current-buffer buffer
+                                      (glassmacs-recovery--id)))
+                   :test #'equal)))
+    (when buffers
+      (list :buffers buffers
+            :selected (let ((selected (window-buffer
+                                       (frame-selected-window frame))))
+                        (when (glassmacs-recovery--eligible-p selected)
+                          (with-current-buffer selected
+                            (glassmacs-recovery--id))))
+            :views (cl-loop for window in windows
+                            for buffer = (window-buffer window)
+                            when (glassmacs-recovery--eligible-p buffer)
+                            collect (list :id (with-current-buffer buffer
+                                                (glassmacs-recovery--id))
+                                          :point (window-point window)
+                                          :start (window-start window)))))))
+
+(defun glassmacs-recovery--frame-tab-records (frame)
+  "Collect every recoverable tab in FRAME without changing final selection."
+  (with-selected-frame frame
+    (if (not (and (bound-and-true-p tab-bar-mode)
+                  (> (length (funcall tab-bar-tabs-function frame)) 1)))
+        (list (glassmacs-recovery--tab-window-record frame))
+      (let ((original (1+ (tab-bar--current-tab-index)))
+            (count (length (funcall tab-bar-tabs-function frame)))
+            records)
+        (unwind-protect
+            (dotimes (index count)
+              (tab-bar-select-tab (1+ index))
+              (push (glassmacs-recovery--tab-window-record frame) records))
+          (tab-bar-select-tab original))
+        (nreverse records)))))
+
 (defun glassmacs-recovery--open-window-records ()
-  "Record visible document frames for crash recovery, without process buffers.
-Only durable document IDs and bounded geometry are stored; window contents
-and arbitrary frame parameters are never evaluated from recovery files."
+  "Record recoverable document tabs in visible frames without process data.
+The :tabs field preserves tab order, including tabs without documents;
+:active-tab preserves the selected tab.  Legacy :buffers, :selected and
+:views fields mirror the selected tab for older recovery consumers."
   (let (records)
     (dolist (frame (frame-list))
       (when (and (frame-live-p frame) (frame-visible-p frame)
                  (not (frame-parameter frame 'minibuffer-only)))
-        (let ((buffers (cl-remove-duplicates
-                        (cl-loop for window in (window-list frame 'never)
-                                 for buffer = (window-buffer window)
-                                 when (glassmacs-recovery--eligible-p buffer)
-                                 collect (with-current-buffer buffer
-                                           (glassmacs-recovery--id)))
-                        :test #'equal)))
-          (when buffers
-            (push (list :buffers buffers
+        (let* ((tabs (glassmacs-recovery--frame-tab-records frame))
+               (active (if (and (bound-and-true-p tab-bar-mode)
+                                (> (length tabs) 1))
+                           (with-selected-frame frame
+                             (1+ (tab-bar--current-tab-index)))
+                         1))
+               (selected (nth (1- active) tabs)))
+          (when (cl-some #'identity tabs)
+            (push (list :buffers (plist-get selected :buffers)
                         :left (frame-parameter frame 'left)
                         :top (frame-parameter frame 'top)
                         :width (frame-width frame)
                         :height (frame-height frame)
-                        :selected (let ((selected (window-buffer
-                                                   (frame-selected-window frame))))
-                                    (when (glassmacs-recovery--eligible-p selected)
-                                      (with-current-buffer selected
-                                        (glassmacs-recovery--id))))
-                        :views (cl-loop for window in (window-list frame 'never)
-                                        for buffer = (window-buffer window)
-                                        when (glassmacs-recovery--eligible-p buffer)
-                                        collect (list
-                                                 :id (with-current-buffer buffer
-                                                       (glassmacs-recovery--id))
-                                                 :point (window-point window)
-                                                 :start (window-start window))))
+                        :selected (plist-get selected :selected)
+                        :views (plist-get selected :views)
+                        :tabs tabs :active-tab active)
                   records)))))
     (nreverse records)))
 

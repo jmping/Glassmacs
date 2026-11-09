@@ -12,6 +12,139 @@
 (require 'glassmacs)
 
 
+(ert-deftest glassmacs-presentation-classifier-is-read-only ()
+  (require 'glassmacs-presentation-model)
+  (let ((document (generate-new-buffer "glassmacs-role-document"))
+        (utility (generate-new-buffer "*Glassmacs Role Utility*"))
+        (internal (generate-new-buffer " *glassmacs-role-internal*"))
+        (source (generate-new-buffer "glassmacs-role-source"))
+        (indirect nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer document
+            (setq buffer-file-name "/tmp/notes.txt"))
+          (setq indirect (make-indirect-buffer document "glassmacs-role-indirect" t))
+          (with-current-buffer source
+            (setq buffer-file-name "/tmp/analysis.R"))
+          (should (eq (glassmacs-presentation-buffer-role document) 'document))
+          (should (eq (glassmacs-presentation-buffer-role indirect) 'document))
+          (should (eq (glassmacs-presentation-buffer-role source) 'r-source))
+          (should (eq (glassmacs-presentation-buffer-role utility) 'utility))
+          (should (eq (glassmacs-presentation-buffer-role internal) 'internal))
+          (should (equal (buffer-name document) "glassmacs-role-document")))
+      (when (buffer-live-p indirect) (kill-buffer indirect))
+      (dolist (buffer (list document utility internal source))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))
+    (should-not (glassmacs-presentation-buffer-role document))))
+
+(ert-deftest glassmacs-presentation-classifier-special-roles ()
+  (require 'glassmacs-presentation-model)
+  (let ((console (generate-new-buffer "*glassmacs-role-console*"))
+        (help (generate-new-buffer "*R Help*"))
+        (preferences (generate-new-buffer "*Customize Group: glassmacs*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer console
+            (let ((parent (get 'inferior-ess-r-mode 'derived-mode-parent)))
+              (unwind-protect
+                  (progn
+                    (put 'inferior-ess-r-mode 'derived-mode-parent 'fundamental-mode)
+                    (setq major-mode 'inferior-ess-r-mode)
+                    (should (eq (glassmacs-presentation-buffer-role console)
+                                'r-console)))
+                (put 'inferior-ess-r-mode 'derived-mode-parent parent))))
+          (should (eq (glassmacs-presentation-buffer-role help) 'r-help))
+          (should (eq (glassmacs-presentation-buffer-role preferences)
+                      'preferences)))
+      (dolist (buffer (list console help preferences))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest glassmacs-presentation-view-requires-current-tab ()
+  "A stale or hidden-tab view cannot satisfy presentation reuse."
+  (require 'glassmacs-presentation-model)
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer " *glassmacs-tab-identity*")))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer buffer)
+            (let ((window (selected-window)))
+              (should (glassmacs-presentation-current-tab-view-p window))
+              (cl-letf (((symbol-function 'glassmacs-presentation-current-tab-view-p)
+                         (lambda (_window) nil)))
+                (should-not (glassmacs-presentation-view-suitable-p
+                             window buffer 'open 'reuse-current)))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest glassmacs-presentation-find-suitable-view-skips-unsuitable-first-view ()
+  "Search all visible views rather than trusting the first buffer window."
+  (require 'glassmacs-presentation-model)
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer " *glassmacs-multiview*")))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer buffer)
+            (let* ((first (selected-window))
+                   (second (split-window-right)))
+              (set-window-buffer second buffer)
+              (should-not (glassmacs-presentation-view-suitable-p
+                           first buffer 'open 'new-frame))
+              (should (eq (glassmacs-presentation-find-suitable-view
+                           buffer 'open 'reuse-current)
+                          first))
+              (should-not (glassmacs-presentation-find-suitable-view
+                           buffer 'open 'new-frame))
+              (should-not (glassmacs-presentation-find-suitable-view
+                           buffer 'move 'reuse-current))
+              (should (eq (selected-window) first))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest glassmacs-presentation-policy-actions-are-pure ()
+  (require 'glassmacs-presentation-model)
+  (should (eq (glassmacs-presentation-policy-action 'open 'new-frame 'document)
+              'new-frame))
+  (should (eq (glassmacs-presentation-policy-action 'new-view 'new-frame 'r-console)
+              'new-frame))
+  (should (eq (glassmacs-presentation-policy-action 'tab nil 'document)
+              'new-tab))
+  (should (eq (glassmacs-presentation-policy-action 'split nil 'document)
+              'split-below))
+  (should (eq (glassmacs-presentation-policy-action 'replace nil 'r-help)
+              'replace))
+  (should-error (glassmacs-presentation-policy-action 'unknown nil 'document)
+                :type 'user-error))
+
+(ert-deftest glassmacs-presentation-suitability-respects-intent-and-destination ()
+  (require 'glassmacs-presentation-model)
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer "glassmacs-role-view")))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer buffer)
+            (let ((window (selected-window)))
+              (should (glassmacs-presentation-view-suitable-p
+                       window buffer 'open 'new-frame))
+              (should (glassmacs-presentation-view-suitable-p
+                       window buffer 'focus 'reuse-current (selected-frame)))
+              (should-not (glassmacs-presentation-view-suitable-p
+                           window buffer 'new-view 'new-frame))
+              (should-not (glassmacs-presentation-view-suitable-p
+                           window buffer 'move 'new-frame))
+              (should-not (glassmacs-presentation-view-suitable-p
+                           window buffer 'open 'new-frame 'different-frame))
+              (should-not (glassmacs-presentation-view-suitable-p
+                           window (get-buffer-create " *other-role*")
+                           'open 'reuse-current))
+              (let ((other (split-window-right)))
+                (should (window-live-p other))
+                (should-not (glassmacs-presentation-view-suitable-p
+                             window buffer 'open 'new-frame))
+                (delete-window other))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))
+        (when (get-buffer " *other-role*") (kill-buffer " *other-role*"))))))
+
 (ert-deftest glassmacs-toolbar-replacement-pngs-are-present ()
   (should (file-directory-p glassmacs-toolbar-image-directory))
   (dolist (item glassmacs-aquamacs-toolbar-items)
@@ -82,7 +215,9 @@
     (let ((original (point))
           (glassmacs-r-queue-editor-submissions t)
           submitted)
-      (cl-letf (((symbol-function 'glassmacs-queue-submit)
+      (cl-letf (((symbol-function 'glassmacs-r-resolve-source-target)
+                 (lambda () 'mock-session))
+               ((symbol-function 'glassmacs-queue-submit)
                  (lambda (source _session origin)
                    (should (eq (plist-get origin :operation) 'paragraph))
                    (setq submitted source))))
@@ -94,8 +229,8 @@
   (with-temp-buffer
     (setq-local glassmacs-r-target-session "R-2")
     (let (observed)
-      (cl-letf (((symbol-function 'glassmacs-sessions-resolve)
-                 (lambda (&optional _) 'test-session))
+      (cl-letf (((symbol-function 'glassmacs-r-resolve-source-target)
+                 (lambda () 'test-session))
                 ((symbol-function 'glassmacs-session-name)
                  (lambda (_) "R-process-2")))
         (glassmacs-r--with-target
@@ -106,8 +241,8 @@
   (with-temp-buffer
     (setq-local glassmacs-r-target-session "gone")
     (let ((called nil))
-      (cl-letf (((symbol-function 'glassmacs-sessions-resolve)
-                 (lambda (&optional _) (user-error "Session gone"))))
+      (cl-letf (((symbol-function 'glassmacs-r-resolve-source-target)
+                 (lambda () (user-error "Session gone"))))
         (should-error
          (glassmacs-r--with-target (lambda () (setq called t)))
          :type 'user-error))
@@ -180,8 +315,8 @@
                     'glassmacs-r-send-function))
         (should (eq (lookup-key map [glassmacs-run-buffer])
                     'glassmacs-r-send-buffer))
-        (should (eq (lookup-key map [glassmacs-show-console])
-                    'glassmacs-r-start-or-switch-console))))))
+        (should (eq (lookup-key map [glassmacs-new-console])
+                    'glassmacs-r-new-console))))))
 
 (ert-deftest glassmacs-r-console-launch-is-available-without-session ()
   (with-temp-buffer
@@ -189,8 +324,21 @@
     (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
                (lambda () t)))
       (let ((map (glassmacs-r-ui--toolbar-map)))
+        (should (eq (lookup-key map [glassmacs-new-console])
+                    'glassmacs-r-new-console))))))
+
+(ert-deftest glassmacs-r-source-toolbar-separates-new-link-and-show ()
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (cl-letf (((symbol-function 'glassmacs-r-ui--source-buffer-p)
+               (lambda () t)))
+      (let ((map (glassmacs-r-ui--toolbar-map)))
+        (should (eq (lookup-key map [glassmacs-new-console])
+                    'glassmacs-r-new-console))
+        (should (eq (lookup-key map [glassmacs-link-console])
+                    'glassmacs-r-select-session))
         (should (eq (lookup-key map [glassmacs-show-console])
-                    'glassmacs-r-start-or-switch-console))))))
+                    'glassmacs-r-inspect-session))))))
 
 (ert-deftest glassmacs-preferences-default-to-new-frame-on-macos ()
   (when (eq system-type 'darwin)
@@ -292,6 +440,16 @@
                      glassmacs-appearance))
     (should (featurep feature))))
 
+;; Several lifecycle tests stand in symbols such as `a' or `hid' for frames.
+;; Code that enumerates a frame's windows would signal on those, so give
+;; mock frames an empty window list and delegate real frames unchanged.
+(defun glassmacs-test--mock-frame-window-list (original)
+  "Return a `window-list' replacement wrapping ORIGINAL for mock frames."
+  (lambda (&optional frame &rest args)
+    (if (and frame (symbolp frame) (not (memq frame '(t visible))))
+        nil
+      (apply original frame args))))
+
 (defmacro glassmacs-test-with-close-event (frames visible &rest body)
   "Run BODY with mocked FRAMES, of which VISIBLE are visible."
   (declare (indent 2))
@@ -299,6 +457,9 @@
          (glassmacs--hidden-final-frame nil)
          hidden)
      (cl-letf (((symbol-function 'frame-list) (lambda () ,frames))
+               ((symbol-function 'window-list)
+                (glassmacs-test--mock-frame-window-list
+                 (symbol-function 'window-list)))
                ((symbol-function 'frame-live-p)
                 (lambda (candidate) (memq candidate ,frames)))
                ((symbol-function 'frame-visible-p)
@@ -1373,7 +1534,9 @@ otherwise never build."
     (goto-char (point-min))
     (let ((calls 0)
           (glassmacs-r-queue-editor-submissions t))
-      (cl-letf (((symbol-function 'glassmacs-queue-submit)
+      (cl-letf (((symbol-function 'glassmacs-r-resolve-source-target)
+                 (lambda () 'mock-session))
+               ((symbol-function 'glassmacs-queue-submit)
                  (lambda (source _session origin)
                    (should (equal source "x <- 1"))
                    (should (eq (plist-get origin :operation) 'line))
@@ -1388,7 +1551,9 @@ otherwise never build."
     (insert "stop('error')\ny <- 2\n")
     (goto-char (point-min))
     (let ((glassmacs-r-queue-editor-submissions t))
-      (cl-letf (((symbol-function 'glassmacs-queue-submit)
+      (cl-letf (((symbol-function 'glassmacs-r-resolve-source-target)
+                 (lambda () 'mock-session))
+               ((symbol-function 'glassmacs-queue-submit)
                  (lambda (&rest _) (error "R submission failed"))))
         (should-error (glassmacs-r-send-line))
         (should (= (line-number-at-pos) 1))))))
@@ -1399,7 +1564,9 @@ otherwise never build."
     (insert "one\ntwo\n")
     (goto-char (point-min))
     (let ((glassmacs-r-queue-editor-submissions t))
-      (cl-letf (((symbol-function 'glassmacs-queue-submit)
+      (cl-letf (((symbol-function 'glassmacs-r-resolve-source-target)
+                 (lambda () 'mock-session))
+               ((symbol-function 'glassmacs-queue-submit)
                  (lambda (source &rest _)
                    (should (equal source "one"))
                    :queued)))
@@ -1548,6 +1715,9 @@ otherwise never build."
      (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
                ((symbol-function 'called-interactively-p) (lambda (&rest _) t))
                ((symbol-function 'frame-list) (lambda () '(hid)))
+               ((symbol-function 'window-list)
+                (glassmacs-test--mock-frame-window-list
+                 (symbol-function 'window-list)))
                ((symbol-function 'frame-live-p) (lambda (f) (eq f 'hid)))
                ((symbol-function 'frame-parent) (lambda (_f) nil))
                ((symbol-function 'frame-visible-p) (lambda (_f) visible))
@@ -1602,6 +1772,9 @@ otherwise never build."
     (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
               ((symbol-function 'called-interactively-p) (lambda (&rest _) t))
               ((symbol-function 'frame-list) (lambda () '(vis)))
+              ((symbol-function 'window-list)
+               (glassmacs-test--mock-frame-window-list
+                (symbol-function 'window-list)))
               ((symbol-function 'frame-live-p) (lambda (f) (eq f 'vis)))
               ((symbol-function 'frame-parent) (lambda (_f) nil))
               ((symbol-function 'frame-visible-p) (lambda (_f) t))
@@ -2665,7 +2838,9 @@ example) can run first and delay the sentinel."
     (insert "x <- 1\ny <- 2\n")
     (let ((glassmacs-r-queue-editor-submissions t)
           submitted)
-      (cl-letf (((symbol-function 'glassmacs-queue-submit)
+      (cl-letf (((symbol-function 'glassmacs-r-resolve-source-target)
+                 (lambda () 'mock-session))
+               ((symbol-function 'glassmacs-queue-submit)
                  (lambda (source session origin)
                    (setq submitted (list source session origin))
                    :queued))
@@ -2685,7 +2860,9 @@ example) can run first and delay the sentinel."
     (goto-char (point-min))
     (let ((glassmacs-r-queue-editor-submissions t)
           submitted)
-      (cl-letf (((symbol-function 'glassmacs-queue-submit)
+      (cl-letf (((symbol-function 'glassmacs-r-resolve-source-target)
+                 (lambda () 'mock-session))
+               ((symbol-function 'glassmacs-queue-submit)
                  (lambda (source &rest _)
                    (setq submitted source)
                    :queued))
@@ -2721,7 +2898,9 @@ example) can run first and delay the sentinel."
     (insert "f <- function(x) { x + 1 }\n")
     (let ((glassmacs-r-queue-editor-submissions t)
           submitted)
-      (cl-letf (((symbol-function 'glassmacs-r--function-source)
+      (cl-letf (((symbol-function 'glassmacs-r-resolve-source-target)
+                 (lambda () 'mock-session))
+               ((symbol-function 'glassmacs-r--function-source)
                  (lambda () "f <- function(x) { x + 1 }"))
                 ((symbol-function 'glassmacs-queue-submit)
                  (lambda (source _session origin)
@@ -2793,6 +2972,44 @@ example) can run first and delay the sentinel."
     (should-not (assq 'glassmacs-r-ui--ess-help-buffer-p
                       display-buffer-alist))))
 
+(ert-deftest glassmacs-focus-hidden-tab-restores-selection-on-miss ()
+  "A failed tab search leaves the original tab selected."
+  (let ((tab-bar-mode t)
+        (tab-bar-tabs-function (lambda (_frame) '(one two three)))
+        (current 2)
+        (buffer (generate-new-buffer " *glassmacs-missing-tab*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'tab-bar--current-tab-index)
+                   (lambda () (1- current)))
+                  ((symbol-function 'tab-bar-select-tab)
+                   (lambda (index) (setq current index)))
+                  ((symbol-function 'get-buffer-window)
+                   (lambda (&rest _) nil)))
+          (should-not (glassmacs--focus-buffer-in-existing-tab
+                       buffer (selected-frame)))
+          (should (= current 2)))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-focus-hidden-tab-selects-matching-view ()
+  "An existing tab view is focused without manufacturing a new view."
+  (let ((tab-bar-mode t)
+        (tab-bar-tabs-function (lambda (_frame) '(one two)))
+        (current 1)
+        (buffer (window-buffer (selected-window))))
+    (cl-letf (((symbol-function 'tab-bar--current-tab-index)
+               (lambda () (1- current)))
+              ((symbol-function 'tab-bar-select-tab)
+               (lambda (index) (setq current index)))
+              ((symbol-function 'get-buffer-window)
+               (lambda (_buffer _frame)
+                 (and (= current 2) (selected-window))))
+              ((symbol-function 'select-frame-set-input-focus)
+               (lambda (&rest _) nil)))
+      (should (eq (glassmacs--focus-buffer-in-existing-tab
+                   buffer (selected-frame))
+                  (selected-window)))
+      (should (= current 2)))))
+
 (ert-deftest glassmacs-alpha3-presentation-reuses-visible-document ()
   "Opening a visible buffer must not replace another buffer or make a frame."
   (let ((buffer (window-buffer (selected-window)))
@@ -2805,6 +3022,62 @@ example) can run first and delay the sentinel."
       (should (eq (glassmacs-present-buffer buffer 'open 'new-frame)
                   (selected-window)))
       (should-not created))))
+
+(ert-deftest glassmacs-preferences-display-checks-view-suitability ()
+  "Preferences reuse requires a suitable existing view."
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer "*Customize Group: Glassmacs Test*"))
+          (glassmacs-preferences-opening-policy 'reuse-current)
+          (checks 0))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer buffer)
+            (cl-letf (((symbol-function 'glassmacs-presentation-view-suitable-p)
+                       (lambda (&rest _) (cl-incf checks) t)))
+              (should (eq (glassmacs--display-preferences buffer nil)
+                          (selected-window)))
+              (should (= checks 1))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest glassmacs-present-buffer-obeys-unsuitable-existing-view ()
+  "An unsuitable visible view must not be focused or reused implicitly."
+  (save-window-excursion
+    (let ((source (generate-new-buffer " *glassmacs-suitability-source*"))
+          (target (generate-new-buffer " *glassmacs-suitability-target*"))
+          (checks 0))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer source)
+            (let ((other (split-window-right)))
+              (set-window-buffer other target)
+              (select-window (get-buffer-window source))
+              (cl-letf (((symbol-function 'glassmacs-presentation-view-suitable-p)
+                         (lambda (&rest _) (cl-incf checks) nil)))
+                (should (eq (glassmacs-present-buffer target 'open 'reuse-current)
+                            (selected-window)))
+                (should (eq (window-buffer (selected-window)) target))
+                (should (= checks 1)))))
+        (dolist (buffer (list source target))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest glassmacs-present-buffer-new-view-does-not-reuse-visible-view ()
+  "An explicit new view uses a distinct presentation despite visibility."
+  (save-window-excursion
+    (let ((buffer (generate-new-buffer " *glassmacs-new-view*")))
+      (unwind-protect
+          (progn
+            (delete-other-windows)
+            (switch-to-buffer buffer)
+            (let ((old (selected-window)))
+              (cl-letf (((symbol-function 'glassmacs--ensure-visible-frame)
+                         (lambda () nil)))
+                (glassmacs-present-buffer buffer 'new-view 'reuse-current))
+              (should-not (eq (selected-window) old))
+              (should (eq (window-buffer (selected-window)) buffer))
+              (should (eq (window-buffer old) buffer))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest glassmacs-alpha3-interactive-find-file-is-remapped ()
   "Document-centric file visits are bound without advising Lisp find-file."
@@ -3146,3 +3419,81 @@ example) can run first and delay the sentinel."
   (should-not (glassmacs-recovery--safe-frame-dimension
                1000000000 -10000 10000)))
 
+
+(ert-deftest glassmacs-focus-open-document-rejects-utility-buffers ()
+  "Explicit document navigation never treats an R console as a document."
+  (let ((buffer (generate-new-buffer "*glassmacs-navigation-utility*")))
+    (unwind-protect
+        (should-error (glassmacs-focus-open-document buffer)
+                      :type 'user-error)
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-focus-open-document-delegates-to-focus-intent ()
+  "Navigation uses the explicit focus intent, not ordinary opening."
+  (let ((buffer (generate-new-buffer "glassmacs-navigation-document"))
+        called)
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'glassmacs-present-buffer)
+                     (lambda (&rest args) (setq called args) 'found)))
+            (should (eq (glassmacs-focus-open-document buffer) 'found)))
+          (should (equal called (list buffer 'focus))))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-window-menu-exposes-document-navigation ()
+  "The native Window menu provides explicit tab-aware document focus."
+  (let ((global-map (copy-keymap global-map))
+        (system-type 'darwin))
+    (cl-letf (((symbol-function 'display-graphic-p)
+               (lambda (&optional _) t)))
+      (glassmacs--install-macos-menus))
+    (should (eq (lookup-key global-map
+                            [menu-bar window glassmacs-focus-open-document])
+                'glassmacs-focus-open-document))))
+
+(ert-deftest glassmacs-recovery-tab-record-captures-document-view ()
+  "A tab snapshot contains IDs and point, never arbitrary buffer objects."
+  (let ((buffer (generate-new-buffer "glassmacs-recovery-tab-doc")))
+    (unwind-protect
+        (save-window-excursion
+          (with-current-buffer buffer (insert "line one\nline two\n"))
+          (set-window-buffer (selected-window) buffer)
+          (set-window-point (selected-window) 6)
+          (let ((record (glassmacs-recovery--tab-window-record
+                         (selected-frame))))
+            (should (listp record))
+            (should (= (length (plist-get record :buffers)) 1))
+            (should (stringp (car (plist-get record :buffers))))
+            (should (equal (plist-get record :selected)
+                           (car (plist-get record :buffers))))
+            (should (= (plist-get (car (plist-get record :views)) :point) 6))))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-recovery-skips-malformed-tab-buffer-lists ()
+  "Invalid tab fields cannot create blank frames during restoration."
+  (let ((created 0))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+              ((symbol-function 'make-frame)
+               (lambda (&rest _) (cl-incf created)
+                 (error "Unexpected frame"))))
+      (glassmacs-recovery--restore-window-layout
+       '(:windows ((:tabs ((:buffers "invalid")
+                           (:buffers (123)))
+                    :width 90 :height 30))))
+      (should (= created 0)))))
+
+(ert-deftest glassmacs-recovery-snapshots-tabs-and-active-index ()
+  "Recovery frame record captures an ordered tab list and active index."
+  (let ((frame (selected-frame))
+        (record '(:buffers ("one") :selected "one" :views nil)))
+    (cl-letf (((symbol-function 'glassmacs-recovery--frame-tab-records)
+               (lambda (_frame) (list record record)))
+              ((symbol-function 'tab-bar-tabs-function)
+               (lambda (_frame) '((name . "one") (name . "two")))))
+      (let ((tab-bar-mode t))
+        (let ((result (cl-find-if
+                       (lambda (entry) (plist-member entry :tabs))
+                       (glassmacs-recovery--open-window-records))))
+          (should result)
+          (should (= (length (plist-get result :tabs)) 2))
+          (should (integerp (plist-get result :active-tab))))))))

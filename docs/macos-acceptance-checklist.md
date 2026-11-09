@@ -173,6 +173,12 @@ Before starting: install the app in /Applications on the Mac under test, and run
 
 - [ ] With CRAN R installed, start R from the R menu, evaluate plot(cars): a Quartz window shows the plot and editing focus returns to the document.
 
+## RCONSOLE-001
+
+**ESS consoles preserve configured frame and tab placement** (P0). Result: **NOT RUN**
+
+- [ ] On the packaged macOS app with R and ESS, select separate-window placement, open one R source file, and start two R sessions. Confirm the source frame stays intact, each console has its own native window, both processes remain live, and distinct commands reach the intended process. Switch sessions repeatedly and confirm the same windows are reused. Repeat with new-tab placement, then test explicit split-below placement.
+
 ## SYNC-001
 
 **Skim SyncTeX forward and inverse search** (P2). Result: **NOT RUN**

@@ -277,10 +277,14 @@ does not provide a native macOS print dialog."
       (define-key-after window-menu [glassmacs-new-window]
         '(menu-item "New Window" glassmacs-new-window
                     :enable (display-graphic-p)))
+      (define-key-after window-menu [glassmacs-focus-open-document]
+        '(menu-item "Show Open Document…" glassmacs-focus-open-document
+                    :help "Focus an existing document window or tab without replacing another document")
+        'glassmacs-new-window)
       (glassmacs-menu-install-dynamic-keys glassmacs-menu)
       (glassmacs-menu-install-dynamic-keys recent-menu)
       (glassmacs-menu-install-dynamic-keys
-       window-menu '(glassmacs-new-window))
+       window-menu '(glassmacs-new-window glassmacs-focus-open-document))
       (when (keymapp file-menu)
         (glassmacs-menu-install-dynamic-keys
          file-menu '(glassmacs-reveal-in-finder glassmacs-print-document))))))

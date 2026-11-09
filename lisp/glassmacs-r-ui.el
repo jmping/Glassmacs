@@ -35,16 +35,20 @@
     (define-key menu [console]
       '(menu-item "Show R Console" glassmacs-r-inspect-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [resume-queue]
+      '(menu-item "Resume Queue" glassmacs-queue-resume
+                  :help "Run commands held since an interrupt"
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [interrupt]
       '(menu-item "Interrupt R" glassmacs-r-interrupt
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [session]
-      '(menu-item "Choose R Session…" glassmacs-r-select-session
+      '(menu-item "Link Console…" glassmacs-r-select-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [start]
       '(menu-item "Start R and Target This Buffer" glassmacs-r-start-and-target-session))
     (define-key menu [start-unbound]
-      '(menu-item "New R Console (Target This Source)" glassmacs-r-new-console))
+      '(menu-item "New R Console" glassmacs-r-new-console))
     (define-key menu [switch-console]
       '(menu-item "Switch R Console…" glassmacs-r-switch-console
                   :enable (glassmacs-r-ui--menu-has-session-p)))
@@ -138,6 +142,10 @@
     (define-key menu [graphics-test]
       '(menu-item "Plot Cars (Graphics Test)" glassmacs-r-graphics-smoke-plot
                   :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [resume-queue]
+      '(menu-item "Resume Queue" glassmacs-queue-resume
+                  :help "Run commands held since an interrupt"
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [interrupt]
       '(menu-item "Interrupt R" glassmacs-r-interrupt
                   :enable (glassmacs-r-ui--menu-has-session-p)))
@@ -170,7 +178,9 @@ Closing that help frame must not close or discard the source document."
     (glassmacs-run-paragraph "Run Paragraph" glassmacs-r-send-paragraph "next-page")
     (glassmacs-run-function "Run Function" glassmacs-r-send-function "jump-to")
     (glassmacs-run-buffer "Run Buffer" glassmacs-r-send-buffer "next-page")
-    (glassmacs-show-console "Start R / Console" glassmacs-r-start-or-switch-console "open")
+    (glassmacs-new-console "New R Console" glassmacs-r-new-console "open")
+    (glassmacs-link-console "Link Console…" glassmacs-r-select-session "open")
+    (glassmacs-show-console "Show Console" glassmacs-r-inspect-session "open")
     (glassmacs-help "R Help" glassmacs-r-ui-help "help"))
   "R source toolbar entries: (KEY LABEL COMMAND ICON).
 ICON is the base name of an image shipped with GNU Emacs.")
@@ -244,7 +254,7 @@ If SVG support is missing, retain the existing built-in XPM artwork."
       (pcase-let ((`(,key ,label ,command ,icon) entry))
         ;; Group execution, session navigation and help in the source bar.
         ;; Console controls likewise separate interruption from navigation.
-        (when (memq key '(glassmacs-show-console glassmacs-help
+        (when (memq key '(glassmacs-new-console glassmacs-help
                           glassmacs-history))
           (define-key-after map
             (vector (intern (format "glassmacs-divider-%s" key)))
@@ -255,6 +265,8 @@ If SVG support is missing, retain the existing built-in XPM artwork."
                                                          ,(pcase key
                                                             ('glassmacs-run-buffer "buffer")
                                                             ('glassmacs-show-console "console")
+                                                            ('glassmacs-new-console "console")
+                                                            ('glassmacs-link-console "session")
                                                             ('glassmacs-session "session")
                                                             (_ nil)))
                       :help ,label
@@ -406,6 +418,10 @@ ESS's prompt and completion-cache state before calling `comint-send-input'."
       '(menu-item "Stop Displaying R Output"
                   glassmacs-r-stop-displaying-output
                   :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [resume-queue]
+      '(menu-item "Resume Queue" glassmacs-queue-resume
+                  :help "Run commands held since an interrupt"
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [interrupt]
       '(menu-item "Interrupt R Computation" glassmacs-r-interrupt
                   :enable (glassmacs-r-ui--menu-has-session-p)))
@@ -449,44 +465,49 @@ menus everywhere; only the R entries are added buffer-locally."
   (derived-mode-p 'ess-r-mode 'R-mode))
 
 (defun glassmacs-r-ui--submit-region (start end operation)
-  "Queue source region START..END for the buffer's explicit target."
-  (glassmacs-queue-submit
-   (buffer-substring-no-properties start end) nil
-   (list :buffer (buffer-name) :start start :end end :operation operation)))
+  "Queue source region START..END for its explicitly linked R console."
+  (let ((session (glassmacs-r-resolve-source-target)))
+    (glassmacs-queue-submit
+   (buffer-substring-no-properties start end) session
+   (list :buffer (buffer-name) :start start :end end :operation operation))))
 
 (defun glassmacs-r-ui--around-ess-eval-region (original start end &rest arguments)
-  "Route ESS region evaluation through the queue when this buffer has a target."
-  (if (and (glassmacs-r-ui--source-buffer-p) glassmacs-r-target-session)
+  "Route R source region evaluation through explicit console selection."
+  (if (glassmacs-r-ui--source-buffer-p)
       (glassmacs-r-ui--submit-region start end 'ess-region)
     (apply original start end arguments)))
 
 (defun glassmacs-r-ui--around-ess-eval-line (original &rest arguments)
-  "Route ESS line evaluation through the queue when this buffer has a target."
-  (if (and (glassmacs-r-ui--source-buffer-p) glassmacs-r-target-session)
+  "Route R source line evaluation through explicit console selection."
+  (if (glassmacs-r-ui--source-buffer-p)
       (glassmacs-r-ui--submit-region
        (line-beginning-position) (line-end-position) 'ess-line)
     (apply original arguments)))
 
 (defun glassmacs-r-ui--around-ess-eval-function (original &rest arguments)
-  "Route ESS function evaluation through the queue when this buffer has a target."
-  (if (and (glassmacs-r-ui--source-buffer-p) glassmacs-r-target-session)
+  "Route R source function evaluation through explicit console selection."
+  (if (glassmacs-r-ui--source-buffer-p)
       (save-excursion
-        (let ((origin (point)))
-          (condition-case nil
-              (progn
-                (beginning-of-defun)
-                (let ((start (point)))
-                  (end-of-defun)
-                  (let ((end (point)))
-                    (unless (<= start origin end)
-                      (user-error "No R function at point"))
-                    (glassmacs-r-ui--submit-region start end 'ess-function))))
-            (error (user-error "No R function found at point")))))
+        (let* ((origin (point))
+               (bounds (condition-case nil
+                           (progn
+                             (beginning-of-defun)
+                             (let ((start (point)))
+                               (end-of-defun)
+                               (cons start (point))))
+                         (error nil))))
+          (unless (and bounds (<= (car bounds) origin (cdr bounds)))
+            (user-error "No R function found at point"))
+          ;; Resolve the console outside the navigation error handler:
+          ;; cancellation and stale-link errors must never be disguised
+          ;; as a missing R function.
+          (glassmacs-r-ui--submit-region
+           (car bounds) (cdr bounds) 'ess-function)))
     (apply original arguments)))
 
 (defun glassmacs-r-ui--around-ess-eval-buffer (original &rest arguments)
-  "Route ESS buffer evaluation through the queue when this buffer has a target."
-  (if (and (glassmacs-r-ui--source-buffer-p) glassmacs-r-target-session)
+  "Route R source buffer evaluation through explicit console selection."
+  (if (glassmacs-r-ui--source-buffer-p)
       (glassmacs-r-ui--submit-region (point-min) (point-max) 'ess-buffer)
     (apply original arguments)))
 

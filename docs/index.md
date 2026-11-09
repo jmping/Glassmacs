@@ -59,3 +59,13 @@ If the same subject appears in several documents, the **canonical coverage colum
 ## Maintenance
 
 See [documentation governance](documentation-governance.md) for the required PR checklist and [documentation change register](documentation-changelog.md) for dated scope changes. Dates use ISO 8601 `YYYY-MM-DD`; dates represent an editorial update, not automatic verification of technical claims.
+
+### Linked presentation architecture (proposed)
+
+- [Linked presentation design](linked-presentation-architecture.md) — DOC-LINKED-PRESENTATIONS; proposed architecture, informational, not runtime policy.
+- [Phase 0 baseline](linked-presentation-phase0.md) — DOC-LINKED-PHASE0; reported GUI evidence and non-regression contract, informational.
+- [Phase 1 source audit](linked-presentation-phase1-audit.md) — DOC-LINKED-PHASE1; static call-path inventory, informational.
+
+These documents are subordinate to the existing canonical architecture and acceptance authorities until formally promoted.
+
+- [Integration execution plan](linked-presentation-execution-plan.md) — DOC-LINKED-EXECUTION-PLAN; active PR #98 stage sequence, verification gates and progress ledger; informational until promoted.

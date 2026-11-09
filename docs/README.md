@@ -20,6 +20,13 @@ The existing [documentation index and authority register](index.md) (**DOC-INDEX
 - [Contributing](../CONTRIBUTING.md) — contributor workflow.
 - [Development](development.md) — build and test details.
 
+## Linked presentation integration (PR #98)
+
+- [Implementation and verification record](linked-presentation-implementation-record.md) — completed source changes, runtime invariants, CI evidence and unresolved native GUI gates.
+- [Candidate failure and remediation ledger](linked-presentation-candidate-triage.md) — false-green ERT, 16 failing assertions, GUI findings and acceptance blockers.
+- [Copilot candidate handoff](copilot-candidate-handoff.md) — exact-SHA macOS build, packaged GUI harness, manual test matrix, candidate archive and evidence requirements.
+- [Execution plan](linked-presentation-execution-plan.md) — stage history and integration constraints.
+
 ## Reference system
 
 The [authority register](index.md) defines stable `DOC-*` IDs. The [machine-readable registry](registry.toml) supports automated identity/path checks but does not supersede the authority register. Use [governance](documentation-governance.md) for status and review conventions. GitHub CI tests code and packaging; native GUI acceptance is performed locally on a Mac.

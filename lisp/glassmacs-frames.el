@@ -2,6 +2,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'glassmacs-presentation-model)
 
 (defgroup glassmacs-frames nil
   "Document opening behavior for Glassmacs."
@@ -49,9 +50,14 @@ On macOS, preserve the source document by opening a new frame."
 
 (defun glassmacs--display-preferences (buffer _alist)
   "Show BUFFER without replacing a document on graphical macOS."
-  (let ((existing (get-buffer-window buffer t)))
+  (let* ((placement (if (and (display-graphic-p)
+                             (eq glassmacs-preferences-opening-policy 'new-frame))
+                        'new-frame 'reuse-current))
+         (existing (glassmacs-presentation-find-suitable-view
+                    buffer 'open placement)))
     (cond
-     (existing existing)
+     (existing
+      existing)
      ((and (display-graphic-p)
            (eq glassmacs-preferences-opening-policy 'new-frame))
       (display-buffer-pop-up-frame buffer nil))
@@ -103,27 +109,95 @@ selecting a dedicated frame first protects the source document."
              (glassmacs--ordinary-document-buffer-p buffer))
     glassmacs-document-opening-policy))
 
+(defun glassmacs--focus-buffer-in-existing-tab (buffer &optional destination)
+  "Focus BUFFER in an existing tab without replacing any window contents.
+This is an explicit navigation operation, not a presentation-policy
+lookup.  Restore each frame's selected tab when BUFFER is absent."
+  (require 'tab-bar)
+  (let ((frames (if destination (list destination)
+                  (cons (selected-frame)
+                        (delq (selected-frame) (frame-list))))))
+    (catch 'found
+      (dolist (frame frames)
+        (when (and (frame-live-p frame) (frame-visible-p frame)
+                   (bound-and-true-p tab-bar-mode))
+          (with-selected-frame frame
+            (let ((original (1+ (tab-bar--current-tab-index)))
+                  (count (length (funcall tab-bar-tabs-function frame)))
+                  (matched nil))
+              (unwind-protect
+                  (dotimes (index count)
+                    (tab-bar-select-tab (1+ index))
+                    (let ((window (get-buffer-window buffer frame)))
+                      (when (and (window-live-p window)
+                                 (eq (window-buffer window) buffer))
+                        (setq matched window)
+                        (throw 'found
+                               (progn
+                                 (select-frame-set-input-focus frame)
+                                 (select-window window)
+                                 window)))))
+                (unless matched
+                  (tab-bar-select-tab original)))))))
+      nil)))
+
+(defun glassmacs--read-open-document ()
+  "Prompt for an open ordinary document and return its buffer.
+Choices are labeled with the abbreviated file name so same-named
+documents in different directories remain distinguishable."
+  (let* ((buffers (cl-remove-if-not
+                   #'glassmacs--ordinary-document-buffer-p (buffer-list)))
+         (choices (mapcar
+                   (lambda (buffer)
+                     (cons (if-let* ((file (buffer-file-name buffer)))
+                               (format "%s — %s" (buffer-name buffer)
+                                       (abbreviate-file-name file))
+                             (buffer-name buffer))
+                           buffer))
+                   buffers)))
+    (unless choices
+      (user-error "No open documents"))
+    (or (cdr (assoc (completing-read "Show open document: " choices nil t)
+                    choices))
+        (user-error "No document selected"))))
+
+(defun glassmacs-focus-open-document (&optional buffer)
+  "Navigate to an open document BUFFER, including a view in an inactive tab.
+This is an explicit user command: unlike automatic presentation, it may
+select a different tab or frame.  If no view exists, create one using
+the configured document opening policy.  With no BUFFER, prompt; the
+mode-line document click relies on that."
+  (interactive (list (glassmacs--read-open-document)))
+  (unless buffer
+    (setq buffer (glassmacs--read-open-document)))
+  (unless (and (buffer-live-p buffer)
+               (glassmacs--ordinary-document-buffer-p buffer))
+    (user-error "Document is no longer open"))
+  (glassmacs-present-buffer buffer 'focus))
+
 (defun glassmacs-present-buffer (buffer &optional intent placement destination)
   "Present BUFFER according to INTENT and PLACEMENT, returning its window.
-INTENT is one of open, focus, move, split, tab, or replace.  An open
-or focus operation first reuses a visible view of BUFFER.  PLACEMENT
-defaults to the document opening policy; DESTINATION is an explicit frame
-for intentional consolidation.  This API does not advise Emacs primitives."
+INTENT is one of open, focus, new-view, move, split, tab, or replace.
+An open or focus operation reuses only a suitable visible view of BUFFER.
+PLACEMENT defaults to the document opening policy; DESTINATION is an
+explicit frame for intentional consolidation.  This API does not advise Emacs primitives."
   (unless (buffer-live-p buffer)
     (user-error "Cannot present a dead buffer"))
   (let* ((intent (or intent 'open))
-         (existing (get-buffer-window buffer t))
          (placement (or placement
                         (and (eq intent 'open)
                              (glassmacs--document-opening-action buffer))
-                        'reuse-current)))
+                        'reuse-current))
+         (existing (glassmacs-presentation-find-suitable-view
+                    buffer intent placement destination)))
     (cond
-     ((and (memq intent '(open focus)) existing)
+     (existing
       (select-frame-set-input-focus (window-frame existing))
       (select-window existing)
       existing)
      ((eq intent 'focus)
-      (glassmacs-present-buffer buffer 'open placement destination))
+      (or (glassmacs--focus-buffer-in-existing-tab buffer destination)
+          (glassmacs-present-buffer buffer 'new-view placement destination)))
      ((and (memq intent '(open focus))
            (fboundp 'glassmacs--ensure-visible-frame)
            (glassmacs--ensure-visible-frame))
@@ -141,6 +215,13 @@ for intentional consolidation.  This API does not advise Emacs primitives."
                 ('replace 'replace)
                 (_ placement))
        destination))
+     ((and (eq intent 'new-view) (eq placement 'reuse-current))
+      ;; A new view must not silently replace the existing one.
+      ;; In a terminal, a split is the closest supported presentation.
+      (let ((window (split-window (selected-window) nil 'below)))
+        (set-window-buffer window buffer)
+        (select-window window)
+        window))
      ((eq placement 'new-frame)
       (let ((frame (make-frame)))
         (with-selected-frame frame
@@ -229,10 +310,47 @@ Do not advise `find-file' globally: packages depend on its semantics."
 ;; hides the window and leaves the edited buffer alive and invisible until
 ;; Quit, which is easy to lose track of with one window per document.
 
+(defun glassmacs--buffer-in-inactive-tab-p (buffer frame)
+  "Whether an inactive tab in FRAME has a view of BUFFER.
+Selection is restored even when tab-switch hooks raise an error."
+  (when (and (frame-live-p frame)
+             (glassmacs--frame-has-hidden-tabs-p frame))
+    (with-selected-frame frame
+      (let ((original (1+ (tab-bar--current-tab-index)))
+            (count (length (funcall tab-bar-tabs-function frame)))
+            found)
+        (unwind-protect
+            (dotimes (index count)
+              (unless (= (1+ index) original)
+                (tab-bar-select-tab (1+ index))
+                (when (get-buffer-window buffer frame)
+                  (setq found t))))
+          (tab-bar-select-tab original))
+        found))))
+
 (defun glassmacs--buffer-shown-elsewhere-p (buffer windows)
-  "Return non-nil when BUFFER is visible in a window not in WINDOWS."
-  (cl-some (lambda (window) (not (memq window windows)))
-           (get-buffer-window-list buffer nil t)))
+  "Return non-nil when BUFFER has a view outside WINDOWS.
+Include inactive tab views, which ordinary window enumeration omits.
+This avoids killing a document or prompting to hide a live R session
+while another tab still owns a view of that buffer."
+  (or (cl-some (lambda (window) (not (memq window windows)))
+               (get-buffer-window-list buffer nil t))
+      (cl-some
+       (lambda (frame)
+         (and (frame-live-p frame)
+              (glassmacs--frame-has-hidden-tabs-p frame)
+              (memq buffer (glassmacs--frame-tab-buffers frame))
+              ;; If BUFFER occupies a view in this frame that is not one of
+              ;; the closing windows, keep the buffer alive.  A selected-tab
+              ;; view outside WINDOWS is handled by the first clause.
+              (or (not (memq buffer
+                             (mapcar #'window-buffer
+                                     (cl-remove-if-not
+                                      (lambda (window)
+                                        (eq (window-frame window) frame))
+                                      windows))))
+                  (glassmacs--buffer-in-inactive-tab-p buffer frame))))
+       (frame-list))))
 
 (defcustom glassmacs-confirm-console-window-close t
   "Ask before hiding the last visible window of a live R console.
@@ -340,31 +458,156 @@ otherwise the frame.  Closing the final frame keeps Glassmacs running
      (t
       (delete-frame frame)))))
 
+(defun glassmacs--review-close-windows (windows)
+  "Review the affected WINDOWS before removing their views.
+Cancel or a kill-buffer veto leaves the window layout intact."
+  (and (glassmacs--confirm-console-windows-close windows)
+       (glassmacs--close-documents-in-windows windows)))
+
+(defun glassmacs--close-reviewed (scope &optional target)
+  "Close SCOPE after its document and console review.
+SCOPE is `view', `tab', or `frame'.  TARGET is a window for `view'
+or a frame for the other scopes.  Return non-nil only on success.
+The native frame-close handler uses `frame' to review, but leaves the
+actual Cocoa frame deletion to its caller."
+  (pcase scope
+    ('view
+     (let ((window (or target (selected-window))))
+       (when (and (window-live-p window)
+                  (glassmacs--review-close-windows (list window)))
+         (glassmacs--close-view window)
+         t)))
+    ('tab
+     (let ((frame (or target (selected-frame))))
+       (with-selected-frame frame
+         (if (not (glassmacs--frame-has-hidden-tabs-p frame))
+             (glassmacs--close-reviewed 'view (selected-window))
+           (when (glassmacs--review-close-windows (window-list frame 'never))
+             (tab-bar-close-tab)
+             t)))))
+    ('frame
+     (let ((frame (or target (selected-frame))))
+       (or (not (frame-live-p frame))
+           (if (glassmacs--frame-has-hidden-tabs-p frame)
+               (glassmacs--review-frame-tab-buffers
+                frame (glassmacs--frame-tab-buffers frame))
+             (glassmacs--review-close-windows (window-list frame 'never))))))
+    (_ (user-error "Unknown close scope: %s" scope))))
+
+(defun glassmacs-close-current-tab ()
+  "Review and close the selected tab without terminating R processes."
+  (interactive)
+  (unless (glassmacs--close-reviewed 'tab)
+    (message "Close canceled")))
+
 (defun glassmacs-close-document ()
-  "Close the selected window and its document, as Command-W does on a Mac.
-If the window shows an ordinary document that no other window shows,
-ask whether to save unsaved changes (Save, Don't Save, Cancel) and
-then close the document.  Special buffers such as R consoles and Help
-are never killed; only their window closes.  Then close the window, its
-tab, or its frame."
+  "Review and close the selected view, tab, or frame as Command-W does."
   (interactive)
   (when (active-minibuffer-window)
     (abort-recursive-edit))
-  (let ((window (selected-window)))
-    (if (and (glassmacs--confirm-console-windows-close (list window))
-             (glassmacs--close-documents-in-windows (list window)))
-        (glassmacs--close-view window)
-      (message "Close canceled"))))
+  (unless (glassmacs--close-reviewed 'view)
+    (message "Close canceled")))
+
+(defun glassmacs--frame-has-hidden-tabs-p (frame)
+  "Whether FRAME has tabs beyond its currently selected tab.
+Closing the native frame while other tabs exist must not bypass their
+individual document-save and R-console checks."
+  (and (frame-live-p frame)
+       (bound-and-true-p tab-bar-mode)
+       (> (length (funcall tab-bar-tabs-function frame)) 1)))
+
+(defun glassmacs--frame-tab-buffers (frame)
+  "Collect unique buffers shown in every tab of FRAME.
+Restore the original tab even if a tab-selection hook signals an error."
+  (with-selected-frame frame
+    (if (not (glassmacs--frame-has-hidden-tabs-p frame))
+        (delete-dups (mapcar #'window-buffer (window-list frame 'never)))
+      (let ((original (1+ (tab-bar--current-tab-index)))
+            (count (length (funcall tab-bar-tabs-function frame)))
+            buffers)
+        (unwind-protect
+            (dotimes (index count)
+              (tab-bar-select-tab (1+ index))
+              (dolist (window (window-list frame 'never))
+                (cl-pushnew (window-buffer window) buffers)))
+          (tab-bar-select-tab original))
+        (nreverse buffers)))))
+
+(defun glassmacs--buffer-visible-in-other-frame-p (buffer frame)
+  "Whether BUFFER has a view in any other frame, including inactive tabs."
+  (cl-some (lambda (other)
+             (and (frame-live-p other)
+                  (not (eq other frame))
+                  (or (get-buffer-window buffer other)
+                      (glassmacs--buffer-in-inactive-tab-p buffer other))))
+           (frame-list)))
+
+(defun glassmacs--review-frame-tab-buffers (frame buffers)
+  "Review BUFFERS from all tabs before closing FRAME.
+All cancelable decisions precede document kills.  Saving a document
+may write to disk before a later cancellation; no R process is killed."
+  (let ((documents (cl-remove-if-not
+                    (lambda (buffer)
+                      (and (glassmacs--ordinary-document-buffer-p buffer)
+                           (not (glassmacs--buffer-visible-in-other-frame-p
+                                 buffer frame))))
+                    buffers))
+        (consoles (cl-remove-if-not
+                   (lambda (buffer)
+                     (and (glassmacs--live-r-console-p buffer)
+                          (not (glassmacs--buffer-visible-in-other-frame-p
+                                buffer frame))))
+                   buffers))
+        discard)
+    (if (catch 'cancel
+            (dolist (buffer (if glassmacs-confirm-console-window-close
+                                consoles nil))
+              (unless (eq (condition-case nil
+                              (car (read-multiple-choice
+                                    (format "Hide R console %s? R keeps running. "
+                                            (buffer-name buffer))
+                                    '((?h "hide" "Keep R running")
+                                      (?c "cancel" "Keep window open"))))
+                            ((quit error) ?c))
+                          ?h)
+                (throw 'cancel t)))
+            (dolist (buffer documents)
+              (when (buffer-modified-p buffer)
+                (pcase (condition-case nil
+                           (car (read-multiple-choice
+                                 (format "Save changes to %s before closing? "
+                                         (buffer-name buffer))
+                                 '((?s "save" "Save changes")
+                                   (?d "don't save" "Discard changes")
+                                   (?c "cancel" "Keep window open"))))
+                         ((quit error) ?c))
+                  (?s (unless (condition-case nil
+                                  (with-current-buffer buffer
+                                    (save-buffer)
+                                    (not (buffer-modified-p)))
+                                ((quit error) nil))
+                        (throw 'cancel t)))
+                  (?d (push buffer discard))
+                  (_ (throw 'cancel t)))))
+            nil)
+        nil
+      (catch 'veto
+      (dolist (buffer documents t)
+        (when (buffer-live-p buffer)
+          (let ((discard-p (memq buffer discard))
+                killed)
+            (unwind-protect
+                (progn
+                  (when discard-p
+                    (with-current-buffer buffer (set-buffer-modified-p nil)))
+                  (setq killed (kill-buffer buffer)))
+              (when (and discard-p (buffer-live-p buffer))
+                (with-current-buffer buffer (set-buffer-modified-p t))))
+            (unless killed (throw 'veto nil)))))))))
 
 (defun glassmacs-close-frame-documents (frame)
-  "Close the documents shown only in FRAME before the frame closes.
-Used for the window close button.  Return nil when the user cancels,
-in which case the frame must stay open."
-  (or (not (framep frame))
-      (not (frame-live-p frame))
-      (let ((windows (window-list frame 'never)))
-        (and (glassmacs--confirm-console-windows-close windows)
-             (glassmacs--close-documents-in-windows windows)))))
+  "Review every affected tab before the native close handler removes FRAME."
+  (glassmacs--close-reviewed 'frame frame))
 
 (defun glassmacs-save-document-as (filename)
   "Save the current document as FILENAME using Emacs' native file safeguards.
@@ -550,29 +793,6 @@ cycling unrelated buffers into the current document window.  Choose
                  (const :tag "Standard Emacs buffer cycling" emacs))
   :group 'glassmacs-frames)
 
-(defun glassmacs-focus-open-document ()
-  "Choose an open document or R console and focus its existing frame.
-A buffer without a visible view is opened using its document policy."
-  (interactive)
-  (let* ((buffers (cl-remove-if-not
-                   (lambda (buffer)
-                     (or (glassmacs--ordinary-document-buffer-p buffer)
-                         (with-current-buffer buffer
-                           (derived-mode-p 'inferior-ess-r-mode))))
-                   (buffer-list)))
-         (choices (mapcar (lambda (buffer)
-                            (cons (format "%s%s" (buffer-name buffer)
-                                          (if (buffer-file-name buffer)
-                                              (format " — %s" (abbreviate-file-name
-                                                                 (buffer-file-name buffer)))
-                                            ""))
-                                  buffer))
-                          buffers))
-         (selection (completing-read "Open document/window: " choices nil t)))
-    (unless (assoc selection choices)
-      (user-error "No document selected"))
-    (glassmacs-present-buffer (cdr (assoc selection choices)) 'focus)))
-
 (defun glassmacs--window-navigation-choices ()
   "Return visible, live application windows with stable descriptive labels.
 Do not include hidden minibuffer windows or manufacture buffer views."
@@ -616,6 +836,15 @@ Unlike document opening, this never creates a frame or replaces a view."
     (select-window window)
     window))
 
+(defun glassmacs--install-reviewed-tab-close-menu ()
+  "Expose reviewed tab closing without advising upstream tab-bar APIs.
+The explicit Glassmacs menu command preserves the native frame-close
+guard and does not intercept package-internal tab operations."
+  (when (eq system-type 'darwin)
+    (define-key global-map [menu-bar window glassmacs-close-tab]
+      '(menu-item "Close Current Tab Safely" glassmacs-close-current-tab
+                  :enable (menu-bar-non-minibuffer-window-p)))))
+
 (defun glassmacs--install-window-navigation-menu ()
   "Expose non-destructive native window navigation."
   (when (eq system-type 'darwin)
@@ -623,7 +852,8 @@ Unlike document opening, this never creates a frame or replaces a view."
       '(menu-item "Focus Open Window…" glassmacs-focus-open-window))))
 
 (with-eval-after-load 'menu-bar
-  (glassmacs--install-window-navigation-menu))
+  (glassmacs--install-window-navigation-menu)
+  (glassmacs--install-reviewed-tab-close-menu))
 
 (defvar glassmacs--mode-line-original-mouse-1 nil)
 (defvar glassmacs--mode-line-original-mouse-3 nil)

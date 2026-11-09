@@ -74,7 +74,9 @@ The extra window means closing deletes a window rather than the frame."
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
 (ert-deftest glassmacs-native-quit-command-routes-through-review ()
-  (let ((routed nil)
+  ;; The GUI path only: batch Emacs deliberately bypasses review.
+  (let ((noninteractive nil)
+        (routed nil)
         (original-called nil))
     (cl-letf (((symbol-function 'glassmacs-recovery-quit)
                (lambda () (setq routed t))))
@@ -82,6 +84,18 @@ The extra window means closing deletes a window rather than the frame."
        (lambda (&rest _) (setq original-called t)))
       (should routed)
       (should-not original-called))))
+
+(ert-deftest glassmacs-batch-kill-emacs-preserves-exit-status ()
+  "Batch `kill-emacs' must reach the original with its exit status."
+  (let ((noninteractive t)
+        (routed nil)
+        (forwarded nil))
+    (cl-letf (((symbol-function 'glassmacs-recovery-quit)
+               (lambda () (setq routed t))))
+      (glassmacs-recovery--reviewed-quit-advice
+       (lambda (&rest args) (setq forwarded args)) 1)
+      (should-not routed)
+      (should (equal forwarded '(1))))))
 
 (ert-deftest glassmacs-reviewed-quit-command-calls-original ()
   (let ((glassmacs-recovery--save-reviewed-quit t)
@@ -95,6 +109,122 @@ The extra window means closing deletes a window rather than the frame."
                            'save-buffers-kill-emacs))
   (should (advice-member-p #'glassmacs-recovery--reviewed-quit-advice
                            'kill-emacs)))
+
+(ert-deftest glassmacs-close-coordinator-view-cancel-preserves-layout ()
+  "A vetoed review never invokes view deletion."
+  (let ((deleted nil))
+    (cl-letf (((symbol-function 'glassmacs--review-close-windows)
+               (lambda (_windows) nil))
+              ((symbol-function 'glassmacs--close-view)
+               (lambda (_window) (setq deleted t))))
+      (should-not (glassmacs--close-reviewed 'view (selected-window)))
+      (should-not deleted))))
+
+(ert-deftest glassmacs-close-coordinator-frame-delegates-all-tabs ()
+  "The frame scope must review all tabs before native frame deletion."
+  (let ((seen nil))
+    (cl-letf (((symbol-function 'glassmacs--frame-has-hidden-tabs-p)
+               (lambda (_frame) t))
+              ((symbol-function 'glassmacs--frame-tab-buffers)
+               (lambda (_frame) '(one two)))
+              ((symbol-function 'glassmacs--review-frame-tab-buffers)
+               (lambda (_frame buffers) (setq seen buffers) t)))
+      (should (glassmacs--close-reviewed 'frame (selected-frame)))
+      (should (equal seen '(one two))))))
+
+(ert-deftest glassmacs-reviewed-tab-close-menu-command ()
+  "The Window menu exposes the guarded close, not raw tab-bar close."
+  (let ((system-type 'darwin))
+    (glassmacs--install-reviewed-tab-close-menu)
+    ;; `lookup-key' strips the menu-item wrapper, so inspect the raw entry.
+    (let ((item (cdr (assq 'glassmacs-close-tab
+                           (lookup-key global-map [menu-bar window])))))
+      (should (eq (car item) 'menu-item))
+      (should (eq (nth 2 item) 'glassmacs-close-current-tab)))))
+
+(ert-deftest glassmacs-reviewed-tab-close-cancel-preserves-tab ()
+  "A canceled document review must leave the current tab intact."
+  (let ((closed nil))
+    (cl-letf (((symbol-function 'glassmacs--frame-has-hidden-tabs-p)
+               (lambda (_frame) t))
+              ((symbol-function 'glassmacs--confirm-console-windows-close)
+               (lambda (_windows) t))
+              ((symbol-function 'glassmacs--close-documents-in-windows)
+               (lambda (_windows) nil))
+              ((symbol-function 'tab-bar-close-tab)
+               (lambda (&rest _) (setq closed t))))
+      (glassmacs-close-current-tab)
+      (should-not closed))))
+
+(ert-deftest glassmacs-reviewed-tab-close-protects-r-process ()
+  "The reviewed tab close delegates only to view closing, not session exit."
+  (let ((closed nil)
+        (reviewed nil))
+    (cl-letf (((symbol-function 'glassmacs--frame-has-hidden-tabs-p)
+               (lambda (_frame) t))
+              ((symbol-function 'glassmacs--confirm-console-windows-close)
+               (lambda (_windows) (setq reviewed t) t))
+              ((symbol-function 'glassmacs--close-documents-in-windows)
+               (lambda (_windows) t))
+              ((symbol-function 'tab-bar-close-tab)
+               (lambda (&rest _) (setq closed t))))
+      (glassmacs-close-current-tab)
+      (should reviewed)
+      (should closed))))
+
+(ert-deftest glassmacs-native-frame-close-reviews-hidden-tabs ()
+  "A native multi-tab close routes through the all-tab review."
+  ;; `tab-bar-tabs-function' is a variable holding the tab enumerator.
+  (let ((reviewed nil)
+        (tab-bar-mode t)
+        (tab-bar-tabs-function
+         (lambda (&optional _frame)
+           '((current-tab (name . "one")) (tab (name . "two"))))))
+    (cl-letf (((symbol-function 'glassmacs--frame-tab-buffers)
+               (lambda (_frame) '(first second)))
+              ((symbol-function 'glassmacs--review-frame-tab-buffers)
+               (lambda (_frame buffers)
+                 (setq reviewed buffers)
+                 nil)))
+      (should-not (glassmacs-close-frame-documents (selected-frame)))
+      (should (equal reviewed '(first second))))))
+
+(ert-deftest glassmacs-native-frame-review-cancel-keeps-documents ()
+  "Cancel after one approval must not kill any document."
+  (let ((first (generate-new-buffer "glassmacs-frame-first"))
+        (second (generate-new-buffer "glassmacs-frame-second"))
+        (answers '(?d ?c)))
+    (unwind-protect
+        (progn
+          (with-current-buffer first (insert "one"))
+          (with-current-buffer second (insert "two"))
+          (cl-letf (((symbol-function 'glassmacs--buffer-visible-in-other-frame-p)
+                     (lambda (&rest _) nil))
+                    ((symbol-function 'read-multiple-choice)
+                     (lambda (&rest _) (prog1 (list (car answers))
+                                         (setq answers (cdr answers))))))
+            (should-not (glassmacs--review-frame-tab-buffers
+                         (selected-frame) (list first second)))
+            (should (buffer-live-p first))
+            (should (buffer-live-p second))
+            (should (buffer-modified-p first))
+            (should (buffer-modified-p second))))
+      (dolist (buffer (list first second))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer))))))
+
+(ert-deftest glassmacs-native-frame-close-single-tab-continues-review ()
+  "A frame with one tab still performs its usual close checks."
+  (let ((tab-bar-mode t)
+        (checked nil))
+    (cl-letf (((symbol-function 'tab-bar-tabs-function)
+               (lambda (_frame) '((name . "only"))))
+              ((symbol-function 'glassmacs--confirm-console-windows-close)
+               (lambda (windows) (setq checked windows) nil)))
+      (should-not (glassmacs--frame-has-hidden-tabs-p (selected-frame)))
+      (should-not (glassmacs-close-frame-documents (selected-frame)))
+      (should checked))))
 
 (ert-deftest glassmacs-close-unmodified-document-kills-buffer-and-window ()
   (let ((buffer (generate-new-buffer "glassmacs-close-clean")))
@@ -196,9 +326,16 @@ The extra window means closing deletes a window rather than the frame."
         (should-not closed-tab)
         (setq deleted nil)
         (set-window-buffer (selected-window) (get-buffer-create "*scratch*"))
+        ;; Tabs are alists; the inactive tab holds no view of the buffer.
         (let ((tab-bar-mode t)
-              (tab-bar-tabs-function (lambda (&optional _) '(tab-a tab-b))))
-          (glassmacs-close-document))
+              (tab-bar-tabs-function
+               (lambda (&optional _)
+                 '((current-tab (name . "a")) (tab (name . "b"))))))
+          (cl-letf (((symbol-function 'glassmacs--frame-tab-buffers)
+                     (lambda (_frame) (list (window-buffer))))
+                    ((symbol-function 'glassmacs--buffer-in-inactive-tab-p)
+                     #'ignore))
+            (glassmacs-close-document)))
         (should closed-tab)
         (should-not deleted)))
     (should-not (buffer-live-p buffer))))
@@ -269,6 +406,10 @@ The extra window means closing deletes a window rather than the frame."
   (let ((scratch (get-buffer-create "*scratch*")))
     (unwind-protect
         (glassmacs-close-test--with-split scratch
+          ;; If the other window also showed *scratch*, closing this view
+          ;; would correctly keep the buffer without any prompt.
+          (set-window-buffer (next-window window 'never)
+                             (get-buffer-create " *glassmacs-close-other*"))
           (with-current-buffer scratch
             (goto-char (point-max))
             (insert "scratch unsaved edit"))
@@ -356,3 +497,44 @@ The extra window means closing deletes a window rather than the frame."
 
 (provide 'test-glassmacs-close)
 ;;; test-glassmacs-close.el ends here
+
+(ert-deftest glassmacs-close-preserves-document-in-inactive-tab ()
+  "Closing one view must not kill a document kept in another tab."
+  (let ((buffer (generate-new-buffer "glassmacs-inactive-tab-document")))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (set-window-buffer (selected-window) buffer)
+          (let ((window (selected-window)))
+            (cl-letf (((symbol-function 'glassmacs--frame-has-hidden-tabs-p)
+                       (lambda (_frame) t))
+                      ((symbol-function 'glassmacs--frame-tab-buffers)
+                       (lambda (_frame) (list buffer)))
+                      ((symbol-function 'glassmacs--buffer-in-inactive-tab-p)
+                       (lambda (candidate _frame) (eq candidate buffer))))
+              (should (glassmacs--buffer-shown-elsewhere-p
+                       buffer (list window)))
+              (should (glassmacs--close-documents-in-windows
+                       (list window)))
+              (should (buffer-live-p buffer)))))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-frame-close-preserves-document-in-other-hidden-tab ()
+  "Closing a frame cannot kill buffers displayed in another frame's tab."
+  (let ((buffer (generate-new-buffer "glassmacs-other-frame-tab-document"))
+        (current (selected-frame))
+        (other (make-symbol "mock-other-frame")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'frame-list)
+                   (lambda () (list current other)))
+                  ((symbol-function 'frame-live-p)
+                   (lambda (frame) (or (eq frame current)
+                                       (eq frame other))))
+                  ((symbol-function 'get-buffer-window)
+                   (lambda (_buffer _frame) nil))
+                  ((symbol-function 'glassmacs--buffer-in-inactive-tab-p)
+                   (lambda (candidate frame)
+                     (and (eq candidate buffer) (eq frame other)))))
+          (should (glassmacs--buffer-visible-in-other-frame-p
+                   buffer current)))
+      (kill-buffer buffer))))

@@ -63,6 +63,7 @@ Local GUI outcomes are recorded by `scripts/macos-gui-acceptance`; `scripts/acce
 | [MIX-GUI-001](#mix-gui-001) | Mixed documents in the app: document menu and Command shortcuts | P1 | `glassmacs:mixed-documents` | C D | yes | partial | ci | NOT RUN |
 | [MIX-002](#mix-002) | Rendering and Shiny previews open their output | P1 | `glassmacs:mixed-documents` | A D | yes | partial | NOT RUN | NOT RUN |
 | [R-001](#r-001) | ESS, R and Quarto run from the app | P1 | `glassmacs:issue-34-other-risks` | A D | yes | partial | NOT RUN | NOT RUN |
+| [RCONSOLE-001](#rconsole-001) | ESS consoles preserve configured frame and tab placement | P0 | `glassmacs:release-candidate-2885efd` | A D | yes | partial | NOT RUN | NOT RUN |
 | [SYNC-001](#sync-001) | Skim SyncTeX forward and inverse search | P2 | `glassmacs:issue-34-other-risks` | A D | yes | partial | NOT RUN | NOT RUN |
 | [DISPLAY-001](#display-001) | Multiple displays, Spaces, Stage Manager and scaling | P2 | `glassmacs:issue-34-other-risks` | D | yes | no | NOT RUN | NOT RUN |
 | [APPEAR-001](#appear-001) | Light and dark appearance changes | P2 | `glassmacs:issue-34-other-risks` | D | no | no | NOT RUN | NOT RUN |
@@ -458,6 +459,16 @@ Local GUI outcomes are recorded by `scripts/macos-gui-acceptance`; `scripts/acce
 - Tests: `ert:glassmacs-ess-starts-r-and-evaluates-when-available`, `ert:glassmacs-chunks-run-in-a-real-r-session`
 - Not fully automated because: R is not installed on the macOS runner; ESS/R runs in the Linux integration job.
 - Manual: see [checklist](macos-acceptance-checklist.md#r-001)
+
+## RCONSOLE-001
+
+**ESS consoles preserve configured frame and tab placement** (P0). ESS displays the inferior buffer during synchronous startup, which can replace or split the source view before Glassmacs applies its configured console presentation.
+
+- Evidence: `glassmacs:release-candidate-2885efd`
+- Layers: A (batch), D (manual)
+- Tests: `ert:glassmacs-r-started-console-moves-ess-view-to-separate-frame`, `ert:glassmacs-r-started-console-honors-tab-placement`, `ert:glassmacs-r-selecting-console-reuses-existing-window`, `ert:glassmacs-r-output-integration-real-ess-concurrent-sessions`
+- Not fully automated because: ERT verifies routing through the presentation abstraction; only local macOS GUI testing can verify native window placement.
+- Manual: see [checklist](macos-acceptance-checklist.md#rconsole-001)
 
 ## SYNC-001
 
