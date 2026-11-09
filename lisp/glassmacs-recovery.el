@@ -854,7 +854,10 @@ termination; when disabled, refuse a direct dirty-buffer termination."
 (defun glassmacs-recovery--reviewed-quit-advice (original &rest args)
   "Route native direct quit calls through Glassmacs review.
 ORIGINAL and ARGS are used only for the guarded, already-reviewed quit."
-  (if glassmacs-recovery--save-reviewed-quit
+  (if (or noninteractive glassmacs-recovery--save-reviewed-quit)
+      ;; ERT uses (kill-emacs 1) to report failed assertions.  Intercepting
+      ;; that call via the GUI quit coordinator discarded its status and made
+      ;; failing CI runs appear green.  Batch Emacs has no native quit dialog.
       (apply original args)
     (glassmacs-recovery-quit)))
 
