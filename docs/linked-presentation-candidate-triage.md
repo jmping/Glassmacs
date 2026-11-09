@@ -58,7 +58,27 @@ glassmacs-windowless-new-document-reuses-hidden-frame-per-policy
 glassmacs-windowless-open-file-shows-in-hidden-frame
 ```
 
-**Confirmed separate source defect:** `glassmacs-focus-open-document` was defined twice in `lisp/glassmacs-frames.el`; the later zero-argument definition replaced the earlier `(buffer)` command and caused the two focus tests to fail with `wrong-number-of-arguments`. **Remediation pushed after candidate:** removed the shadowing duplicate. The other 14 failures remain **untriaged/unresolved** until fresh logs identify individual causes. They are not automatically classified as application defects; some may be test isolation or expectations.
+**Confirmed separate source defect:** `glassmacs-focus-open-document` was defined twice in `lisp/glassmacs-frames.el`; the later zero-argument definition replaced the earlier `(buffer)` command and caused the two focus tests to fail with `wrong-number-of-arguments`. **Remediation pushed after candidate:** removed the shadowing duplicate. The other 14 failures were triaged individually below. They are not automatically classified as application defects; some may be test isolation or expectations.
+
+### ERT triage after the exit-status fix (2026-11-08)
+
+With the exit-status fix in place, `scripts/test` on bundled Emacs 31.1 exited **1** with 16 unexpected results: 14 of the original list plus `glassmacs-alpha3-document-chooser-focuses-existing` and `glassmacs-native-quit-command-routes-through-review`, which the two remediation commits above had newly exposed. Each was diagnosed individually:
+
+| Cause | Tests | Classification and fix |
+| --- | --- | --- |
+| Removing the duplicate also removed the no-argument form of `glassmacs-focus-open-document`, which the mode-line document click still called | `alpha3-document-chooser-focuses-existing` | **Product defect** (`wrong-number-of-arguments` on a mode-line click). The buffer argument is now optional and the command prompts with path-labeled choices. |
+| `glassmacs-presentation-find-suitable-view` asked the suitability predicate about every window, not only views of the buffer | `present-buffer-obeys-unsuitable-existing-view` | **Product defect** (no behavior change, since the predicate re-checks the buffer, but the contract was violated). Fixed: only views of the buffer are offered to the predicate. |
+| Symbol stand-in frames (`a`, `hid`, `vis`) reach new `window-list` enumeration | 4 Cocoa close/reopen tests and 3 windowless/new-document tests | **Stale mocks.** The mock frames now get an empty window list. |
+| Tabs mocked as symbols, or `tab-bar-tabs-function` rebound as a function rather than the variable the code calls | `close-last-window-closes-frame-or-tab`, `native-frame-close-reviews-hidden-tabs` | **Stale mocks.** Tabs are now alists, and the test binds the variable. |
+| `lookup-key` strips the `menu-item` wrapper | `reviewed-tab-close-menu-command` | **Test defect.** The test now reads the raw keymap entry. |
+| The batch quit bypass applies under ERT | `native-quit-command-routes-through-review` | **Expected.** The test now binds `noninteractive` to nil, and a new test asserts that batch `kill-emacs` forwards its exit status. |
+| `*scratch*` was shown in both windows, so the close was correctly a view-only close | `close-scratch-modified-prompts-and-cancel-keeps-it` | **Test setup.** The other window now shows a different buffer. |
+| Help reuse is deliberately side-only under side policies (f1cf970) | `r-help-display-checks-view-suitability` | **Stale expectation.** Reuse is now tested against a real right side window, with an added negative case. |
+| Console display now uses the presentation lookup, not `get-buffer-window` | `r-selecting-console-reuses-existing-window` | **Stale mock.** The test now stubs the presentation lookup. |
+
+Result: **473 tests, 455 expected, 0 unexpected, 18 skipped, exit 0** with bundled ESS 26.5.0 and real R 4.6.2. The 18 skips need AUCTeX, polymode, hunspell, rmarkdown or shiny, which the Ubuntu `ess-r-integration` job installs. Byte compilation, `check-docs`, `acceptance-matrix check`, the release-script unit tests and the TTY GUI-harness self-test pass locally. Native GUI acceptance (P1 items below) is still **not done**.
+
+**Related queue fix:** an interrupt used to pause the whole session queue, so later submissions were neither dispatched nor echoed until a Resume that no menu offered. Now only the commands queued *before* the interrupt are held, new submissions run and echo, submitting to a paused or held queue reports why, and **R > Resume Queue** has been added.
 
 ### Packaged GUI and scripted driver results
 

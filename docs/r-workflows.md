@@ -338,7 +338,10 @@ roadmap's verification status.
 
 Three distinct commands are available: `glassmacs-r-stop-displaying-output`
 hides output for the active command without interrupting R;
-`glassmacs-r-interrupt` requests an interrupt and keeps pending queue work paused;
+`glassmacs-r-interrupt` requests an interrupt, records the running command as
+`uncertain` and holds the commands queued behind it (they may depend on it)
+until you choose **R > Resume Queue**, while commands you send after the
+interrupt run and are echoed as usual;
 and `glassmacs-r-terminate-session` requires interactive confirmation before
 terminating the process. When ESS recognizes the next primary prompt, normal
 output display resumes automatically. A prompt split across chunks may not be

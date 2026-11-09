@@ -47,6 +47,10 @@
                                (:copier nil))
   id session-id source origin
   (state 'pending)   ; pending running completed failed uncertain orphaned removed
+  ;; Non-nil for a pending entry that was queued behind an interrupted
+  ;; command: it may depend on that command, so it waits for Resume while
+  ;; commands submitted after the interrupt still run.
+  (held nil)
   reason submitted-at started-at finished-at removed-at original-position)
 
 (defvar glassmacs-sessions--list nil "Registered sessions, oldest first.")
@@ -280,11 +284,10 @@ R continues running and ESS continues consuming its process output."
         (user-error "R session %s is not running a command"
                     (glassmacs-session-id session)))
       (unless (or noninteractive
-                  (y-or-n-p (format "Interrupt R in %s? Pending commands will be kept and the queue paused. "
+                  (y-or-n-p (format "Interrupt R in %s? Queued commands will be held until you resume. "
                                     (glassmacs-session-id session))))
         (user-error "Interrupt cancelled"))
-      (setf (glassmacs-session-paused session) t)
-      (glassmacs-sessions--record :paused :session (glassmacs-session-id session))
+      (glassmacs-queue--hold-pending session)
       (interrupt-process process))))
 
 (defun glassmacs-r-terminate-session (&optional session)
@@ -920,6 +923,16 @@ Without a target, describe whether the available sessions are ambiguous."
   "Return SESSION's pending entries in FIFO order."
   (glassmacs-queue--entries session '(pending)))
 
+(defun glassmacs-queue-held (session)
+  "Return SESSION's pending entries held since an interrupt."
+  (cl-remove-if-not #'glassmacs-entry-held (glassmacs-queue-pending session)))
+
+(defun glassmacs-queue--dispatchable (session)
+  "Return SESSION's pending entries that may run now, in FIFO order.
+Held entries wait for an explicit resume; a paused session runs nothing."
+  (unless (glassmacs-session-paused session)
+    (cl-remove-if #'glassmacs-entry-held (glassmacs-queue-pending session))))
+
 (defun glassmacs-queue-running (session)
   "Return SESSION's running entry, or nil."
   (car (glassmacs-queue--entries session '(running))))
@@ -980,7 +993,20 @@ when no live target exists or SOURCE is blank."
                                   :source (glassmacs-entry-source entry))
       (glassmacs-sessions--pump session)
       (glassmacs-sessions--ensure-timer)
+      (glassmacs-queue--report-waiting session entry)
       entry)))
+
+(defun glassmacs-queue--report-waiting (session entry)
+  "Explain why ENTRY is not running, so a held queue is never silent."
+  (let ((held (length (glassmacs-queue-held session))))
+    (cond
+     ((and (glassmacs-session-paused session)
+           (eq (glassmacs-entry-state entry) 'pending))
+      (message "R session %s is paused; %s is queued.  Use R > Resume Queue to run it"
+               (glassmacs-session-id session) (glassmacs-entry-id entry)))
+     ((> held 0)
+      (message "%d command(s) queued before the interrupt in %s are held; use R > Resume Queue to run them"
+               held (glassmacs-session-id session))))))
 
 (defun glassmacs-sessions--finish (entry state reason)
   (setf (glassmacs-entry-state entry) state
@@ -1009,7 +1035,7 @@ when no live target exists or SOURCE is blank."
      ((and (not (glassmacs-queue-running session))
            (not (glassmacs-session-paused session))
            (not (glassmacs-sessions--process-busy-p process)))
-      (when-let* ((next (car (glassmacs-queue-pending session))))
+      (when-let* ((next (car (glassmacs-queue--dispatchable session))))
         (setf (glassmacs-entry-state next) 'running
               (glassmacs-entry-started-at next) (current-time))
         (condition-case err
@@ -1035,8 +1061,7 @@ when no live target exists or SOURCE is blank."
   (unless (cl-some (lambda (s)
                      (and (eq (glassmacs-session-state s) 'ready)
                           (or (glassmacs-queue-running s)
-                              (and (not (glassmacs-session-paused s))
-                                   (glassmacs-queue-pending s)))))
+                              (glassmacs-queue--dispatchable s))))
                    glassmacs-sessions--list)
     (glassmacs-sessions--cancel-timer)))
 
@@ -1065,6 +1090,8 @@ when no live target exists or SOURCE is blank."
     (user-error "R session %s has terminated; its commands are not replayed"
                 (glassmacs-session-id session)))
   (setf (glassmacs-session-paused session) nil)
+  (dolist (entry (glassmacs-queue-pending session))
+    (setf (glassmacs-entry-held entry) nil))
   (glassmacs-sessions--record :resumed :session (glassmacs-session-id session))
   (glassmacs-sessions--pump session)
   (glassmacs-sessions--ensure-timer))
@@ -1163,18 +1190,33 @@ kept as `removed' records with their original position and source."
 
 ;;; Interrupt (distinct from removal)
 
+(defun glassmacs-queue--hold-pending (session)
+  "Hold SESSION's pending entries behind an interrupt; return them.
+They may depend on the interrupted command, so they never replay on
+their own.  Commands submitted afterwards are not held and still run
+and echo normally."
+  (let ((entries (glassmacs-queue-pending session)))
+    (dolist (entry entries)
+      (setf (glassmacs-entry-held entry) t))
+    (when entries
+      (glassmacs-sessions--record
+       :held :session (glassmacs-session-id session)
+       :entries (mapcar #'glassmacs-entry-id entries)))
+    entries))
+
 (defun glassmacs-queue-interrupt (session)
   "Interrupt SESSION's running command, keeping all pending commands.
-The interrupted command is recorded as `uncertain' and the queue is paused so
-nothing further runs until you resume it."
+The interrupted command is recorded as `uncertain'.  Commands queued
+behind it are held until you resume the queue; commands you submit after
+the interrupt run (and are echoed) as usual."
   (interactive (list (glassmacs-sessions-resolve)))
   (let ((running (glassmacs-queue-running session)))
     (unless running (user-error "No running command in %s" (glassmacs-session-id session)))
     (unless (or noninteractive
-                (y-or-n-p (format "Interrupt running command %s? Pending commands are kept and the queue is paused. "
+                (y-or-n-p (format "Interrupt running command %s? Queued commands will be held until you resume. "
                                   (glassmacs-entry-id running))))
       (user-error "Interrupt cancelled"))
-    (setf (glassmacs-session-paused session) t)
+    (glassmacs-queue--hold-pending session)
     (glassmacs-sessions--finish running 'uncertain "interrupted by user")
     (if (glassmacs-sessions--process-live-p (glassmacs-session-process session))
         (interrupt-process (glassmacs-session-process session))
@@ -1197,7 +1239,10 @@ nothing further runs until you resume it."
                           " TERMINATED" "")))
       (dolist (e (glassmacs-session-entries session))
         (insert (format "%-8s %-10s %s\n" (glassmacs-entry-id e)
-                        (glassmacs-entry-state e)
+                        (if (and (eq (glassmacs-entry-state e) 'pending)
+                                 (glassmacs-entry-held e))
+                            "held"
+                          (glassmacs-entry-state e))
                         (car (split-string (glassmacs-entry-source e) "\n")))))
       (special-mode))
     (display-buffer (current-buffer))))

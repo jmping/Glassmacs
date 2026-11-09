@@ -402,7 +402,7 @@
        (glassmacs-queue-interrupt s))
      (should (eq (glassmacs-entry-state running) 'uncertain))
      (should (eq (glassmacs-entry-state next) 'pending))
-     (should (glassmacs-session-paused s))
+     (should (glassmacs-entry-held next))
      (should-not (cl-find :removed (glassmacs-sessions-history)
                           :key (lambda (h) (plist-get h :event)))))))
 
@@ -662,7 +662,7 @@
              (should (eq interrupted process))
              (should (eq (glassmacs-entry-state running) 'uncertain))
              (should (eq (glassmacs-entry-state pending) 'pending))
-             (should (glassmacs-session-paused session))
+             (should (glassmacs-entry-held pending))
              (with-current-buffer buffer
                (should (equal (gs-test--filter-output process "> " t)
                               (concat glassmacs-r-output-suppressed-marker "> ")))
@@ -830,7 +830,7 @@
                   (lambda (proc) (setq interrupted proc))))
          (glassmacs-r-interrupt session))
        (should (eq interrupted process))
-       (should (glassmacs-session-paused session))
+       (should (glassmacs-entry-held pending))
        (should (eq (glassmacs-entry-state pending) 'pending))))))
 
 (ert-deftest glassmacs-r-terminate-requires-interactive-confirmation ()
@@ -1137,9 +1137,25 @@
               (should (process-live-p process))
               (should (eq (glassmacs-entry-state running) 'uncertain))
               (should (eq (glassmacs-entry-state pending) 'pending))
-              (should (glassmacs-session-paused session))
+              (should (glassmacs-entry-held pending))
               (should-not (with-current-buffer buffer
-                            glassmacs-r--output-suppressed)))))
+                            glassmacs-r--output-suppressed))
+              ;; Work submitted after the interrupt runs and is echoed.
+              (let ((after (glassmacs-queue-submit
+                            "cat('after-interrupt-ok\\n')" session)))
+                (setq deadline (+ (float-time) 15))
+                (while (and (< (float-time) deadline)
+                            (not (eq (glassmacs-entry-state after) 'completed)))
+                  (accept-process-output process 0.05)
+                  (glassmacs-sessions--tick))
+                (should (eq (glassmacs-entry-state after) 'completed))
+                (should (eq (glassmacs-entry-state pending) 'pending))
+                (with-current-buffer buffer
+                  (save-excursion
+                    (goto-char (point-min))
+                    (should (search-forward
+                             "> cat('after-interrupt-ok\\n')" nil t))
+                    (should (search-forward "after-interrupt-ok" nil t))))))))
       (glassmacs-sessions--cancel-timer)
       (when (buffer-live-p buffer)
         (let ((process (get-buffer-process buffer)))
@@ -1252,11 +1268,42 @@
      (should (= 1 (length gs-test--sent)))
      (cl-letf (((symbol-function 'interrupt-process) (lambda (&rest _) nil)))
        (glassmacs-queue-interrupt s))
-     (should (glassmacs-session-paused s))
+     (should (= 100 (length (glassmacs-queue-held s))))
      (gs-test--finish-running p)
      (dotimes (_ 5) (glassmacs-sessions--pump s))
      (should (= 1 (length gs-test--sent)))
      (should (= 100 (length (glassmacs-queue-pending s)))))))
+
+(ert-deftest glassmacs-queue-interrupt-holds-old-but-runs-new-work ()
+  "After an interrupt, held work waits but a new submission runs and echoes."
+  (gs-test--with-env
+   (let* ((p (gs-test--proc "R"))
+          (s (glassmacs-sessions-register p))
+          (echoed nil))
+     (glassmacs-queue-submit "long_running()" s)
+     (let ((old (glassmacs-queue-submit "depends_on_long()" s)))
+       (cl-letf (((symbol-function 'interrupt-process) #'ignore))
+         (glassmacs-queue-interrupt s))
+       (should-not (glassmacs-session-paused s))
+       (gs-test--finish-running p)
+       (cl-letf (((symbol-function 'glassmacs-r--echo-submitted-command)
+                  (lambda (_process source) (push source echoed))))
+         (let ((new (glassmacs-queue-submit "after_interrupt()" s)))
+           (should (eq (glassmacs-entry-state new) 'running))
+           (should (equal echoed '("after_interrupt()")))
+           (should (equal (cdar gs-test--sent) "after_interrupt()"))
+           (should (eq (glassmacs-entry-state old) 'pending))
+           (should (glassmacs-entry-held old))
+           ;; Resume releases the held command after the new one finishes.
+           (gs-test--finish-running p)
+           (glassmacs-sessions--pump s)
+           (should (eq (glassmacs-entry-state new) 'completed))
+           (should (eq (glassmacs-entry-state old) 'pending))
+           (glassmacs-queue-resume s)
+           (should (eq (glassmacs-entry-state old) 'running))
+           (should-not (glassmacs-entry-held old))
+           (should (equal echoed '("depends_on_long()"
+                                   "after_interrupt()")))))))))
 
 
 (ert-deftest glassmacs-alpha-two-session-hundred-command-isolation ()

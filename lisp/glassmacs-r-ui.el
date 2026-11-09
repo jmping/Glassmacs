@@ -35,6 +35,10 @@
     (define-key menu [console]
       '(menu-item "Show R Console" glassmacs-r-inspect-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [resume-queue]
+      '(menu-item "Resume Queue" glassmacs-queue-resume
+                  :help "Run commands held since an interrupt"
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [interrupt]
       '(menu-item "Interrupt R" glassmacs-r-interrupt
                   :enable (glassmacs-r-ui--menu-has-session-p)))
@@ -137,6 +141,10 @@
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [graphics-test]
       '(menu-item "Plot Cars (Graphics Test)" glassmacs-r-graphics-smoke-plot
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [resume-queue]
+      '(menu-item "Resume Queue" glassmacs-queue-resume
+                  :help "Run commands held since an interrupt"
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [interrupt]
       '(menu-item "Interrupt R" glassmacs-r-interrupt
@@ -409,6 +417,10 @@ ESS's prompt and completion-cache state before calling `comint-send-input'."
     (define-key menu [stop-output]
       '(menu-item "Stop Displaying R Output"
                   glassmacs-r-stop-displaying-output
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [resume-queue]
+      '(menu-item "Resume Queue" glassmacs-queue-resume
+                  :help "Run commands held since an interrupt"
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [interrupt]
       '(menu-item "Interrupt R Computation" glassmacs-r-interrupt
