@@ -106,6 +106,32 @@ The useful question is **who controls the abstraction boundary**. A researcher m
 
 Similarly, the IDE/Unix distinction is not a binary. RStudio and Positron offer terminal, project, and remote workflows. Emacs-based editors also offer integrations. Glassmacs's differentiation is *the default relationship among the components*: explicit and independent computational processes, with optional organization layered above them.
 
+## R as a statistical application versus a statistical programming language
+
+A possible long-run shift in R's audience concerns **the frame through which users first encounter R**. An integrated IDE makes many everyday tasks feel like working inside a statistical application: load data, select or write an analysis, inspect variables and model output, generate figures, and publish a report. A modular Emacs/ESS or shell-based setup often foregrounds R as a *programming language for statistics*: write and debug estimation routines, design simulations, orchestrate multiple interpreters and operating-system processes, call compiled code, and combine software tools. In practice, both kinds of work are performed in both environments. A researcher can develop new statistical algorithms in RStudio, and an ESS user can run routine regressions. This is a contrast in interface *emphasis and learned workflow*, not a classification of users by competence.
+
+The historical interpretation worth testing is that RStudio's success expanded access to R and made a coherent R-specific workspace the default expectation for many users. At the same time, the smaller community comfortable treating editors, consoles, Unix tools, graphics devices and external jobs as distinct components became less visible in mainstream tutorials and training. **We do not have evidence that most R users stopped seeing R as a language, or that RStudio caused a measurable decline in sophisticated statistical programming.** Avoid claiming so. The proposition is about changing norms of work organization and how researchers learn their tools.
+
+The earlier base R/tidyverse discussion is related but separate. Package preferences do not determine whether a researcher writes new estimators, conducts simulations, or needs process-level control. Distinguish the *programming paradigm* of R code from the *development environment* in which it runs.
+
+### A research-community discovery effort
+
+Computational Bayesian statistics and political methodology offer a useful initial interview population because many practitioners learned to write estimators, MCMC samplers, simulation studies, or compiled-code extensions when R was commonly used through independent interpreters and Unix tools. The connection is **a plausible sampling strategy, not a claim about any scholar's current editor**.
+
+Potential first conversations include **Simon Jackman** (the creator's statistical mentor) and **Jeff Gill** (Bayesian political methodology). Their work in Bayesian methods makes them sensible contacts, but do not assume they currently use ESS, Aquamacs, Macs, or any specific IDE. Include longtime ESS/Aquamacs maintainers and contributors, and especially **younger computational researchers** using Stan/CmdStanR, NIMBLE, JAGS, Rcpp, simulations, and HPC facilities. Otherwise we would only measure nostalgia for a previous generation's working environment.
+
+Interview questions should target concrete behavior rather than endorsements:
+
+1. What editor and R execution environment do you use now, and what did you use earlier?
+2. How many independent local or remote R processes do you keep active, and how do you target them?
+3. How do you handle long-running simulations, MCMC chains, background jobs and HPC?
+4. Which features of the current environment reduce work, and which create friction?
+5. What would a modern Mac-oriented Emacs/ESS environment need to make trying or adopting it worthwhile?
+
+Record tool choice, operating system, researcher career stage, type of statistical work, pain points, and requested capabilities separately. Recruit users of RStudio, Positron, VS Code, Emacs/ESS and terminal workflows to avoid selection bias. Do not publicly imply these named people have endorsed Glassmacs, agreed to interviews, or still use earlier-generation software.
+
+The product-discovery test: is there a **present-day unmet need** for legible, independent computational processes alongside coherent editing and document management, particularly for serious methodological research? If not, the rationale remains a valid personal workflow preference rather than a demonstrated broad product niche.
+
 ## Audience and differentiators
 
 Likely strongest fit: statistical researchers developing estimators, simulations, long-running jobs, multi-model comparisons, multiple live R sessions, and mixed prose/code projects; Aquamacs users seeking a modern Mac-centered editor; Emacs/ESS users wanting better Mac-native affordances.
