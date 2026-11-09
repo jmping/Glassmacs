@@ -1,0 +1,132 @@
+---
+const title = 'R Beyond the IDE — Glassmacs';
+const description = 'Why some statistical researchers prefer independent R processes, Unix tools and ESS—and what integrated IDEs do better. A brief history of R before RStudio.';
+const repo = 'https://github.com/jmping/Glassmacs';
+---
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#101e30" />
+  <meta name="description" content={description} />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:url" content="https://glassmacs.joshpasek.com/r-beyond-the-ide/" />
+  <link rel="canonical" href="https://glassmacs.joshpasek.com/r-beyond-the-ide/" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <title>{title}</title>
+  <style>
+    :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:light dark;--bg:#f6f8fc;--ink:#182b42;--muted:#586b7f;--line:#dce5ef;--accent:#25628c;--card:#fff;--soft:#e8f2f9}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);line-height:1.75}a{color:var(--accent)}a:focus-visible{outline:3px solid #6aaedb;outline-offset:3px}
+    header,main,footer{max-width:860px;margin:auto;padding:22px 26px}header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;border-bottom:1px solid var(--line)}nav{display:flex;gap:18px;flex-wrap:wrap}
+    .eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:.78rem;font-weight:700;color:var(--accent);margin-top:54px}h1{font-size:clamp(2.7rem,6vw,4.65rem);line-height:1.07;letter-spacing:-.055em;margin:.35em 0}h2{font-size:clamp(1.6rem,3.5vw,2.15rem);letter-spacing:-.035em;line-height:1.22;margin:2.1em 0 .65em}h3{font-size:1.18rem;margin:1.4em 0 .35em}p{font-size:1.07rem}.lead{font-size:1.25rem;color:var(--muted);line-height:1.65}.pull{font-weight:700;font-size:1.25rem;border-left:4px solid var(--accent);padding:14px 24px;margin:35px 0;background:var(--soft)}
+    .timeline{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:25px 0}.milestone{padding:18px 20px;background:var(--card);border:1px solid var(--line);border-radius:12px}.milestone strong{display:block;color:var(--accent);font-size:1.3rem}.milestone p{font-size:.95rem;margin:.35em 0 0}
+    .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin:25px 0}table{width:100%;border-collapse:collapse;min-width:580px}th,td{text-align:left;vertical-align:top;padding:14px 16px;border-bottom:1px solid var(--line);font-size:.94rem}th{background:var(--soft)}tr:last-child td{border-bottom:0}
+    .notice{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:18px 23px;margin-top:24px}.notice p{margin:.4em 0}li{padding:.25em 0}footer{border-top:1px solid var(--line);margin-top:55px;color:var(--muted);font-size:.9rem}
+    @media(max-width:600px){header,main,footer{padding:18px 20px}.timeline{grid-template-columns:1fr}.eyebrow{margin-top:30px}}
+    @media(prefers-color-scheme:dark){:root{--bg:#101b2a;--ink:#ecf3fb;--muted:#b1c1d2;--line:#31455c;--accent:#8ec9f0;--card:#172638;--soft:#22394d}}
+  </style>
+</head>
+<body>
+<header><a href="/">← Glassmacs</a><nav aria-label="Page navigation"><a href="/story/">Our story</a><a href="/roadmap/">Roadmap</a><a href={repo}>GitHub</a></nav></header>
+<main>
+  <div class="eyebrow">For statistical researchers</div>
+  <h1>R beyond the IDE</h1>
+  <p class="lead">The freedom of independent R processes and Unix research tools, with the convenience of a Mac-oriented editor.</p>
+  <p>RStudio and Positron offer thoughtfully organized environments for writing code, exploring data, inspecting objects, and viewing results. That integration is valuable. But some research workflows benefit from a different relationship between the editor and the computation: the editor helps you work with R without trying to own every R process.</p>
+  <p class="pull">An organized workspace when you want one. Independent processes and direct control when you need them.</p>
+
+  <h2>R before RStudio</h2>
+  <p>R began in the early 1990s with Ross Ihaka and Robert Gentleman at the University of Auckland, building on the S language's approach to statistical programming. It developed into a free, extensible statistical computing system whose language, processes, graphics, and packages were not tied to a particular editor.</p>
+  <div class="timeline" aria-label="Milestones in R and Emacs statistical computing">
+    <div class="milestone"><strong>1989</strong><p>The S-mode ancestor of Emacs Speaks Statistics (ESS) begins, before R itself.</p></div>
+    <div class="milestone"><strong>1990s</strong><p>R develops in Auckland; Emacs statistical tooling grows to support R alongside S and S-PLUS.</p></div>
+    <div class="milestone"><strong>2000</strong><p>R 1.0.0 is released on February 29, with its language and computing environment already established.</p></div>
+    <div class="milestone"><strong>2011</strong><p>RStudio makes its first public release, bringing a coherent IDE workspace to the existing R ecosystem.</p></div>
+  </div>
+  <p>Before RStudio, researchers used consoles and terminal sessions, scripts, graphics devices, text editors, Emacs/ESS, and platform-specific R GUIs. This was not a golden age of effortless usability. RStudio solved real problems by bringing familiar activities together and making them more discoverable. But the underlying strength of R—a capable statistical computing environment independent of any one interface—remains important.</p>
+  <p>That earlier working environment could be remarkably capable—and remarkably personal. A researcher might edit R and Sweave files in Aquamacs or another Emacs build, send code to a live ESS console, use native R graphics, and move between shells, manuscript files and independently running jobs. Others used R's platform GUIs or terminal R. There was no single standard arrangement to learn or maintain.</p>
+  <p>ESS inherits an older model: edit source in one place, communicate with an actual statistical process, and inspect the results. Glassmacs brings this approach into a contemporary, document-oriented macOS application.</p>
+  <h2>How the old R workflow changed</h2>
+  <p>Aquamacs, which began in 2004, made Emacs more comfortable for Mac users by layering familiar document windows, menus and keyboard conventions over the editor and its statistical and writing tools. It became part of the working life of researchers who liked that particular combination. But small open-source applications with substantial operating-system integration face a difficult maintenance problem: changes to macOS, GNU Emacs and bundled packages have to be absorbed and tested repeatedly.</p>
+  <p>RStudio arrived with a different model in more than one sense. Its first public beta was released on <strong>February 28, 2011</strong>. Its founders described not only an open-source IDE intended to make R easier to use, but also a company that would fund its work through related services. A more coherent workspace, a clear onboarding path and sustained product development helped change what many R users expected from their tools. That is an important achievement—not a reason to disparage the IDE.</p>
+  <p>Nor did Aquamacs disappear when RStudio arrived. When original maintainer David Reitter <a href="https://groups.google.com/g/aquamacs-devel/c/4JWzwz8Ytmo">stepped down in August 2019</a>, he reported that his last check showed more than 12,000 distinct weekly users. He also described the need to update underlying components and find future maintainers. The figure is his reported measurement, not an independently verified adoption study. Aquamacs continued to have maintainers; its story is one of changing momentum and difficult stewardship, not an abrupt end.</p>
+  <p>There is no reliable count of where Aquamacs users went. Some likely embraced RStudio's organization; others stayed with Aquamacs or moved to GNU Emacs and ESS. The shift toward integrated environments and the difficulty of sustaining specialized Mac integration are plausible parts of the story, not a proven explanation of every person's choice.</p>
+  <h3>One researcher's experience</h3>
+  <p>The motivation behind Glassmacs is personal as well as technical. Its creator learned R workflows using Aquamacs and ESS during graduate school, and had seen previews of RStudio-style environments by the time of graduation in <strong>2011</strong>. But by then, working with source files, independent R processes, documents and familiar editor commands had become an established way of doing research.</p>
+  <p>Later IDEs could offer excellent new features without automatically replacing those habits. An attempt to move that workflow to Positron proved less successful than rebuilding a modern Mac-oriented Emacs environment. That experience does not establish which tool is universally better. It identifies a specific need that deserves a maintained option.</p>
+  <p><strong>R used to be assembled from interoperable tools. Integrated IDEs made that work easier to organize and teach. Glassmacs explores how to retain the earlier model's independence while bringing back the conveniences of a modern Mac application.</strong></p>
+
+  <h2>Two useful ways to organize research</h2>
+  <p>The choice is not between a powerful language and a convenient interface. It is about where organization lives, and how directly researchers can reach the computational machinery.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Research need</th><th>Integrated IDE approach</th><th>Glassmacs / ESS approach</th></tr></thead>
+    <tbody>
+      <tr><td>Workspace</td><td>Predictable source, console, plots, files, and environment panels.</td><td>Documents, windows, shells, and consoles arranged to fit the task.</td></tr>
+      <tr><td>R sessions</td><td>A central interactive session is easy to manage; additional processes are possible.</td><td>Multiple independent local consoles with explicit document-to-session targets.</td></tr>
+      <tr><td>Parallel work</td><td>Ordinary R parallel libraries work, with useful IDE tooling.</td><td>Separate R processes and long-running jobs fit naturally into the editing model.</td></tr>
+      <tr><td>Graphics</td><td>Integrated plot viewers and history are convenient.</td><td>Native R graphics devices—including Quartz on supported Macs—remain available.</td></tr>
+      <tr><td>Unix and Linux</td><td>Integrated terminals and remote workflows are available.</td><td>Emacs, shells and existing Unix tools are central; fuller remote R integration is planned.</td></tr>
+      <tr><td>Discoverability</td><td>Object browsers, data viewers, and project interfaces are easy to find.</td><td>Extensive editor commands and customization, but a steeper learning curve.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Neither approach is categorically faster or more capable. Both can run parallel R code; both can use scripts and terminals. And “unlimited processes” is not a literal promise: hardware resources, the operating system, and cluster policies always impose limits. The difference is which activities the environment treats as first-class.</p>
+
+  <h2>More than two choices</h2>
+  <p>The current landscape is not simply RStudio versus Emacs. <strong>Positron</strong> offers a modern, multilingual, integrated data-science environment. <strong>VS Code with R extensions</strong> can combine editing, R terminals, language services and remote development. <strong>JupyterLab</strong> emphasizes notebook documents and language kernels. <strong>Neovim</strong> and terminal R offer other ways to retain Unix-oriented control. The R GUI and <strong>RKWard</strong> remain options for graphical R workflows.</p>
+  <p>These tools overlap. In particular, VS Code and Positron can support multiple processes and interpreters, and ordinary R parallel libraries work in integrated IDEs. Glassmacs's proposed distinction is the combination of explicit ESS session targeting, document-first Mac behavior, and deep access to Emacs and the operating system—not exclusive ownership of any of those ideas.</p>
+  <h2>The Unix underpinnings</h2>
+  <p>macOS is Unix-based, not Linux. Its shell, filesystem, process and networking tools nonetheless connect naturally to the Linux servers and research clusters used in scientific computing. R itself can be launched as an interactive process, an <code>Rscript</code> job, a background task, or a program running remotely.</p>
+  <p>Emacs is particularly comfortable around these boundaries: source files, shell sessions, Git, LaTeX, Quarto, and external programs can coexist without being subsystems of a single IDE-managed workspace. Glassmacs builds on that foundation while making documents, menus and windows feel more like a Mac application.</p>
+  <p>Full remote R execution and cluster-aware session management are <strong>future development goals</strong>, not capabilities claimed to be production-ready today.</p>
+
+  <h2>Base R, the tidyverse, and who controls the abstraction</h2>
+  <p>There is a useful parallel with the long-running discussion between base R and the tidyverse. Base R makes much of the language's underlying machinery available directly. Tidyverse packages offer higher-level conventions that simplify and standardize many common analyses. Both have strengths, and a serious research workflow may combine them freely.</p>
+  <p>You might clean data with <code>dplyr</code>, implement an estimator with base R, distribute simulations with <code>future</code>, and plot with <code>ggplot2</code>. Nothing about that choice determines which editor you should use. The more relevant question is whether the tools leave you free to change abstraction levels when the problem calls for it.</p>
+  <p>Glassmacs is not anti-tidyverse, anti-RStudio, or anti-Positron. It is a case for keeping the underlying language, processes, graphics and research tools accessible even as conveniences are built on top.</p>
+
+  <h2>A statistical program—or a language for statistics?</h2>
+  <p>Another part of the transition concerns how people first learned to think about R. When an editor, a console, an environment browser, data viewers and plots arrive together, R can feel like a complete statistical application: a place to load data, fit models, inspect results and produce reports. The older Emacs/ESS and command-line tradition foregrounds something different: R is a programming language embedded in a larger computing environment, and the researcher can build estimators, manage independent processes, write simulations, call compiled code and connect the pieces with ordinary operating-system tools.</p>
+  <p>These are <strong>complementary ways of working</strong>, not two kinds of R user. RStudio, Positron and VS Code support substantial statistical software development; Emacs and a terminal are also perfectly suitable for routine analyses. Nor is this distinction determined by whether someone prefers base R or tidyverse packages. The question is which capabilities an interface makes prominent and how it shapes habits over time.</p>
+  <p>Integrated environments made R substantially more accessible without eliminating its roots as a language for statistical computing. Glassmacs is interested in researchers who still want the processes, the language and the surrounding tools to remain individually accessible.</p>
+
+  <h3>Listening to researchers who build statistical methods</h3>
+  <p>One way to test whether that need extends beyond an established personal workflow is to talk with computational Bayesian researchers, political methodologists, longstanding ESS/Aquamacs contributors and younger researchers using Stan, Rcpp and remote compute clusters. Conversations with people such as Bayesian methodologists Simon Jackman and Jeff Gill could be especially informative given their areas of research, but we make no claim about the software they currently use or whether they endorse Glassmacs.</p>
+  <p>Rather than ask who misses Aquamacs, the useful questions are practical: How are multiple R sessions managed today? How are long-running simulations and MCMC jobs started and monitored? What happens when work moves to a remote Linux machine? Which integrated features help, and which obscure the underlying processes? The answers should guide the design of future session navigation and project workspaces—not merely confirm the preferences of their creator.</p>
+
+  <h2>What you gain—and what you take on</h2>
+  <h3>Independent processes, long-running jobs and ordinary R behavior</h3>
+  <p>Glassmacs and ESS support independent local R consoles, with explicit links from source documents to their intended session. Ordinary R graphics devices can draw in their own native windows. These are appealing properties when comparing models, inspecting several analyses, or leaving a computation running while working elsewhere.</p>
+  <h3>Less automatic workspace management</h3>
+  <p>The tradeoff is real. A tightly integrated IDE can make it easier to discover objects, inspect a data frame, revisit plots, and understand which project is active. Independent R sessions require more attention to which objects belong where, which process is busy, and where code will execute. Emacs has substantial capabilities but asks more of users initially.</p>
+  <p>The opportunity for Glassmacs is not to reproduce every IDE panel. It is to offer <em>selective integration</em> that preserves computational independence: a session navigator, project-aware workspaces, and eventually explicit remote R targets.</p>
+
+  <h2>What is real today, and what is still being built?</h2>
+  <div class="notice">
+    <p><strong>User-observed:</strong> Prior development versions have been used on real R documents and have successfully produced native Quartz plots. Those experiences are not substitutes for repeatable acceptance tests of the latest build.</p>
+    <p><strong>Implemented, with GUI regression work remaining:</strong> local independent R consoles, explicit document-to-console links, and separate R help presentation.</p>
+    <p><strong>Still developing:</strong> comprehensive document/publishing acceptance, project-aware session navigation, remote R execution, release hardening and clean-machine distribution.</p>
+  </div>
+  <p>See the <a href={repo + '/blob/main/docs/r-workflows.md'}>R workflow guide</a>, <a href={repo + '/blob/main/docs/acceptance-matrix.md'}>acceptance evidence</a>, and <a href="/roadmap/">roadmap</a> for more exact status.</p>
+
+  <h2>For researchers who want to choose their own workflow</h2>
+  <p>Glassmacs is likely to appeal to people developing statistical methods, running simulations, working across multiple R processes, and combining analysis with writing, shells and version control. Researchers who prioritize an integrated object browser, data viewer and plot history may reasonably prefer RStudio or Positron.</p>
+  <p class="pull">Not less integration. Selective integration—with the researcher retaining control of the underlying tools.</p>
+
+  <h2>Historical sources</h2>
+  <p>The historical milestones above draw on primary project documentation and retrospective accounts:</p>
+  <ul>
+    <li><a href="https://cran.r-project.org/doc/manuals/r-devel/R-FAQ.html">The R Project: R FAQ</a> — origins and authors.</li>
+    <li><a href="https://journal.r-project.org/articles/RJ-2020-028/index.html">John Chambers, “S, R, and Data Science” (2020)</a> — the history of S and R, including the 2000 release.</li>
+    <li><a href="https://ess.r-project.org/Manual/ess.html">ESS Manual</a> — its S-mode origins and incorporation of R support.</li>
+    <li><a href="https://posit.co/blog/announcing-rstudio-v1-0">Posit: RStudio release history</a> — its February 2011 public debut.</li>
+    <li><a href="https://posit.co/blog/about-the-rstudio-project">Posit: About the RStudio Project (2011)</a> — the rationale for IDE integration and its open-source business model.</li>
+    <li><a href="https://posit.co/blog/rstudio-new-open-source-ide-for-r">Posit: RStudio announcement (February 28, 2011)</a> — the initial public beta.</li>
+    <li><a href="https://aquamacs.org/about">Aquamacs: About</a> — its Mac-specific history and maintainers.</li>
+    <li><a href="https://groups.google.com/g/aquamacs-devel/c/4JWzwz8Ytmo">David Reitter: stepping down as Aquamacs maintainer (2019)</a> — contemporary remarks on adoption and stewardship.</li>
+  </ul>
+</main>
+<footer>Glassmacs is an independent, experimental project. Not affiliated with RStudio, Positron, or Aquamacs. · <a href="/provenance/">Documentation provenance</a> · <a href="/">Home</a></footer>
+</body></html>
