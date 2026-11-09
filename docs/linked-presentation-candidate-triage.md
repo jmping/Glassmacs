@@ -7,7 +7,40 @@
 > **Coverage:** Local candidate at 6add723, failed ERT assertions, GUI evidence, follow-up gates  
 > **Supersedes:** None
 
-## Acceptance decision: BLOCKED
+## Candidate 7cc8898 — local verification (2026-11-08)
+
+**Acceptance decision: BLOCKED pending hands-on GUI acceptance.** This section records a new candidate; the 6add723 record below remains historical.
+
+- Exact SHA: `7cc8898a9703dcb5dc23a0f072e8aa8c25fb01e1`, clean detached checkout of `integration/linked-window-presentations`.
+- Environment: macOS 27.0.1 (26A434), arm64, Xcode 27.2, R 4.6.2, bundled Emacs 31.1 and ESS 26.5.0. Dedicated Glassmacs homes and XDG data/cache were used; runtime native compilation remained disabled by existing app policy. The installed app was not replaced.
+- Built with `scripts/build-macos-app`, validated with `scripts/validate-macos-app`, and archived using `ditto`. The ad-hoc-signed development ZIP is **not notarized**. ZIP SHA-256: `b49db35c45256214f43d3b63fcf1483587066a69e9ba7dc66b784c6bf549442a`.
+- Local bundled-Emacs ERT: **473 run, 455 expected, 0 unexpected, 18 skipped**, exit 0. CI [42555173713](https://github.com/jmping/Glassmacs/actions/runs/42555173713) logs report 0 unexpected in all three ERT jobs: Ubuntu batch 440 expected/33 skipped, ESS/R 472 expected/1 skipped, and macOS launcher 440 expected/33 skipped. The separate Cloudflare website check failed.
+- Full packaged GUI harness, with the repository's compiled AX probe configured: **13 PASS, 1 FAIL, 2 NOT RUN**. The raw failure is `dynamic-menu-shortcut-labels`, because System Events could not find the menu bar. Direct Accessibility inspection did enumerate the File menu and observed labels including `New Document` (`s-n`) and `Close Document` (`s-w`); this partial inspection is **not** a full verification of all dynamic labels or profiles, and the raw harness result remains unchanged. NOT RUN: user Emacs-init isolation (existing init files were not replaced), and package-offer decline (ESS is bundled). No new crash reports were reported.
+- The native quit-dialog scenario **passed** with the AX probe. Some keyboard scenarios used System Events; native close-button events in the harness were simulated as Cocoa delete-frame events. Driver-mode tests are not physical interaction.
+- Additional GUI driver checks opened documents in separate frames and tabs, started distinct R processes in two separate frames with the source intact, selected a source target, displayed two distinct R help topics in separate frames, and found that a sample imenu index excluded a commented-out function. An R Quartz device was reported; visible rendering, focus and placement were not verified.
+- The requested interrupt/resume sequence was exercised through the GUI **driver**, not actual menu clicks: `Sys.sleep(30)` ran, the old command was queued, interrupt held it, a new command ran before it, and the message reported `1 command(s) ... held`; resume then ran the old command. Physical R menu dispatch, actual typing and visual echo remain unverified.
+
+### Hands-on matrix status
+
+The following are **manual acceptance statuses**, not claims based on the automated results above. No GUI-01–GUI-22 row was completed by real end-to-end manual interaction in this run.
+
+| Rows | Manual status | Partial automated evidence / outstanding work |
+| --- | --- | --- |
+| GUI-01–03 | UNVERIFIED | Launch, distinct document views and frame/tab policy exercised by harness/driver; inactive-tab chooser and full gestures remain. |
+| GUI-04 | UNVERIFIED | New view, move, split and undo require manual exercise. |
+| GUI-05–07 | UNVERIFIED | Two independent R processes and one explicit target verified via driver; toolbar clicks, two document links and cross-session execution remain. |
+| GUI-08–10 | UNVERIFIED | Prompt/cancel, stale target and actual mixed-document chunk workflow remain. |
+| GUI-11 | UNVERIFIED | Driver saw two distinct help buffers in separate frames; actual user interactions and visual presentation remain. |
+| GUI-12–13 | UNVERIFIED | Help side placement and Preferences presentation need manual exercise. |
+| GUI-14–16 | UNVERIFIED | Harness exercised Command-W and native quit prompt, but not the complete dirty-tab, red-button and close-versus-quit matrix. |
+| GUI-17 | UNVERIFIED | Harness simulated close and used a Dock click; physical red-button close and full manual outcome remain. |
+| GUI-18–20 | UNVERIFIED | Limited crash recovery passed; shared-document close, selected tab, dirty recovery content and malformed input remain. |
+| GUI-21 | UNVERIFIED | Direct AX saw some File menu labels; physical toolbar and mode-line clicks and full menu inspection remain. |
+| GUI-22 | UNVERIFIED | Driver's sample imenu omitted a commented function; actual contextual object-menu presentation remains. |
+
+Neither the two interrupt menu interactions nor the mode-line document-name click was performed physically. They must not be considered manual passes. Preserve logs and `gui-acceptance/results.json` for the tested SHA; no source fix or merge is implied by these results.
+
+## Historical candidate 6add723 — acceptance decision: BLOCKED
 
 This record transcribes the local Mac findings from [PR #98 comment 6728988129](https://github.com/jmping/Glassmacs/pull/98#issuecomment-6728988129) into a versioned repository artifact. The detailed original evidence remains on the operator's Mac at `/tmp/glassmacs-pr98-6add723/build/candidate-pr98/evidence/` (`issues.md`, `manual-matrix.md`, logs and screenshots). **Those local files were not uploaded to GitHub by this commit**; the PR comment is the authoritative full reproduction report until the evidence bundle is attached.
 
