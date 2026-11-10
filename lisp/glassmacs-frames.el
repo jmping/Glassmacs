@@ -3,6 +3,8 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'glassmacs-presentation-model)
+(require 'glassmacs-dialogs)
+(require 'glassmacs-sessions)
 
 (defgroup glassmacs-frames nil
   "Document opening behavior for Glassmacs."
@@ -180,7 +182,8 @@ mode-line document click relies on that."
 INTENT is one of open, focus, new-view, move, split, tab, or replace.
 An open or focus operation reuses only a suitable visible view of BUFFER.
 PLACEMENT defaults to the document opening policy; DESTINATION is an
-explicit frame for intentional consolidation.  This API does not advise Emacs primitives."
+explicit frame for intentional consolidation.  This API does not advise
+Emacs primitives."
   (unless (buffer-live-p buffer)
     (user-error "Cannot present a dead buffer"))
   (let* ((intent (or intent 'open))
@@ -353,10 +356,10 @@ while another tab still owns a view of that buffer."
        (frame-list))))
 
 (defcustom glassmacs-confirm-console-window-close t
-  "Ask before hiding the last visible window of a live R console.
-Hiding the window leaves the R process, pending work, command history,
-and console buffer intact.  Explicit session termination is a separate
-command and requires its own confirmation."
+  "Ask what to do when the last visible window of a live R console closes.
+The choices are Keep R Running (close only the window, leaving the R
+process, queue, history and console buffer intact), Terminate R, or
+Cancel.  When nil, closing the window always keeps R running."
   :type 'boolean
   :group 'glassmacs-frames)
 
@@ -368,27 +371,92 @@ command and requires its own confirmation."
               (let ((process (get-buffer-process buffer)))
                 (and (processp process) (process-live-p process)))))))
 
-(defun glassmacs--confirm-console-windows-close (windows)
-  "Confirm hiding live R consoles whose last visible view is in WINDOWS.
-This never terminates R.  An explicit Cancel aborts the frame/window
-close; closing one of several console views needs no confirmation."
+(defvar glassmacs--console-terminations :none
+  "R sessions to terminate once the current close succeeds.
+`glassmacs--close-reviewed' binds this to a list; outside such a close
+it is `:none', and a Terminate decision terminates at once.")
+
+(defun glassmacs--console-session (buffer)
+  "Return the registered R session of console BUFFER, or nil."
+  (when-let* ((process (get-buffer-process buffer)))
+    (or (glassmacs-sessions-find process)
+        (progn (glassmacs-sessions-refresh)
+               (glassmacs-sessions-find process)))))
+
+(defun glassmacs--console-close-decision (buffer)
+  "Ask what closing the last view of live R console BUFFER should do.
+Return `keep', `terminate' or `cancel'.  Terminating a session that is
+running or has queued work needs a second, explicit confirmation.  A
+dismissed dialog, quit or error is `cancel': it must never close the only
+view of a live R process, let alone end that process."
+  (let* ((session (glassmacs--console-session buffer))
+         (name (if session (glassmacs-sessions--label session) (buffer-name buffer)))
+         (status (if session
+                     (glassmacs-sessions-status-text session)
+                   (format "%s is running." name)))
+         (choice
+          (glassmacs-dialog-choose
+           (format "Close the R console for %s?" name)
+           '((keep "Keep R Running" :key ?k :default t
+                   :description "Close this window; R and its queue keep running")
+             (cancel "Cancel" :key ?c :cancel t
+                     :description "Keep this R console window open")
+             (terminate "Terminate R" :key ?t :destructive t
+                        :description "End the R process and close the window"))
+           (concat status "\n\nKeep R Running closes only the window; reopen it "
+                   "from R > Show R Console.  Terminate R ends the process, and R "
+                   "objects that are not saved are lost."))))
+    (if (and (eq choice 'terminate)
+             session
+             (glassmacs-r--session-at-risk-p session)
+             (not (eq (glassmacs-dialog-choose
+                       (format "%s is still working.  Terminate it anyway?" name)
+                       '((terminate "Terminate R" :key ?t :destructive t
+                                    :description "End R now")
+                         (cancel "Cancel" :key ?c :cancel t :default t
+                                 :description "Keep R and this window"))
+                       (concat status "\n\nThe running command is recorded as "
+                               "uncertain and queued commands are not run."))
+                      'terminate)))
+        'cancel
+      choice)))
+
+(defun glassmacs--terminate-console-session (buffer)
+  "Terminate console BUFFER's R process, now or when the close succeeds."
+  (if (listp glassmacs--console-terminations)
+      (push buffer glassmacs--console-terminations)
+    (glassmacs--terminate-consoles (list buffer))))
+
+(defun glassmacs--terminate-consoles (buffers)
+  "Terminate the R processes of console BUFFERS, already confirmed."
+  (dolist (buffer buffers)
+    (if-let* ((session (glassmacs--console-session buffer)))
+        (glassmacs-sessions-kill session)
+      (when-let* ((process (get-buffer-process buffer)))
+        (delete-process process)))))
+
+(defun glassmacs--review-console-close (buffers)
+  "Decide for each live R console in BUFFERS whose last view is closing.
+Return nil if any decision is Cancel.  Terminations wait for the close
+to succeed (see `glassmacs--console-terminations')."
   (catch 'cancel
-    (dolist (buffer (delete-dups (mapcar #'window-buffer windows)) t)
-      (when (and glassmacs-confirm-console-window-close
-                 (glassmacs--live-r-console-p buffer)
-                 (not (glassmacs--buffer-shown-elsewhere-p buffer windows)))
-        (unless (eq
-                 (condition-case nil
-                     (car (read-multiple-choice
-                           (format "Hide R console %s? The R session keeps running. "
-                                   (buffer-name buffer))
-                           '((?h "hide" "Hide this window; keep R running")
-                             (?c "cancel" "Keep this R console window open"))))
-                   ;; A dismissed dialog, keyboard quit, or UI error must
-                   ;; never close the only visible view of a live R process.
-                   ((quit error) ?c))
-                 ?h)
-          (throw 'cancel nil))))))
+    (dolist (buffer buffers t)
+      (when glassmacs-confirm-console-window-close
+        (pcase (glassmacs--console-close-decision buffer)
+          ('keep nil)
+          ('terminate (glassmacs--terminate-console-session buffer))
+          (_ (throw 'cancel nil)))))))
+
+(defun glassmacs--confirm-console-windows-close (windows)
+  "Decide about live R consoles whose last visible view is in WINDOWS.
+Closing one of several views of a console needs no decision.  An
+explicit Cancel aborts the frame or window close."
+  (glassmacs--review-console-close
+   (cl-remove-if-not
+    (lambda (buffer)
+      (and (glassmacs--live-r-console-p buffer)
+           (not (glassmacs--buffer-shown-elsewhere-p buffer windows))))
+    (delete-dups (mapcar #'window-buffer windows)))))
 
 (defun glassmacs--close-documents-in-windows (windows)
   "Close documents exclusive to WINDOWS, with all decisions made first.
@@ -470,6 +538,18 @@ SCOPE is `view', `tab', or `frame'.  TARGET is a window for `view'
 or a frame for the other scopes.  Return non-nil only on success.
 The native frame-close handler uses `frame' to review, but leaves the
 actual Cocoa frame deletion to its caller."
+  (if (listp glassmacs--console-terminations)
+      ;; Nested (a tab close delegating to a view close): the outer close
+      ;; terminates consoles once it succeeds.
+      (glassmacs--close-reviewed-1 scope target)
+    (let* ((glassmacs--console-terminations nil)
+           (result (glassmacs--close-reviewed-1 scope target)))
+      (when result
+        (glassmacs--terminate-consoles glassmacs--console-terminations))
+      result)))
+
+(defun glassmacs--close-reviewed-1 (scope target)
+  "Review and close SCOPE at TARGET for `glassmacs--close-reviewed'."
   (pcase scope
     ('view
      (let ((window (or target (selected-window))))
@@ -545,7 +625,8 @@ Restore the original tab even if a tab-selection hook signals an error."
 (defun glassmacs--review-frame-tab-buffers (frame buffers)
   "Review BUFFERS from all tabs before closing FRAME.
 All cancelable decisions precede document kills.  Saving a document
-may write to disk before a later cancellation; no R process is killed."
+may write to disk before a later cancellation.  An R process is ended
+only by an explicit, confirmed Terminate R, after the close succeeds."
   (let ((documents (cl-remove-if-not
                     (lambda (buffer)
                       (and (glassmacs--ordinary-document-buffer-p buffer)
@@ -560,17 +641,8 @@ may write to disk before a later cancellation; no R process is killed."
                    buffers))
         discard)
     (if (catch 'cancel
-            (dolist (buffer (if glassmacs-confirm-console-window-close
-                                consoles nil))
-              (unless (eq (condition-case nil
-                              (car (read-multiple-choice
-                                    (format "Hide R console %s? R keeps running. "
-                                            (buffer-name buffer))
-                                    '((?h "hide" "Keep R running")
-                                      (?c "cancel" "Keep window open"))))
-                            ((quit error) ?c))
-                          ?h)
-                (throw 'cancel t)))
+            (unless (glassmacs--review-console-close consoles)
+              (throw 'cancel t))
             (dolist (buffer documents)
               (when (buffer-modified-p buffer)
                 (pcase (condition-case nil

@@ -80,16 +80,48 @@ Remote files, R consoles and other processes are never reopened."
     (when (bound-and-true-p desktop-save-mode)
       (desktop-save-mode -1))))
 
+(defconst glassmacs-workspace-restore-once-file-name "workspace.restore-once"
+  "Marker asking the next start to reopen the saved workspace once.
+Written when you choose Save Session State & Quit with the reopen
+preference off.")
+
+(defun glassmacs-workspace--restore-once-file ()
+  "Return the path of the one-time restore marker."
+  (expand-file-name glassmacs-workspace-restore-once-file-name glassmacs-home))
+
+(defun glassmacs-workspace-save-for-next-launch ()
+  "Save the open windows and files so the next start reopens them.
+With `glassmacs-restore-workspace' off, the next start reopens them once
+and the preference is left unchanged.  R consoles are never saved."
+  (glassmacs-workspace--configure)
+  (desktop-save desktop-dirname t)
+  (unless glassmacs-restore-workspace
+    (with-temp-file (glassmacs-workspace--restore-once-file)
+      (insert "Reopen the saved workspace at the next start, once.\n"))))
+
+(defun glassmacs-workspace-forget ()
+  "Remove the saved workspace so the next start opens no previous windows."
+  (glassmacs-workspace--configure)
+  (let ((file (expand-file-name desktop-base-file-name desktop-dirname))
+        (marker (glassmacs-workspace--restore-once-file)))
+    (when (file-exists-p file) (delete-file file))
+    (when (file-exists-p marker) (delete-file marker))))
+
 (defun glassmacs-workspace-restore-at-startup ()
   "Reopen the previous session's windows and files, once per session.
-Does nothing unless `glassmacs-restore-workspace' is set, and never in
-batch sessions."
-  (when (and glassmacs-restore-workspace
-             (not noninteractive)
-             (not glassmacs-workspace--restored))
-    (setq glassmacs-workspace--restored t)
-    (glassmacs-workspace-apply)
-    (desktop-read desktop-dirname)))
+Does nothing unless `glassmacs-restore-workspace' is set or the previous
+quit asked for a one-time restore, and never in batch sessions."
+  (let ((once (and (boundp 'glassmacs-home)
+                   (file-exists-p (glassmacs-workspace--restore-once-file)))))
+    (when (and (or glassmacs-restore-workspace once)
+               (not noninteractive)
+               (not glassmacs-workspace--restored))
+      (setq glassmacs-workspace--restored t)
+      (when once
+        (delete-file (glassmacs-workspace--restore-once-file)))
+      (glassmacs-workspace--configure)
+      (glassmacs-workspace-apply)
+      (desktop-read desktop-dirname))))
 
 (defun glassmacs-toggle-restore-workspace ()
   "Toggle and persist reopening windows and files at startup."

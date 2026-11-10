@@ -351,7 +351,7 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
               ((symbol-function 'glassmacs--buffer-shown-elsewhere-p)
                (lambda (&rest _) nil))
               ((symbol-function 'read-multiple-choice)
-               (lambda (&rest _) '(?h "hide"))))
+               (lambda (&rest _) '(?k "Keep R Running"))))
       (should (glassmacs--confirm-console-windows-close
                (list (selected-window)))))))
 

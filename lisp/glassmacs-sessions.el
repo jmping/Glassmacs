@@ -16,6 +16,7 @@
 (require 'project)
 (require 'subr-x)
 (require 'glassmacs-presentation-model)
+(require 'glassmacs-dialogs)
 
 (defgroup glassmacs-sessions nil
   "R session registry and command queue."
@@ -40,6 +41,8 @@
   id process buffer name directory display-label
   (state 'ready)                        ; ready, terminated
   (paused nil)
+  ;; Why PAUSED is set, in words shown to the user; never nil while paused.
+  (pause-reason nil)
   (entries nil)                         ; all entries, oldest first
   started-at ended-at)
 
@@ -118,6 +121,12 @@ nil keeps every record."
   :type '(choice (const :tag "Unlimited" nil) natnum)
   :group 'glassmacs-sessions)
 
+(defvar glassmacs-queue-changed-functions nil
+  "Abnormal hook run with a session id after its queue or state changes.
+Every queue transition is recorded through `glassmacs-sessions--record',
+so observers such as the queue inspector see exactly what the history
+records.  Observers must not change the queue.")
+
 (defun glassmacs-sessions--record (kind &rest plist)
   "Record a history event of KIND with PLIST and a timestamp.
 Trim the history to `glassmacs-sessions-history-limit' events."
@@ -129,7 +138,10 @@ Trim the history to `glassmacs-sessions-history-limit' events."
     ;; The history is newest-first, so dropping the tail drops the oldest.
     (setq glassmacs-sessions--history
           (take glassmacs-sessions-history-limit
-                glassmacs-sessions--history))))
+                glassmacs-sessions--history)))
+  (when-let* ((id (plist-get plist :session)))
+    (with-demoted-errors "Glassmacs queue observer: %S"
+      (run-hook-with-args 'glassmacs-queue-changed-functions id))))
 
 (defun glassmacs-sessions-history ()
   "Return the execution history, oldest first."
@@ -143,6 +155,32 @@ Trim the history to `glassmacs-sessions-history-limit' events."
 (defun glassmacs-sessions--process-busy-p (process)
   "Return non-nil when ESS marks PROCESS busy."
   (process-get process 'busy))
+
+(defun glassmacs-sessions--continuation-p (process)
+  "Whether R in PROCESS is waiting for the rest of an incomplete expression.
+ESS sets the `sec-prompt' property, but it reads the secondary-prompt
+variable in whichever buffer is current when output arrives, so the
+flag is missed unless that happens to be an R buffer.  Also accept a
+console line that holds only R prompts and ends with the continuation
+prompt, such as \"+ \" or \"> + \"."
+  (or (process-get process 'sec-prompt)
+      (let ((buffer (process-buffer process)))
+        (and (buffer-live-p buffer)
+             (with-current-buffer buffer
+               (let* ((secondary (regexp-quote
+                                  (or (bound-and-true-p inferior-ess-secondary-prompt) "+ ")))
+                      (primary (regexp-quote
+                                (or (bound-and-true-p inferior-ess-primary-prompt) "> ")))
+                      (mark (process-mark process)))
+                 (and (marker-position mark)
+                      (let ((case-fold-search nil))
+                        (string-match-p
+                         (concat "\\`\\(?:" primary "\\|" secondary "\\)*"
+                                 secondary "\\'")
+                         ;; `pos-bol' ignores comint's prompt fields.
+                         (buffer-substring-no-properties
+                          (save-excursion (goto-char mark) (pos-bol))
+                          mark))))))))))
 
 (defcustom glassmacs-r-echo-submitted-commands t
   "Whether to show source-submitted R commands in their console transcript."
@@ -290,6 +328,41 @@ R continues running and ESS continues consuming its process output."
       (glassmacs-queue--hold-pending session)
       (interrupt-process process))))
 
+(defun glassmacs-r--session-at-risk-p (session)
+  "Whether terminating SESSION would cut off running or queued work."
+  (or (glassmacs-queue-running session)
+      (glassmacs-queue-pending session)
+      (glassmacs-sessions--process-busy-p (glassmacs-session-process session))))
+
+(defun glassmacs-r-confirm-terminate (session)
+  "Ask, natively where possible, whether to terminate SESSION.
+Return non-nil only on an explicit Terminate.  Batch sessions cannot
+confirm, so they signal a `user-error' rather than terminating R."
+  (when noninteractive
+    (user-error "Terminating an R session requires interactive confirmation"))
+  (eq (glassmacs-dialog-choose
+       (format "Terminate R session %s?" (glassmacs-sessions--label session))
+       '((terminate "Terminate R" :key ?t :destructive t
+                    :description "End the R process now")
+         (cancel "Cancel" :key ?c :cancel t :default t
+                 :description "Keep R running"))
+       (concat (glassmacs-sessions-status-text session) "\n\n"
+               "R objects that are not saved are lost.  A running command is "
+               "recorded as uncertain and queued commands are kept as orphaned "
+               "records; nothing is replayed."))
+      'terminate))
+
+(defun glassmacs-sessions-kill (session)
+  "Terminate SESSION's R process without asking; callers must confirm.
+Queue records are preserved: see `glassmacs-sessions--terminate'."
+  (let ((process (glassmacs-session-process session)))
+    (setf (glassmacs-session-paused session) t
+          (glassmacs-session-pause-reason session) "the R session was terminated")
+    (when (process-live-p process)
+      (delete-process process))
+    (glassmacs-sessions--terminate session)
+    (message "Terminated R session %s" (glassmacs-session-id session))))
+
 (defun glassmacs-r-terminate-session (&optional session)
   "Terminate SESSION after explicit confirmation, preserving queue records."
   (interactive)
@@ -297,15 +370,8 @@ R continues running and ESS continues consuming its process output."
          (process (glassmacs-session-process session)))
     (unless (glassmacs-sessions--process-live-p process)
       (user-error "R session %s is not live" (glassmacs-session-id session)))
-    (when (or (and (not noninteractive)
-                   (yes-or-no-p
-                    (format "Terminate R session %s? Running work becomes uncertain and pending commands are orphaned. "
-                            (glassmacs-session-id session))))
-              (and noninteractive
-                   (user-error "Terminating an R session requires interactive confirmation")))
-      (setf (glassmacs-session-paused session) t)
-      (delete-process process)
-      (message "Terminated R session %s" (glassmacs-session-id session)))))
+    (when (glassmacs-r-confirm-terminate session)
+      (glassmacs-sessions-kill session))))
 
 (defun glassmacs-sessions-find (id-or-process)
   "Return the session for ID-OR-PROCESS, or nil."
@@ -996,17 +1062,23 @@ when no live target exists or SOURCE is blank."
       (glassmacs-queue--report-waiting session entry)
       entry)))
 
+(defconst glassmacs-queue--resume-hint
+  "choose R > Resume Queue, or the Queue button"
+  "Where to resume a queue; both are present in every Glassmacs frame.")
+
 (defun glassmacs-queue--report-waiting (session entry)
   "Explain why ENTRY is not running, so a held queue is never silent."
   (let ((held (length (glassmacs-queue-held session))))
     (cond
      ((and (glassmacs-session-paused session)
            (eq (glassmacs-entry-state entry) 'pending))
-      (message "R session %s is paused; %s is queued.  Use R > Resume Queue to run it"
-               (glassmacs-session-id session) (glassmacs-entry-id entry)))
+      (message "R session %s is paused (%s); %s is queued.  To run it, %s"
+               (glassmacs-session-id session)
+               (or (glassmacs-session-pause-reason session) "paused")
+               (glassmacs-entry-id entry) glassmacs-queue--resume-hint))
      ((> held 0)
-      (message "%d command(s) queued before the interrupt in %s are held; use R > Resume Queue to run them"
-               held (glassmacs-session-id session))))))
+      (message "%d command(s) queued before the interrupt in %s are held.  To run them, %s"
+               held (glassmacs-session-id session) glassmacs-queue--resume-hint)))))
 
 (defun glassmacs-sessions--finish (entry state reason)
   (setf (glassmacs-entry-state entry) state
@@ -1025,16 +1097,20 @@ when no live target exists or SOURCE is blank."
        ((not (glassmacs-sessions--process-busy-p process))
         (glassmacs-sessions--finish running 'completed "R returned to its prompt")
         (setq running nil))
-       ((process-get process 'sec-prompt)
+       ((glassmacs-sessions--continuation-p process)
         (glassmacs-sessions--finish
          running 'uncertain "R is at a continuation prompt (incomplete expression?)")
-        (setf (glassmacs-session-paused session) t))))
+        (glassmacs-sessions--pause
+         session (format "R is waiting for the rest of an incomplete expression after %s"
+                         (glassmacs-entry-id running))))))
     (cond
      ((not (glassmacs-sessions--process-live-p process))
       (glassmacs-sessions--terminate session))
      ((and (not (glassmacs-queue-running session))
            (not (glassmacs-session-paused session))
-           (not (glassmacs-sessions--process-busy-p process)))
+           (not (glassmacs-sessions--process-busy-p process))
+           ;; Never send a command into an unfinished expression.
+           (not (glassmacs-sessions--continuation-p process)))
       (when-let* ((next (car (glassmacs-queue--dispatchable session))))
         (setf (glassmacs-entry-state next) 'running
               (glassmacs-entry-started-at next) (current-time))
@@ -1049,7 +1125,8 @@ when no live target exists or SOURCE is blank."
            ;; A failed send may or may not have reached R: stop the queue and
            ;; keep the snapshot rather than retrying or dropping it.
            (glassmacs-sessions--finish next 'failed (error-message-string err))
-           (setf (glassmacs-session-paused session) t)
+           (glassmacs-sessions--pause
+            session (format "sending %s failed" (glassmacs-entry-id next)))
            (message "Glassmacs: sending %s to R failed: %s"
                     (glassmacs-entry-id next) (error-message-string err)))))))))
 
@@ -1077,24 +1154,169 @@ when no live target exists or SOURCE is blank."
     (cancel-timer glassmacs-sessions--timer))
   (setq glassmacs-sessions--timer nil))
 
+(defun glassmacs-sessions--pause (session reason)
+  "Pause SESSION for REASON, a phrase shown to the user, and record it."
+  (setf (glassmacs-session-paused session) t
+        (glassmacs-session-pause-reason session) reason)
+  (glassmacs-sessions--record :paused :session (glassmacs-session-id session)
+                              :reason reason))
+
+(defun glassmacs-queue--interactive-session ()
+  "Return the session a queue command applies to.
+Prefer the queue inspector's session, then normal resolution."
+  (if-let* ((id (bound-and-true-p glassmacs-queue-inspector--session-id)))
+      (or (glassmacs-sessions-find id)
+          (user-error "This R session is no longer registered"))
+    (glassmacs-sessions-resolve)))
+
 (defun glassmacs-queue-pause (session)
-  "Pause SESSION so no further pending commands are dispatched."
-  (interactive (list (glassmacs-sessions-resolve)))
-  (setf (glassmacs-session-paused session) t)
-  (glassmacs-sessions--record :paused :session (glassmacs-session-id session)))
+  "Pause SESSION so no further pending commands are dispatched.
+A running command continues; Resume Queue continues the rest."
+  (interactive (list (glassmacs-queue--interactive-session)))
+  (glassmacs-sessions--pause session "paused by you")
+  (when (called-interactively-p 'interactive)
+    (message "Paused the queue for %s; %d command(s) waiting.  To continue, %s"
+             (glassmacs-session-id session)
+             (length (glassmacs-queue-pending session))
+             glassmacs-queue--resume-hint)))
+
+(defvar glassmacs-queue-resume-continuation-function #'interrupt-process
+  "Function that cancels R's incomplete input before a resume.
+It receives the R process.  An interrupt at R's continuation prompt
+discards only the unfinished expression; R keeps running.")
+
+(defun glassmacs-queue--clear-continuation (session)
+  "Offer to discard R's unfinished expression in SESSION.
+Return non-nil when R is not at a continuation prompt or the user
+chose to cancel that input; nil leaves the queue paused."
+  (let ((process (glassmacs-session-process session)))
+    (or (not (glassmacs-sessions--continuation-p process))
+        (when (eq (glassmacs-dialog-choose
+                   (format "R session %s is waiting for the rest of an incomplete expression."
+                           (glassmacs-sessions--label session))
+                   '((clear "Cancel Incomplete Input & Resume" :key ?r :default t
+                            :description "Interrupt only the unfinished input, then resume")
+                     (cancel "Keep Paused" :key ?c :cancel t
+                             :description "Leave R and the queue as they are"))
+                   (concat "Queued commands would otherwise be appended to that "
+                           "unfinished expression.  Cancelling it sends R an "
+                           "interrupt, which discards only the incomplete input."))
+                  'clear)
+          (funcall glassmacs-queue-resume-continuation-function process)
+          ;; Keep dispatch blocked until ESS reports R's next prompt.
+          (process-put process 'sec-prompt t)
+          t))))
 
 (defun glassmacs-queue-resume (session)
-  "Resume dispatching pending commands for a live SESSION."
-  (interactive (list (glassmacs-sessions-resolve)))
+  "Resume dispatching pending commands for a live SESSION.
+This also releases commands held since an interrupt.  If R is waiting
+for the rest of an incomplete expression, offer to cancel that input
+first instead of appending queued commands to it."
+  (interactive (list (glassmacs-queue--interactive-session)))
   (unless (eq (glassmacs-session-state session) 'ready)
     (user-error "R session %s has terminated; its commands are not replayed"
                 (glassmacs-session-id session)))
-  (setf (glassmacs-session-paused session) nil)
-  (dolist (entry (glassmacs-queue-pending session))
-    (setf (glassmacs-entry-held entry) nil))
-  (glassmacs-sessions--record :resumed :session (glassmacs-session-id session))
-  (glassmacs-sessions--pump session)
-  (glassmacs-sessions--ensure-timer))
+  (if (not (glassmacs-queue--clear-continuation session))
+      (progn (message "The queue for %s stays paused" (glassmacs-session-id session))
+             nil)
+    (setf (glassmacs-session-paused session) nil
+          (glassmacs-session-pause-reason session) nil)
+    (dolist (entry (glassmacs-queue-pending session))
+      (setf (glassmacs-entry-held entry) nil))
+    (glassmacs-sessions--record :resumed :session (glassmacs-session-id session))
+    (glassmacs-sessions--pump session)
+    (glassmacs-sessions--ensure-timer)
+    (when (called-interactively-p 'interactive)
+      (message "Resumed the queue for %s" (glassmacs-session-id session)))
+    t))
+
+(defun glassmacs-queue-clear-and-resume (session)
+  "Remove all of SESSION's pending commands after confirmation, then resume.
+Declining the removal leaves the queue exactly as it was."
+  (interactive (list (glassmacs-queue--interactive-session)))
+  (let ((pending (glassmacs-queue-pending session)))
+    (when (or (null pending)
+              (glassmacs-queue--remove-entries pending "Clear queue and resume"))
+      (glassmacs-queue-resume session))))
+
+(defun glassmacs-queue-move (entry offset)
+  "Move pending ENTRY OFFSET places among its session's pending commands.
+Negative OFFSET runs it sooner.  Only pending commands are reordered;
+running and finished records keep their place.  Return the new position."
+  (unless (and entry (eq (glassmacs-entry-state entry) 'pending))
+    (user-error "Only pending commands can be reordered"))
+  (let* ((session (glassmacs-sessions-find (glassmacs-entry-session-id entry)))
+         (pending (glassmacs-queue-pending session))
+         (old (cl-position entry pending))
+         (new (max 0 (min (1- (length pending)) (+ old offset)))))
+    (unless (= old new)
+      (let* ((order (let ((rest (remq entry pending)))
+                      (append (take new rest) (list entry) (nthcdr new rest))))
+             (cursor order))
+        ;; Write the new pending order back into the pending slots only.
+        (setf (glassmacs-session-entries session)
+              (mapcar (lambda (e)
+                        (if (eq (glassmacs-entry-state e) 'pending)
+                            (prog1 (car cursor) (setq cursor (cdr cursor)))
+                          e))
+                      (glassmacs-session-entries session))))
+      (glassmacs-sessions--record
+       :reordered :entry (glassmacs-entry-id entry)
+       :session (glassmacs-session-id session)
+       :from (1+ old) :to (1+ new)))
+    (1+ new)))
+
+;;; Status (one description shared by menus, the inspector and dialogs)
+
+(defun glassmacs-sessions--label (session)
+  "Return SESSION's user-facing name."
+  (or (glassmacs-session-display-label session)
+      (glassmacs-session-id session)))
+
+(defun glassmacs-sessions-status (session)
+  "Return SESSION's state as a plist without changing anything.
+:state is one of `terminated', `paused', `running', `busy' (R has not
+returned to its prompt, for example after typed input or an interrupt),
+`continuation' or `idle'.
+Also :running (the running entry), :pending, :held and :reason."
+  (let* ((process (glassmacs-session-process session))
+         (live (glassmacs-sessions--process-live-p process))
+         (running (glassmacs-queue-running session)))
+    (list :state (cond
+                  ((or (eq (glassmacs-session-state session) 'terminated)
+                       (not live))
+                   'terminated)
+                  ((glassmacs-session-paused session) 'paused)
+                  (running 'running)
+                  ((glassmacs-sessions--continuation-p process) 'continuation)
+                  ((glassmacs-sessions--process-busy-p process) 'busy)
+                  (t 'idle))
+          :running running
+          :pending (length (glassmacs-queue-pending session))
+          :held (length (glassmacs-queue-held session))
+          :reason (glassmacs-session-pause-reason session))))
+
+(defun glassmacs-sessions-status-text (session)
+  "Describe SESSION's process and queue state in one sentence."
+  (let* ((status (glassmacs-sessions-status session))
+         (pending (plist-get status :pending))
+         (held (plist-get status :held))
+         (queued (cond ((zerop pending) "nothing is queued")
+                       ((zerop held) (format "%d command%s queued" pending
+                                             (if (= pending 1) " is" "s are")))
+                       (t (format "%d command%s queued (%d held since an interrupt)"
+                                  pending (if (= pending 1) " is" "s are") held)))))
+    (format "%s %s; %s."
+            (glassmacs-sessions--label session)
+            (pcase (plist-get status :state)
+              ('terminated "has terminated")
+              ('paused (format "is paused (%s)" (plist-get status :reason)))
+              ('running (format "is running %s"
+                                (glassmacs-entry-id (plist-get status :running))))
+              ('continuation "is waiting for the rest of an incomplete expression")
+              ('busy "is busy and has not yet returned to its prompt")
+              (_ "is idle"))
+            queued)))
 
 ;;; Confirmed removal (the only path that discards pending commands)
 
@@ -1227,25 +1449,6 @@ the interrupt run (and are echoed) as usual."
             #'glassmacs-r--configure-output-protection))
 
 ;;; Inspection and submission commands
-
-(defun glassmacs-queue-show (session)
-  "Display all of SESSION's queue records."
-  (interactive (list (glassmacs-sessions-resolve)))
-  (with-current-buffer (get-buffer-create "*Glassmacs R Queue*")
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (insert (format "Session %s%s\n\n" (glassmacs-sessions--describe session)
-                      (if (eq (glassmacs-session-state session) 'terminated)
-                          " TERMINATED" "")))
-      (dolist (e (glassmacs-session-entries session))
-        (insert (format "%-8s %-10s %s\n" (glassmacs-entry-id e)
-                        (if (and (eq (glassmacs-entry-state e) 'pending)
-                                 (glassmacs-entry-held e))
-                            "held"
-                          (glassmacs-entry-state e))
-                        (car (split-string (glassmacs-entry-source e) "\n")))))
-      (special-mode))
-    (display-buffer (current-buffer))))
 
 (defun glassmacs-r-submit-region (start end)
   "Queue the explicit region START..END for an R session as one command."
