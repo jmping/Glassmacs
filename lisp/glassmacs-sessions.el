@@ -167,10 +167,17 @@ prompt, such as \"+ \" or \"> + \"."
       (let ((buffer (process-buffer process)))
         (and (buffer-live-p buffer)
              (with-current-buffer buffer
-               (let* ((secondary (regexp-quote
-                                  (or (bound-and-true-p inferior-ess-secondary-prompt) "+ ")))
-                      (primary (regexp-quote
-                                (or (bound-and-true-p inferior-ess-primary-prompt) "> ")))
+               ;; Like ESS, treat both prompts as regular expressions (ESS
+               ;; releases differ, e.g. "+ " or "+ ?").  Grouping each keeps
+               ;; a leading "+" literal rather than a repetition operator.
+               (let* ((secondary (concat "\\(?:"
+                                         (or (bound-and-true-p inferior-ess-secondary-prompt)
+                                             "+ ")
+                                         "\\)"))
+                      (primary (concat "\\(?:"
+                                       (or (bound-and-true-p inferior-ess-primary-prompt)
+                                           "> ")
+                                       "\\)"))
                       (mark (process-mark process)))
                  (and (marker-position mark)
                       (let ((case-fold-search nil))

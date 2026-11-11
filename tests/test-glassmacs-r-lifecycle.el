@@ -228,6 +228,26 @@ Bind `asked' to the list of dialog messages, oldest first."
                        (cadr case))))
        (kill-buffer buffer)))))
 
+(ert-deftest glassmacs-continuation-prompt-uses-ess-prompt-regexps ()
+  "ESS prompt variables are regexps; some ESS releases use \"+ ?\"."
+  (gs-test--with-env
+   (let* ((console (gs-test--console "glassmacs-continuation-regexp"))
+          (process (car console)) (buffer (cdr console)))
+     (unwind-protect
+         (progn
+           (with-current-buffer buffer
+             (setq-local inferior-ess-secondary-prompt "+ ?"
+                         inferior-ess-primary-prompt "> "))
+           (dolist (case '(("> +" t) ("> + " t) ("+" t) ("> " nil) ("x+ " nil)))
+             (with-current-buffer buffer
+               (let ((inhibit-read-only t))
+                 (goto-char (point-max))
+                 (insert "\n" (car case))
+                 (set-marker (process-mark process) (point))))
+             (should (eq (and (glassmacs-sessions--continuation-p process) t)
+                         (cadr case)))))
+       (kill-buffer buffer)))))
+
 (ert-deftest glassmacs-r-continuation-resume-integration-real-ess ()
   "Real R: an incomplete expression pauses; resuming discards only it."
   (skip-unless (gs-test--ess-and-r-p))
