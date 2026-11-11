@@ -26,6 +26,31 @@
   :type 'boolean
   :group 'glassmacs-r-controls)
 
+(require 'glassmacs-r-queue)
+
+(defun glassmacs-r-ui--define-queue-items (menu)
+  "Define the shared R queue commands in MENU, shown in this order.
+Every R menu, the console's Signals menu and the queue inspector call
+these same commands, so they cannot disagree about the queue."
+  ;; `define-key' prepends, so define the items bottom first.
+  (define-key menu [clear-resume-queue]
+    '(menu-item "Clear Queue and Resume…" glassmacs-queue-clear-and-resume
+                :help "Remove all waiting commands (after confirmation), then resume"
+                :enable (glassmacs-r-ui--menu-has-session-p)))
+  (define-key menu [pause-queue]
+    '(menu-item "Pause Queue" glassmacs-queue-pause
+                :help "Stop sending queued commands; a running command continues"
+                :enable (glassmacs-r-ui--menu-has-session-p)))
+  (define-key menu [resume-queue]
+    '(menu-item "Resume Queue" glassmacs-queue-resume
+                :help "Run paused and held commands"
+                :enable (glassmacs-r-ui--menu-has-session-p)))
+  (define-key menu [queue]
+    '(menu-item "Show R Queue…" glassmacs-r-show-queue
+                :help "Inspect, reorder, pause or resume queued R commands"
+                :enable (glassmacs-r-ui--menu-has-session-p)))
+  menu)
+
 (defvar glassmacs-r-ui-source-menu
   (let ((menu (make-sparse-keymap "R")))
     (define-key menu [preferences]
@@ -35,10 +60,7 @@
     (define-key menu [console]
       '(menu-item "Show R Console" glassmacs-r-inspect-session
                   :enable (glassmacs-r-ui--menu-has-session-p)))
-    (define-key menu [resume-queue]
-      '(menu-item "Resume Queue" glassmacs-queue-resume
-                  :help "Run commands held since an interrupt"
-                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (glassmacs-r-ui--define-queue-items menu)
     (define-key menu [interrupt]
       '(menu-item "Interrupt R" glassmacs-r-interrupt
                   :enable (glassmacs-r-ui--menu-has-session-p)))
@@ -114,7 +136,9 @@
   "Source-buffer R menu using existing ESS/Glassmacs commands.")
 
 (defvar glassmacs-r-ui-console-menu
-  (let ((menu (make-sparse-keymap "R Console")))
+  ;; Titled "R" like the source menu, so "R > Resume Queue" is accurate
+  ;; in a console too.
+  (let ((menu (make-sparse-keymap "R")))
     (define-key menu [preferences]
       '(menu-item "R Preferences…" glassmacs-r-open-preferences))
     (define-key menu [sessions]
@@ -142,18 +166,54 @@
     (define-key menu [graphics-test]
       '(menu-item "Plot Cars (Graphics Test)" glassmacs-r-graphics-smoke-plot
                   :enable (glassmacs-r-ui--menu-has-session-p)))
-    (define-key menu [resume-queue]
-      '(menu-item "Resume Queue" glassmacs-queue-resume
-                  :help "Run commands held since an interrupt"
-                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (glassmacs-r-ui--define-queue-items menu)
     (define-key menu [interrupt]
       '(menu-item "Interrupt R" glassmacs-r-interrupt
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     menu)
   "Console-specific R actions.")
 
+(defvar glassmacs-r-ui-signals-menu
+  (let ((menu (make-sparse-keymap "Signals")))
+    (glassmacs-r-ui--define-queue-items menu)
+    (define-key menu [glassmacs-queue-separator] menu-bar-separator)
+    menu)
+  "Queue commands added to an R console's Signals menu.
+Bound in the console's private keymap: Emacs combines menus that several
+active keymaps define under one menu-bar key, so these items join
+comint's Break, Stop and Kill without modifying comint's shared map.")
+
+(defvar glassmacs-r-ui-global-menu
+  (let ((menu (make-sparse-keymap "R")))
+    (define-key menu [list-sessions]
+      '(menu-item "List R Sessions" glassmacs-r-list-sessions))
+    (define-key menu [new-console]
+      '(menu-item "New R Console" glassmacs-r-new-console))
+    (define-key menu [switch-console]
+      '(menu-item "Show R Console…" glassmacs-r-switch-console
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [console-separator] menu-bar-separator)
+    (define-key menu [interrupt]
+      '(menu-item "Interrupt R" glassmacs-r-interrupt
+                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (glassmacs-r-ui--define-queue-items menu)
+    menu)
+  "R menu shown in frames that are not displaying an R buffer.
+A paused queue must be resumable from any window: a document, the
+queue inspector, Help or an empty frame.  R buffers hide this menu and
+show their own fuller R menu instead.")
+
+(defun glassmacs-r-ui--install-global-menu ()
+  "Add the application-wide R menu after Tools."
+  (define-key-after (lookup-key global-map [menu-bar]) [glassmacs-r-global]
+    (cons "R" glassmacs-r-ui-global-menu) 'tools))
+
+(glassmacs-r-ui--install-global-menu)
+
 (glassmacs-menu-install-dynamic-keys glassmacs-r-ui-source-menu)
 (glassmacs-menu-install-dynamic-keys glassmacs-r-ui-console-menu)
+(glassmacs-menu-install-dynamic-keys glassmacs-r-ui-signals-menu)
+(glassmacs-menu-install-dynamic-keys glassmacs-r-ui-global-menu)
 
 (defun glassmacs-r-ui--install-help-display ()
   "Compatibility entry point for the unified ESS Help display rule."
@@ -181,12 +241,14 @@ Closing that help frame must not close or discard the source document."
     (glassmacs-new-console "New R Console" glassmacs-r-new-console "open")
     (glassmacs-link-console "Link Console…" glassmacs-r-select-session "open")
     (glassmacs-show-console "Show Console" glassmacs-r-inspect-session "open")
+    (glassmacs-queue "Queue" glassmacs-r-show-queue "index")
     (glassmacs-help "R Help" glassmacs-r-ui-help "help"))
   "R source toolbar entries: (KEY LABEL COMMAND ICON).
 ICON is the base name of an image shipped with GNU Emacs.")
 
 (defconst glassmacs-r-ui--console-toolbar-actions
   '((glassmacs-interrupt "Interrupt" glassmacs-r-interrupt "cancel")
+    (glassmacs-queue "Queue" glassmacs-r-show-queue "index")
     (glassmacs-history "History" glassmacs-r-ui-previous-input-or-line "undo")
     (glassmacs-session "Session" glassmacs-r-select-session "open"))
   "R console toolbar entries.")
@@ -208,7 +270,7 @@ displays without changing their commands or hit targets."
   '((right-arrow . "run") (copy . "selection")
     (next-page . "paragraph") (jump-to . "function")
     (open . "console") (help . "help")
-    (cancel . "interrupt") (undo . "history"))
+    (cancel . "interrupt") (undo . "history") (index . "queue"))
   "Fallback mappings from built-in Emacs image names to vector symbols.")
 
 (defun glassmacs-r-ui--toolbar-image (name &optional action)
@@ -275,6 +337,7 @@ If SVG support is missing, retain the existing built-in XPM artwork."
                                  '(use-region-p))
                                 ((memq command
                                        '(glassmacs-r-interrupt
+                                         glassmacs-r-show-queue
                                          glassmacs-r-select-session))
                                  '(glassmacs-r-ui--menu-has-session-p))
                                 (t t))))))
@@ -315,6 +378,13 @@ A major-mode change resets the variable, so a fresh map is built then."
     (if (glassmacs-r-ui--source-buffer-p)
         glassmacs-r-ui-source-menu
       glassmacs-r-ui-console-menu))
+  ;; An explicit `undefined' cancels the application-wide R menu here, so
+  ;; an R buffer shows one R menu, not two.
+  (define-key (glassmacs-r-ui--local-map) [menu-bar glassmacs-r-global]
+    'undefined)
+  (unless (glassmacs-r-ui--source-buffer-p)
+    (define-key (glassmacs-r-ui--local-map) [menu-bar signals]
+      glassmacs-r-ui-signals-menu))
   (if glassmacs-r-show-toolbar
       (glassmacs-r-ui--enable-toolbar)
     (kill-local-variable 'tool-bar-map)))
@@ -411,17 +481,11 @@ ESS's prompt and completion-cache state before calling `comint-send-input'."
     (define-key menu [run-selection-once]
       '(menu-item "Run Selection in Another Session…" glassmacs-r-submit-region-to-session
                   :enable (and mark-active (glassmacs-r-ui--menu-has-session-p))))
-    (define-key menu [queue]
-      '(menu-item "Inspect R Queue" glassmacs-queue-show
-                  :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [stop-output]
       '(menu-item "Stop Displaying R Output"
                   glassmacs-r-stop-displaying-output
                   :enable (glassmacs-r-ui--menu-has-session-p)))
-    (define-key menu [resume-queue]
-      '(menu-item "Resume Queue" glassmacs-queue-resume
-                  :help "Run commands held since an interrupt"
-                  :enable (glassmacs-r-ui--menu-has-session-p)))
+    (glassmacs-r-ui--define-queue-items menu)
     (define-key menu [interrupt]
       '(menu-item "Interrupt R Computation" glassmacs-r-interrupt
                   :enable (glassmacs-r-ui--menu-has-session-p)))

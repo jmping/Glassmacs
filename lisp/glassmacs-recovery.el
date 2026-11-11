@@ -810,26 +810,111 @@ Discard decisions are staged until quit, and restored if quit is vetoed."
           (when (buffer-live-p buffer)
             (with-current-buffer buffer (set-buffer-modified-p t))))))))
 
-(defun glassmacs-recovery-quit ()
-  "Quit without per-document prompts only after successful preservation.
+(defun glassmacs-recovery--quit-preserving ()
+  "Preserve every document, then quit without per-document prompts.
 If preservation fails, remain in Emacs and display the error."
-  (interactive)
-  (if (not glassmacs-preserve-open-buffers-on-quit)
-      (glassmacs-recovery--quit-reviewed)
-    (condition-case err
+  (condition-case err
+      (progn
+        (glassmacs-recovery-preserve)
+        ;; The built-in quit command prompts for modified buffers.
+        ;; After a durable snapshot, suppress only that document prompt;
+        ;; preserve other kill-emacs queries.
+        (let ((buffer-offer-save nil)
+              (save-silently t)
+              (glassmacs-recovery--save-reviewed-quit t))
+          (cl-letf (((symbol-function 'save-some-buffers)
+                     (lambda (&rest _) nil)))
+            (save-buffers-kill-emacs))))
+    (error (message "Glassmacs quit canceled: %s" (error-message-string err))
+           nil)))
+
+(declare-function glassmacs-sessions-refresh "glassmacs-sessions")
+(declare-function glassmacs-sessions-live "glassmacs-sessions")
+(declare-function glassmacs-sessions-status-text "glassmacs-sessions")
+(declare-function glassmacs-session-process "glassmacs-sessions")
+(declare-function glassmacs-dialog-choose "glassmacs-dialogs")
+(declare-function glassmacs-workspace-save-for-next-launch "glassmacs-workspace")
+(declare-function glassmacs-workspace-forget "glassmacs-workspace")
+(defvar desktop-save-mode)
+
+(defun glassmacs-recovery--live-r-sessions ()
+  "Return the live R sessions that quitting would end."
+  (when (fboundp 'glassmacs-sessions-live)
+    (glassmacs-sessions-refresh)
+    (glassmacs-sessions-live)))
+
+(defun glassmacs-recovery--r-quit-decision (sessions)
+  "Ask how to quit while R SESSIONS run: `save', `discard' or `cancel'."
+  (require 'glassmacs-dialogs)
+  (glassmacs-dialog-choose
+   (if (cdr sessions)
+       (format "Quit Glassmacs with %d R sessions running?" (length sessions))
+     "Quit Glassmacs with an R session running?")
+   '((save "Save Session State & Quit" :key ?s :default t
+           :description "Reopen documents and windows next time, then quit")
+     (cancel "Cancel" :key ?c :cancel t :description "Return to Glassmacs")
+     (discard "Quit Without Saving Session State" :key ?q
+              :description "Review unsaved documents; do not reopen this session"))
+   (concat (mapconcat #'glassmacs-sessions-status-text sessions "\n")
+           "\n\nQuitting ends these R processes.  R objects you have not saved "
+           "(for example with save.image()) are lost.\n\n"
+           "Save Session State reopens your documents and windows next time, "
+           "including unsaved changes.  Quit Without Saving Session State asks "
+           "about each unsaved document and does not reopen this session's "
+           "windows.  Neither restarts R.")))
+
+(defun glassmacs-recovery--quit-ending-r (sessions thunk on-exit)
+  "Call THUNK to quit after the R SESSIONS decision was made.
+Emacs's own active-process question is skipped for these R processes
+only; other processes still ask.  ON-EXIT runs from `kill-emacs-hook',
+so it acts only if the quit really happens.  A canceled quit restores
+the processes' exit queries."
+  (let* ((processes (mapcar #'glassmacs-session-process sessions))
+         (flags (mapcar #'process-query-on-exit-flag processes))
+         (kill-emacs-hook (cons on-exit kill-emacs-hook)))
+    (unwind-protect
         (progn
-          (glassmacs-recovery-preserve)
-          ;; The built-in quit command prompts for modified buffers.
-          ;; After a durable snapshot, suppress only that document prompt;
-          ;; preserve other kill-emacs queries.
-          (let ((buffer-offer-save nil)
-                (save-silently t)
-                (glassmacs-recovery--save-reviewed-quit t))
-            (cl-letf (((symbol-function 'save-some-buffers)
-                       (lambda (&rest _) nil)))
-              (save-buffers-kill-emacs))))
-      (error (message "Glassmacs quit canceled: %s" (error-message-string err))
-             nil))))
+          (dolist (process processes)
+            (set-process-query-on-exit-flag process nil))
+          (funcall thunk))
+      ;; Reached only when the quit did not happen.
+      (cl-mapc (lambda (process flag)
+                 (when (process-live-p process)
+                   (set-process-query-on-exit-flag process flag)))
+               processes flags))))
+
+(defun glassmacs-recovery-quit ()
+  "Quit Glassmacs through the document and R session review.
+With live R sessions, first ask natively whether to save the session
+state, quit without saving it, or cancel.  Otherwise quit without
+per-document prompts only after successful preservation, or review each
+modified document, according to `glassmacs-preserve-open-buffers-on-quit'."
+  (interactive)
+  (let ((sessions (glassmacs-recovery--live-r-sessions)))
+    (if (null sessions)
+        (if glassmacs-preserve-open-buffers-on-quit
+            (glassmacs-recovery--quit-preserving)
+          (glassmacs-recovery--quit-reviewed))
+      (pcase (glassmacs-recovery--r-quit-decision sessions)
+        ('save
+         (glassmacs-recovery--quit-ending-r
+          sessions #'glassmacs-recovery--quit-preserving
+          (lambda ()
+            (when (fboundp 'glassmacs-workspace-save-for-next-launch)
+              (with-demoted-errors "Glassmacs could not save the workspace: %S"
+                (glassmacs-workspace-save-for-next-launch))))))
+        ('discard
+         (glassmacs-recovery--quit-ending-r
+          sessions
+          (lambda ()
+            ;; Do not record this session's windows for the next start.
+            (let ((desktop-save-mode nil))
+              (glassmacs-recovery--quit-reviewed)))
+          (lambda ()
+            (when (fboundp 'glassmacs-workspace-forget)
+              (with-demoted-errors "Glassmacs could not remove the workspace: %S"
+                (glassmacs-workspace-forget))))))
+        (_ (message "Quit canceled") nil)))))
 
 (defun glassmacs-recovery--quit-safety-check ()
   "Prevent native or alternate quit paths from silently losing dirty documents.

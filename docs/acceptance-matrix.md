@@ -64,6 +64,7 @@ Local GUI outcomes are recorded by `scripts/macos-gui-acceptance`; `scripts/acce
 | [MIX-002](#mix-002) | Rendering and Shiny previews open their output | P1 | `glassmacs:mixed-documents` | A D | yes | partial | NOT RUN | NOT RUN |
 | [R-001](#r-001) | ESS, R and Quarto run from the app | P1 | `glassmacs:issue-34-other-risks` | A D | yes | partial | NOT RUN | NOT RUN |
 | [RCONSOLE-001](#rconsole-001) | ESS consoles preserve configured frame and tab placement | P0 | `glassmacs:release-candidate-2885efd` | A D | yes | partial | NOT RUN | NOT RUN |
+| [RQUEUE-001](#rqueue-001) | R session state, queue controls and lifecycle dialogs are visible and agree | P0 | `glassmacs:pr98-usage-notes` | A D | yes | partial | NOT RUN | NOT RUN |
 | [SYNC-001](#sync-001) | Skim SyncTeX forward and inverse search | P2 | `glassmacs:issue-34-other-risks` | A D | yes | partial | NOT RUN | NOT RUN |
 | [DISPLAY-001](#display-001) | Multiple displays, Spaces, Stage Manager and scaling | P2 | `glassmacs:issue-34-other-risks` | D | yes | no | NOT RUN | NOT RUN |
 | [APPEAR-001](#appear-001) | Light and dark appearance changes | P2 | `glassmacs:issue-34-other-risks` | D | no | no | NOT RUN | NOT RUN |
@@ -469,6 +470,16 @@ Local GUI outcomes are recorded by `scripts/macos-gui-acceptance`; `scripts/acce
 - Tests: `ert:glassmacs-r-started-console-moves-ess-view-to-separate-frame`, `ert:glassmacs-r-started-console-honors-tab-placement`, `ert:glassmacs-r-selecting-console-reuses-existing-window`, `ert:glassmacs-r-output-integration-real-ess-concurrent-sessions`
 - Not fully automated because: ERT verifies routing through the presentation abstraction; only local macOS GUI testing can verify native window placement.
 - Manual: see [checklist](macos-acceptance-checklist.md#rconsole-001)
+
+## RQUEUE-001
+
+**R session state, queue controls and lifecycle dialogs are visible and agree** (P0). A paused or held R queue pointed to a Resume Queue command that was absent outside R buffers; console close offered only Hide; quitting asked Emacs's typed yes/no about live processes.
+
+- Evidence: `glassmacs:pr98-usage-notes`
+- Layers: A (batch), D (manual)
+- Tests: `ert:glassmacs-r-menu-is-available-outside-r-buffers`, `ert:glassmacs-r-buffers-show-one-r-menu-and-queue-signals`, `ert:glassmacs-r-queue-controls-are-in-every-r-menu`, `ert:glassmacs-queue-inspector-shows-and-controls-the-queue`, `ert:glassmacs-r-continuation-resume-integration-real-ess`, `ert:glassmacs-console-close-terminating-busy-r-needs-second-confirmation`, `ert:glassmacs-console-terminate-waits-for-a-successful-close`, `ert:glassmacs-quit-with-r-asks-natively-and-honors-each-choice`, `ert:glassmacs-dialog-native-helper-receives-spec-and-answers`
+- Not fully automated because: ERT verifies the shared queue and lifecycle functions, menu keymaps and the dialog protocol; native NSAlert presentation and the merged Cocoa menus need local GUI verification.
+- Manual: see [checklist](macos-acceptance-checklist.md#rqueue-001)
 
 ## SYNC-001
 
