@@ -26,8 +26,11 @@ Do not include command text, process output, paths, or environment values."
           (cl-incf held (cl-count-if #'glassmacs-entry-held entries)))
         (when (glassmacs-queue-running session)
           (cl-incf running)))
-      (format "R sessions: %d live, %d paused; commands: %d running, %d pending (%d held)\n"
-              live paused running pending held))))
+      (concat
+       (format "R sessions: %d live, %d paused; commands: %d running, %d pending (%d held)\n"
+               live paused running pending held)
+       (when (> (+ paused held) 0)
+         "Queue needs attention: use R > Show R Queue… to inspect, then Resume Queue when appropriate.\n")))))
 
 (defun glassmacs-diagnostics ()
   "Display local startup and optional R/ESS availability information."
