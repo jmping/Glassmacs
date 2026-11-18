@@ -9,6 +9,7 @@
 (require 'glassmacs-menu)
 (require 'glassmacs-r)
 (require 'glassmacs-sessions)
+(require 'glassmacs-r-queue)
 (require 'glassmacs-r-graphics)
 (require 'glassmacs-r-ui)
 (require 'glassmacs-remote)

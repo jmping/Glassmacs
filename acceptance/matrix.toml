@@ -652,6 +652,21 @@ manual = ["On the packaged macOS app with R and ESS, select separate-window plac
 rationale = "ERT verifies routing through the presentation abstraction; only local macOS GUI testing can verify native window placement."
 
 [[check]]
+id = "RQUEUE-001"
+title = "R session state, queue controls and lifecycle dialogs are visible and agree"
+severity = "P0"
+evidence = ["glassmacs:pr98-usage-notes"]
+exposure = "A paused or held R queue pointed to a Resume Queue command that was absent outside R buffers; console close offered only Hide; quitting asked Emacs's typed yes/no about live processes."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-r-menu-is-available-outside-r-buffers", "ert:glassmacs-r-buffers-show-one-r-menu-and-queue-signals", "ert:glassmacs-r-queue-controls-are-in-every-r-menu", "ert:glassmacs-queue-inspector-shows-and-controls-the-queue", "ert:glassmacs-r-continuation-resume-integration-real-ess", "ert:glassmacs-console-close-terminating-busy-r-needs-second-confirmation", "ert:glassmacs-console-terminate-waits-for-a-successful-close", "ert:glassmacs-quit-with-r-asks-natively-and-honors-each-choice", "ert:glassmacs-dialog-native-helper-receives-spec-and-answers"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["On the packaged app with R and ESS, start a console and pause its queue. With focus in a plain document, an R console and the queue inspector in turn, confirm exactly one R menu is shown and R > Resume Queue resumes. In the console, confirm the Signals menu still has comint's entries and also lists Show R Queue, Resume Queue, Pause Queue and Clear Queue and Resume. Click the Queue toolbar button; reorder, remove and resume commands there. Send an incomplete expression from a source file, confirm the pause explanation, and resume with Cancel Incomplete Input. Close the console with Command-W and with the red button: confirm the native Keep R Running / Cancel / Terminate R alert, the extra confirmation while a command runs, and that Keep R Running leaves the session listed. Quit with a live session: confirm the native Save Session State & Quit / Quit Without Saving Session State / Cancel alert, then relaunch and confirm documents and windows reopen only after Save Session State and no R console is restarted."]
+rationale = "ERT verifies the shared queue and lifecycle functions, menu keymaps and the dialog protocol; native NSAlert presentation and the merged Cocoa menus need local GUI verification."
+
+[[check]]
 id = "SYNC-001"
 title = "Skim SyncTeX forward and inverse search"
 severity = "P2"
