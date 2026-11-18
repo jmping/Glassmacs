@@ -15,7 +15,7 @@
   "Return a read-only summary of registered local R sessions.
 Do not include command text, process output, paths, or environment values."
   (if (not (require 'glassmacs-sessions nil t))
-      "R sessions: session support unavailable\\n"
+      "R sessions: session support unavailable\n"
     (let ((live 0) (paused 0) (pending 0) (held 0) (running 0))
       (dolist (session (glassmacs-sessions-live))
         (cl-incf live)
@@ -26,7 +26,7 @@ Do not include command text, process output, paths, or environment values."
           (cl-incf held (cl-count-if #'glassmacs-entry-held entries)))
         (when (glassmacs-queue-running session)
           (cl-incf running)))
-      (format "R sessions: %d live, %d paused; commands: %d running, %d pending (%d held)\\n"
+      (format "R sessions: %d live, %d paused; commands: %d running, %d pending (%d held)\n"
               live paused running pending held))))
 
 (defun glassmacs-diagnostics ()
