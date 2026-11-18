@@ -27,12 +27,13 @@ fi
 "$emacs" -Q --batch -l "$root/init.el" -l "$root/tests/test-glassmacs.el" \
   -l "$root/tests/test-glassmacs-menu.el" \
   -l "$root/tests/test-glassmacs-sessions.el" \
+  -l "$root/tests/test-glassmacs-close.el" \
+  -l "$root/tests/test-glassmacs-r-lifecycle.el" \
   -l "$root/tests/test-glassmacs-r-ui.el" \
   -l "$root/tests/test-glassmacs-r-graphics.el" \
   -l "$root/tests/test-glassmacs-remote.el" \
   -l "$root/tests/test-glassmacs-environment.el" \
   -l "$root/tests/test-glassmacs-packages.el" \
-  -l "$root/tests/test-glassmacs-close.el" \
   -l "$root/tests/test-glassmacs-editing.el" \
   -l "$root/tests/test-glassmacs-latex.el" \
   -l "$root/tests/test-glassmacs-spelling.el" \

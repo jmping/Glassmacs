@@ -179,6 +179,12 @@ Before starting: install the app in /Applications on the Mac under test, and run
 
 - [ ] On the packaged macOS app with R and ESS, select separate-window placement, open one R source file, and start two R sessions. Confirm the source frame stays intact, each console has its own native window, both processes remain live, and distinct commands reach the intended process. Switch sessions repeatedly and confirm the same windows are reused. Repeat with new-tab placement, then test explicit split-below placement.
 
+## RQUEUE-001
+
+**R session state, queue controls and lifecycle dialogs are visible and agree** (P0). Result: **NOT RUN**
+
+- [ ] On the packaged app with R and ESS, start a console and pause its queue. With focus in a plain document, an R console and the queue inspector in turn, confirm exactly one R menu is shown and R > Resume Queue resumes. In the console, confirm the Signals menu still has comint's entries and also lists Show R Queue, Resume Queue, Pause Queue and Clear Queue and Resume. Click the Queue toolbar button; reorder, remove and resume commands there. Send an incomplete expression from a source file, confirm the pause explanation, and resume with Cancel Incomplete Input. Close the console with Command-W and with the red button: confirm the native Keep R Running / Cancel / Terminate R alert, the extra confirmation while a command runs, and that Keep R Running leaves the session listed. Quit with a live session: confirm the native Save Session State & Quit / Quit Without Saving Session State / Cancel alert, then relaunch and confirm documents and windows reopen only after Save Session State and no R console is restarted.
+
 ## SYNC-001
 
 **Skim SyncTeX forward and inverse search** (P2). Result: **NOT RUN**

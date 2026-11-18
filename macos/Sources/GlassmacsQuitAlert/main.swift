@@ -9,6 +9,24 @@ import Foundation
 enum GlassmacsQuitAlert {
     static func main() {
         let args = Array(CommandLine.arguments.dropFirst())
+        if args.first == "--choice" {
+            // --choice RESPONSE SPEC: a general native alert; see
+            // lisp/glassmacs-dialogs.el for the JSON specification.
+            guard args.count == 3 else {
+                FileHandle.standardError.write(Data("GlassmacsQuitAlert: --choice expects response and spec paths\n".utf8))
+                exit(EXIT_FAILURE)
+            }
+            let app = NSApplication.shared
+            app.setActivationPolicy(.regular)
+            let controller = ChoiceAlert(
+                app: app,
+                responseURL: URL(fileURLWithPath: args[1]),
+                specURL: URL(fileURLWithPath: args[2])
+            )
+            app.delegate = controller
+            app.run()
+            return
+        }
         guard args.count == 2 else {
             FileHandle.standardError.write(Data("GlassmacsQuitAlert: expected response path and document name\n".utf8))
             exit(EXIT_FAILURE)
@@ -156,6 +174,89 @@ private final class QuitDialog: NSObject, NSApplicationDelegate, NSWindowDelegat
             return false
         }
         return true
+    }
+}
+
+/// A standard NSAlert with caller-defined buttons.  The answer is the id of
+/// the chosen button; Escape and any failure answer with the cancel id.
+@MainActor
+private final class ChoiceAlert: NSObject, NSApplicationDelegate {
+    private struct Button {
+        let id: String
+        let label: String
+        let isDefault: Bool
+        let isCancel: Bool
+        let isDestructive: Bool
+    }
+
+    private let app: NSApplication
+    private let responseURL: URL
+    private let specURL: URL
+
+    init(app: NSApplication, responseURL: URL, specURL: URL) {
+        self.app = app
+        self.responseURL = responseURL
+        self.specURL = specURL
+        super.init()
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if #available(macOS 14.0, *) {
+            app.activate()
+        } else {
+            app.activate(ignoringOtherApps: true)
+        }
+        DispatchQueue.main.async { [self] in
+            guard let data = try? Data(contentsOf: specURL),
+                  let spec = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let message = spec["message"] as? String,
+                  let rawButtons = spec["buttons"] as? [[String: Any]],
+                  !rawButtons.isEmpty else {
+                writeResponse(["error": "invalid choice specification"], to: responseURL)
+                app.terminate(nil)
+                return
+            }
+            let buttons = rawButtons.compactMap { raw -> Button? in
+                guard let id = raw["id"] as? String,
+                      let label = raw["label"] as? String else { return nil }
+                return Button(id: id, label: label,
+                              isDefault: raw["default"] as? Bool ?? false,
+                              isCancel: raw["cancel"] as? Bool ?? false,
+                              isDestructive: raw["destructive"] as? Bool ?? false)
+            }
+            let cancelID = buttons.first(where: { $0.isCancel })?.id
+            // NSAlert makes its first button the Return default.
+            let ordered = buttons.filter { $0.isDefault } + buttons.filter { !$0.isDefault }
+
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = message
+            alert.informativeText = spec["informative"] as? String ?? ""
+            for (index, button) in ordered.enumerated() {
+                let control = alert.addButton(withTitle: button.label)
+                if button.isCancel {
+                    control.keyEquivalent = "\u{1b}"
+                } else if index > 0 {
+                    control.keyEquivalent = ""
+                }
+                if button.isDestructive, #available(macOS 11.0, *) {
+                    control.hasDestructiveAction = true
+                }
+            }
+            writeResponse(["phase": "presenting",
+                           "processIdentifier": ProcessInfo.processInfo.processIdentifier],
+                          to: responseURL)
+            let result = alert.runModal()
+            let index = result.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+            if index >= 0 && index < ordered.count {
+                writeResponse(["choice": ordered[index].id], to: responseURL)
+            } else if let cancelID {
+                writeResponse(["choice": cancelID], to: responseURL)
+            } else {
+                writeResponse(["error": "dialog dismissed without a cancel choice"], to: responseURL)
+            }
+            app.terminate(nil)
+        }
     }
 }
 
