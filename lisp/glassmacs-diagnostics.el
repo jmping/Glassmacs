@@ -11,6 +11,24 @@
 (require 'cl-lib)
 (require 'subr-x)
 
+(defun glassmacs-diagnostics-r-session-summary ()
+  "Return a read-only summary of registered local R sessions.
+Do not include command text, process output, paths, or environment values."
+  (if (not (require 'glassmacs-sessions nil t))
+      "R sessions: session support unavailable\\n"
+    (let ((live 0) (paused 0) (pending 0) (held 0) (running 0))
+      (dolist (session (glassmacs-sessions-live))
+        (cl-incf live)
+        (when (glassmacs-session-paused session)
+          (cl-incf paused))
+        (let ((entries (glassmacs-queue-pending session)))
+          (cl-incf pending (length entries))
+          (cl-incf held (cl-count-if #'glassmacs-entry-held entries)))
+        (when (glassmacs-queue-running session)
+          (cl-incf running)))
+      (format "R sessions: %d live, %d paused; commands: %d running, %d pending (%d held)\\n"
+              live paused running pending held))))
+
 (defun glassmacs-diagnostics ()
   "Display local startup and optional R/ESS availability information."
   (interactive)
@@ -35,7 +53,8 @@
                  (if (locate-library "ess-site") "available" "not found")
                  (if (executable-find "R") "available" "not found")
                  (if (executable-find "Rscript") "available" "not found"))
-         "Graphics guidance:\n"
+         (glassmacs-diagnostics-r-session-summary)
+         "\nGraphics guidance:\n"
          (if (and (eq system-type 'darwin) (display-graphic-p))
              (concat
               "In an ESS session, evaluate plot(cars) to check the R build's native macOS graphics device. "
