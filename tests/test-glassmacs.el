@@ -3497,3 +3497,25 @@ example) can run first and delay the sentinel."
           (should result)
           (should (= (length (plist-get result :tabs)) 2))
           (should (integerp (plist-get result :active-tab))))))))
+
+
+(ert-deftest glassmacs-diagnostics-r-session-summary-empty ()
+  "An empty registry produces a useful, non-sensitive summary."
+  (cl-letf (((symbol-function 'glassmacs-sessions-live) (lambda () nil)))
+    (should (equal (glassmacs-diagnostics-r-session-summary)
+                   "R sessions: 0 live, 0 paused; commands: 0 running, 0 pending (0 held)\n"))))
+
+(ert-deftest glassmacs-diagnostics-r-session-summary-counts ()
+  "Summarize queues without exposing their command sources."
+  (let* ((held (glassmacs-entry--make :state 'pending :held t :source "secret-command"))
+         (waiting (glassmacs-entry--make :state 'pending :source "private-code"))
+         (active (glassmacs-entry--make :state 'running :source "another-secret"))
+         (session (glassmacs-session--make :id "R-test" :paused t
+                                           :entries (list held waiting active))))
+    (cl-letf (((symbol-function 'glassmacs-sessions-live)
+               (lambda () (list session))))
+      (let ((summary (glassmacs-diagnostics-r-session-summary)))
+        (should (equal summary
+                       "R sessions: 1 live, 1 paused; commands: 1 running, 2 pending (1 held)\n"))
+        (should-not (string-match-p "secret\\|private" summary))))))
+
