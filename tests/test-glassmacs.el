@@ -3515,7 +3515,9 @@ example) can run first and delay the sentinel."
     (cl-letf (((symbol-function 'glassmacs-sessions-live)
                (lambda () (list session))))
       (let ((summary (glassmacs-diagnostics-r-session-summary)))
-        (should (equal summary
-                       "R sessions: 1 live, 1 paused; commands: 1 running, 2 pending (1 held)\n"))
+        (should (string-prefix-p
+                 "R sessions: 1 live, 1 paused; commands: 1 running, 2 pending (1 held)\n"
+                 summary))
+        (should (string-match-p "Show R Queue" summary))
         (should-not (string-match-p "secret\\|private" summary))))))
 
