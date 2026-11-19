@@ -146,6 +146,7 @@ No command source, R output, filesystem path, or environment is shown."
                  (if (executable-find "R") "available" "not found")
                  (if (executable-find "Rscript") "available" "not found"))
          (glassmacs-diagnostics-r-session-summary)
+         "Open the per-session overview: M-x glassmacs-diagnostics-r-sessions\n"
          "\nGraphics guidance:\n"
          (if (and (eq system-type 'darwin) (display-graphic-p))
              (concat
