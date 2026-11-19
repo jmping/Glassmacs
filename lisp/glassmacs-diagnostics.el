@@ -54,10 +54,7 @@ Do not include command text, process output, paths, or environment values."
                        activity
                        (if (glassmacs-session-paused session) "paused" "active")
                        (number-to-string (length pending))
-                       (number-to-string held)
-                       (if (glassmacs-session-paused session)
-                           (or (glassmacs-session-pause-reason session) "paused")
-                         "")))))
+                       (number-to-string held)))))
      (glassmacs-sessions-live))))
 
 (defun glassmacs-diagnostics-r-session-refresh ()
@@ -107,7 +104,7 @@ Do not include command text, process output, paths, or environment values."
   "Read-only R session health. RET opens queue; c opens console; g refreshes."
   (setq tabulated-list-format
         [("Session" 16 t) ("Activity" 10 t) ("Queue" 9 t)
-         ("Pending" 8 t) ("Held" 6 t) ("Pause reason" 36 t)])
+         ("Pending" 8 t) ("Held" 6 t)])
   (setq tabulated-list-padding 2)
   (tabulated-list-init-header))
 
