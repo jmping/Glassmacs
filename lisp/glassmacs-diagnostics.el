@@ -10,6 +10,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'tabulated-list)
 
 (defun glassmacs-diagnostics-r-session-summary ()
   "Return a read-only summary of registered local R sessions.
@@ -31,6 +32,94 @@ Do not include command text, process output, paths, or environment values."
                live paused running pending held)
        (when (> (+ paused held) 0)
          "Queue needs attention: use R > Show R Queue… to inspect, then Resume Queue when appropriate.\n")))))
+
+
+;;; Read-only per-session R health overview.
+
+(defun glassmacs-diagnostics-r-session-rows ()
+  "Return tabulated rows for live R sessions without exposing R source."
+  (when (require 'glassmacs-sessions nil t)
+    (mapcar
+     (lambda (session)
+       (let* ((pending (glassmacs-queue-pending session))
+              (held (cl-count-if #'glassmacs-entry-held pending))
+              (process (glassmacs-session-process session))
+              (activity (cond ((glassmacs-queue-running session) "running")
+                              ((and process (glassmacs-sessions--process-busy-p process))
+                               "busy")
+                              ((glassmacs-sessions-ready-p session) "idle")
+                              (t "waiting"))))
+         (list (glassmacs-session-id session)
+               (vector (glassmacs-session-id session)
+                       activity
+                       (if (glassmacs-session-paused session) "paused" "active")
+                       (number-to-string (length pending))
+                       (number-to-string held)
+                       (if (glassmacs-session-paused session)
+                           (or (glassmacs-session-pause-reason session) "paused")
+                         "")))))
+     (glassmacs-sessions-live))))
+
+(defun glassmacs-diagnostics-r-session-refresh ()
+  "Refresh the R health overview from current in-memory session state."
+  (interactive)
+  (unless (derived-mode-p 'glassmacs-diagnostics-r-sessions-mode)
+    (user-error "Not in the R session health overview"))
+  (setq tabulated-list-entries (glassmacs-diagnostics-r-session-rows))
+  (tabulated-list-print t))
+
+(defun glassmacs-diagnostics-r-session-at-point ()
+  "Resolve the live R session on the current overview row."
+  (let* ((id (tabulated-list-get-id))
+         (session (and id (glassmacs-sessions-find id))))
+    (unless (and session (memq session (glassmacs-sessions-live)))
+      (user-error "Select a live R session row"))
+    session))
+
+(defun glassmacs-diagnostics-r-session-open-queue ()
+  "Open the queue inspector for the selected R session."
+  (interactive)
+  (let ((session (glassmacs-diagnostics-r-session-at-point)))
+    (require 'glassmacs-r-queue)
+    (glassmacs-r-show-queue session)))
+
+(defun glassmacs-diagnostics-r-session-open-console ()
+  "Open the console for the selected R session."
+  (interactive)
+  (let* ((session (glassmacs-diagnostics-r-session-at-point))
+         (buffer (glassmacs-session-buffer session)))
+    (unless (buffer-live-p buffer)
+      (user-error "The selected R console buffer no longer exists"))
+    (glassmacs-r-display-console buffer)))
+
+(defvar glassmacs-diagnostics-r-sessions-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map tabulated-list-mode-map)
+    (define-key map (kbd "g") #'glassmacs-diagnostics-r-session-refresh)
+    (define-key map (kbd "RET") #'glassmacs-diagnostics-r-session-open-queue)
+    (define-key map (kbd "c") #'glassmacs-diagnostics-r-session-open-console)
+    (define-key map (kbd "q") #'quit-window)
+    map)
+  "Keymap for the R session health overview.")
+
+(define-derived-mode glassmacs-diagnostics-r-sessions-mode tabulated-list-mode
+  "R-Health"
+  "Read-only R session health. RET opens queue; c opens console; g refreshes."
+  (setq tabulated-list-format
+        [("Session" 16 t) ("Activity" 10 t) ("Queue" 9 t)
+         ("Pending" 8 t) ("Held" 6 t) ("Pause reason" 36 t)])
+  (setq tabulated-list-padding 2)
+  (tabulated-list-init-header))
+
+(defun glassmacs-diagnostics-r-sessions ()
+  "Display live R session health with links to each console and queue.
+No command source, R output, filesystem path, or environment is shown."
+  (interactive)
+  (let ((buffer (get-buffer-create "*Glassmacs R Health*")))
+    (with-current-buffer buffer
+      (glassmacs-diagnostics-r-sessions-mode)
+      (glassmacs-diagnostics-r-session-refresh))
+    (display-buffer buffer)))
 
 (defun glassmacs-diagnostics ()
   "Display local startup and optional R/ESS availability information."
