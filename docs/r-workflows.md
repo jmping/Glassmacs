@@ -146,6 +146,21 @@ GUI crash. For local diagnostic information use
 multiple-device lifecycle remain unverified until the acceptance test
 runs on the built app.
 
+
+### R session health overview
+
+Run `M-x glassmacs-diagnostics` for aggregate counts of live and paused R
+sessions and running, pending and held commands. When a queue needs attention,
+the report points to the R menu's queue controls.
+
+Run `M-x glassmacs-diagnostics-r-sessions` for a read-only per-session
+overview. Each row shows the session ID, running/busy/idle/waiting activity,
+pause state, and pending/held command counts. Press `RET` to open that
+session's queue inspector, `c` to show its console, or `g` to refresh.
+The overview does not show R source, command history, output, paths or
+environment variables. It reports only live registered sessions and does not
+start, resume, interrupt or terminate any process on its own.
+
 ## Documents
 
 R Markdown (`.Rmd`), Quarto (`.qmd`), Sweave (`.Rnw`, `.Snw`), and R
