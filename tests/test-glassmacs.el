@@ -3521,3 +3521,44 @@ example) can run first and delay the sentinel."
         (should (string-match-p "Show R Queue" summary))
         (should-not (string-match-p "secret\\|private" summary))))))
 
+
+
+(ert-deftest glassmacs-diagnostics-r-health-rows-are-session-scoped ()
+  "Health rows show independent queues but never their command contents."
+  (let* ((held (glassmacs-entry--make :state 'pending :held t :source "private-one"))
+         (running (glassmacs-entry--make :state 'running :source "private-two"))
+         (waiting (glassmacs-entry--make :state 'pending :source "private-three"))
+         (first (glassmacs-session--make :id "R-1" :paused t
+                                        :pause-reason "sensitive pause text"
+                                        :entries (list held running)))
+         (second (glassmacs-session--make :id "R-2" :entries (list waiting))))
+    (cl-letf (((symbol-function 'glassmacs-sessions-live)
+               (lambda () (list first second)))
+              ((symbol-function 'glassmacs-sessions-ready-p)
+               (lambda (_session) t)))
+      (let ((rows (glassmacs-diagnostics-r-session-rows)))
+        (should (equal (mapcar #'car rows) '("R-1" "R-2")))
+        (should (equal (append (cadar rows) nil)
+                       '("R-1" "running" "paused" "1" "1")))
+        (should (equal (append (cadadr rows) nil)
+                       '("R-2" "idle" "active" "1" "0")))
+        (should-not (string-match-p "private\\|sensitive" (prin1-to-string rows)))))))
+
+(ert-deftest glassmacs-diagnostics-r-health-queue-navigation ()
+  "RET targets the selected session without changing its queue."
+  (let* ((session (glassmacs-session--make :id "R-health-test"))
+         (selected nil))
+    (cl-letf (((symbol-function 'glassmacs-sessions-live)
+               (lambda () (list session)))
+              ((symbol-function 'glassmacs-sessions-find)
+               (lambda (id) (and (equal id "R-health-test") session)))
+              ((symbol-function 'glassmacs-r-show-queue)
+               (lambda (value) (setq selected value))))
+      (with-temp-buffer
+        (glassmacs-diagnostics-r-sessions-mode)
+        (glassmacs-diagnostics-r-session-refresh)
+        (goto-char (point-min))
+        (forward-line 1)
+        (glassmacs-diagnostics-r-session-open-queue)
+        (should (eq selected session))))))
+
