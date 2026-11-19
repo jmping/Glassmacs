@@ -3546,6 +3546,7 @@ example) can run first and delay the sentinel."
 
 (ert-deftest glassmacs-diagnostics-r-health-queue-navigation ()
   "RET targets the selected session without changing its queue."
+  (require 'glassmacs-r-queue)
   (let* ((session (glassmacs-session--make :id "R-health-test"))
          (selected nil))
     (cl-letf (((symbol-function 'glassmacs-sessions-live)
@@ -3558,7 +3559,6 @@ example) can run first and delay the sentinel."
         (glassmacs-diagnostics-r-sessions-mode)
         (glassmacs-diagnostics-r-session-refresh)
         (goto-char (point-min))
-        (forward-line 1)
         (glassmacs-diagnostics-r-session-open-queue)
         (should (eq selected session))))))
 
