@@ -437,5 +437,46 @@
        :type 'user-error)
       (should (equal glassmacs-r-target-session "R-original")))))
 
+
+(ert-deftest glassmacs-remote-r-ess-startup-detects-new-process-without-selection ()
+  "An ESS-created R process is resolved even when selected window is unchanged."
+  (let ((seen nil)
+        (console (generate-new-buffer " *remote ESS new process*"))
+        proc)
+    (unwind-protect
+        (progn
+          (with-current-buffer console
+            (setq default-directory "/ssh:research:/work/"))
+          (cl-letf (((symbol-function 'glassmacs-remote-r--ensure-ess) #'ignore)
+                    ((symbol-function 'call-interactively)
+                     (lambda (_fn &rest _)
+                       (setq seen default-directory)
+                       (setq proc (make-pipe-process
+                                   :name "mock remote ESS creation"
+                                   :buffer console :noquery t)))))
+            (should (eq (glassmacs-remote-r--start-ess
+                         "/ssh:research:/work/") console))
+            (should (equal seen "/ssh:research:/work/"))))
+      (when (and proc (process-live-p proc)) (delete-process proc))
+      (when (buffer-live-p console) (kill-buffer console)))))
+
+(ert-deftest glassmacs-remote-r-ess-startup-rejects-local-process-with-remote-origin ()
+  "Creating a local process while launched from TRAMP cannot pass verification."
+  (let ((local-console (generate-new-buffer " *remote ESS local fallback*"))
+        proc)
+    (unwind-protect
+        (progn
+          (with-current-buffer local-console (setq default-directory "/"))
+          (cl-letf (((symbol-function 'glassmacs-remote-r--ensure-ess) #'ignore)
+                    ((symbol-function 'call-interactively)
+                     (lambda (_fn &rest _)
+                       (setq proc (make-pipe-process
+                                   :name "mock ESS local fallback"
+                                   :buffer local-console :noquery t)))))
+            (should-error (glassmacs-remote-r--start-ess
+                           "/ssh:research:/work/") :type 'user-error)))
+      (when (and proc (process-live-p proc)) (delete-process proc))
+      (when (buffer-live-p local-console) (kill-buffer local-console)))))
+
 (provide 'test-glassmacs-remote)
 ;;; test-glassmacs-remote.el ends here
