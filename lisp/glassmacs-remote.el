@@ -144,11 +144,15 @@ process, even if ESS selects that buffer during startup.  No code is queued."
               (let ((buffer (process-buffer proc)))
                 (when (and (process-live-p proc)
                            (buffer-live-p buffer)
+                           (with-current-buffer buffer
+                             (and (boundp 'ess-local-process-name)
+                                  (stringp ess-local-process-name)
+                                  (eq (get-process ess-local-process-name) proc)))
                            (equal (glassmacs-remote-execution-identity
                                    (buffer-local-value 'default-directory buffer))
                                   (glassmacs-remote-execution-identity directory)))
                   (when console
-                    (user-error "Remote R launch created multiple matching processes"))
+                    (user-error "Remote R launch created multiple matching ESS processes"))
                   (setq console buffer))))))
       (when (buffer-live-p launch-buffer)
         (kill-buffer launch-buffer)))
