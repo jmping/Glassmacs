@@ -17,6 +17,7 @@
 (require 'subr-x)
 (require 'glassmacs-presentation-model)
 (require 'glassmacs-dialogs)
+(require 'glassmacs-remote)
 
 (defgroup glassmacs-sessions nil
   "R session registry and command queue."
@@ -38,7 +39,7 @@
 
 (cl-defstruct (glassmacs-session (:constructor glassmacs-session--make)
                                  (:copier nil))
-  id process buffer name directory display-label
+  id process buffer name directory display-label execution-identity
   (state 'ready)                        ; ready, terminated
   (paused nil)
   ;; Why PAUSED is set, in words shown to the user; never nil while paused.
@@ -64,6 +65,8 @@
 (defvar glassmacs-sessions--timer nil)
 (defvar-local glassmacs-r-target-session nil
   "Session id explicitly selected for this buffer, or nil.")
+(defvar-local glassmacs-r-cross-location-approval nil
+  "Explicit approval (session id, source identity, target identity) or nil.")
 (defvar-local glassmacs-r--output-count 0)
 (defvar-local glassmacs-r--output-suppressed nil)
 (defvar-local glassmacs-r--output-marker-pending nil)
@@ -407,6 +410,10 @@ Queue records are preserved: see `glassmacs-sessions--terminate'."
                        :name (process-name process)
                        :directory (and (buffer-live-p buffer)
                                        (buffer-local-value 'default-directory buffer))
+                       :execution-identity
+                       (glassmacs-remote-execution-identity
+                        (and (buffer-live-p buffer)
+                             (buffer-local-value 'default-directory buffer)))
                        :started-at (current-time))))
         (setq glassmacs-sessions--list
               (append glassmacs-sessions--list (list session)))
@@ -493,6 +500,68 @@ console buffer's `default-directory'.  It is not a claim about R's getwd()."
              (buffer-local-value 'default-directory buffer))
         (glassmacs-session-directory session))))
 
+(defun glassmacs-r-session-execution-identity (session)
+  "Return SESSION's registration-time identity, with a legacy fallback.
+No network access is performed.  The identity describes the console's
+directory at registration, not an independently verified remote process."
+  (or (glassmacs-session-execution-identity session)
+      (glassmacs-remote-execution-identity
+       (glassmacs-session-directory session))))
+
+(defun glassmacs-r-source-execution-identity ()
+  "Return the current document's location identity without connecting."
+  (let ((base (or (buffer-base-buffer) (current-buffer))))
+    (with-current-buffer base
+      (glassmacs-remote-execution-identity
+       (or buffer-file-name default-directory)))))
+
+(defun glassmacs-r--route-approval (session)
+  "Return the identity-specific approval token for SESSION."
+  (list (glassmacs-session-id session)
+        (glassmacs-r-source-execution-identity)
+        (glassmacs-r-session-execution-identity session)))
+
+(defun glassmacs-r--check-cross-location (session)
+  "Refuse remote-source routing to a different execution context by default.
+The approval is tied to a source location, process session ID, and
+registration-time target location; stale approvals never silently apply."
+  (let ((source (glassmacs-r-source-execution-identity))
+        (target (glassmacs-r-session-execution-identity session)))
+    (when (and (glassmacs-remote-cross-location-p source target)
+               (not (equal glassmacs-r-cross-location-approval
+                           (glassmacs-r--route-approval session))))
+      (user-error
+       "Remote source at %s targets R at %s; use M-x glassmacs-r-approve-cross-location-target to authorize this document"
+       (glassmacs-remote-execution-label source)
+       (glassmacs-remote-execution-label target))))
+  session)
+
+(defun glassmacs-r-approve-cross-location-target ()
+  "Explicitly authorize the current remote document's selected R target.
+Permission is scoped to this document, session ID and both locations.
+It does not change TRAMP connections, launch R, or transmit code."
+  (interactive)
+  (let* ((base (or (buffer-base-buffer) (current-buffer)))
+         (id (with-current-buffer base glassmacs-r-target-session))
+         (session (and id (glassmacs-sessions-find id))))
+    (unless (and session (memq session (glassmacs-sessions-live)))
+      (user-error "Select a live R target for this document first"))
+    (let* ((source (glassmacs-r-source-execution-identity))
+           (target (glassmacs-r-session-execution-identity session)))
+      (unless (glassmacs-remote-cross-location-p source target)
+        (user-error "This source and R target do not require cross-location approval"))
+      (unless (yes-or-no-p
+               (format "Allow this document at %s to send code to R at %s? "
+                       (glassmacs-remote-execution-label source)
+                       (glassmacs-remote-execution-label target)))
+        (user-error "Cross-location R routing was not approved"))
+      (let ((approval (glassmacs-r--route-approval session)))
+        (dolist (buffer (glassmacs-r--document-buffers))
+          (with-current-buffer buffer
+            (setq glassmacs-r-cross-location-approval approval))))
+      (message "Approved cross-location routing to %s for this document"
+               (glassmacs-session-id session)))))
+
 (defun glassmacs-sessions--describe (session)
   "Describe SESSION by identity and console directory, not just its number."
   (format "%s [%s] — Console: %s%s"
@@ -563,13 +632,13 @@ stale explicit link.  Cancellation does not modify the document target."
       (let ((session (glassmacs-sessions-find id)))
         (unless (and session (memq session live))
           (user-error "Linked R session %s is no longer live; link another console explicitly" id))
-        session))
+        (glassmacs-r--check-cross-location session)))
      ((null live)
       (user-error "No live R console; create one with New R Console first"))
      (t
       (let ((session (glassmacs-sessions--prompt live)))
         (glassmacs-r--set-document-target (glassmacs-session-id session))
-        session)))))
+        (glassmacs-r--check-cross-location session))))))
 
 (defun glassmacs-sessions--prompt (live)
   (when noninteractive
@@ -598,6 +667,7 @@ ID nil clears the target."
   (dolist (buffer (glassmacs-r--document-buffers))
     (with-current-buffer buffer
       (setq glassmacs-r-target-session id)
+      (setq glassmacs-r-cross-location-approval nil)
       (glassmacs-r-target-indicator-mode (if id 1 -1)))))
 
 (defvar polymode-move-these-vars-from-base-buffer)
@@ -605,7 +675,9 @@ ID nil clears the target."
 (defun glassmacs-r--register-polymode-variables ()
   "Have polymode copy the R target into chunk buffers it creates."
   (add-to-list 'polymode-move-these-vars-from-base-buffer
-               'glassmacs-r-target-session))
+               'glassmacs-r-target-session)
+  (add-to-list 'polymode-move-these-vars-from-base-buffer
+               'glassmacs-r-cross-location-approval))
 
 (with-eval-after-load 'polymode-core
   (glassmacs-r--register-polymode-variables))
@@ -1053,6 +1125,9 @@ when no live target exists or SOURCE is blank."
     (unless (eq (glassmacs-session-state session) 'ready)
       (user-error "R session %s has terminated; command not queued"
                   (glassmacs-session-id session)))
+    (when (and origin (plist-get origin :buffer)
+               (equal (plist-get origin :buffer) (buffer-name)))
+      (glassmacs-r--check-cross-location session))
     (let ((entry (glassmacs-entry--make
                   :id (format "cmd-%d" (cl-incf glassmacs-sessions--entry-counter))
                   :session-id (glassmacs-session-id session)
