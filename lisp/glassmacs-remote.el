@@ -124,9 +124,9 @@ A descriptor is not proof of a connection or of an executable R."
     (user-error "ESS does not provide the R startup command")))
 
 (defun glassmacs-remote-r--start-ess (directory)
-  "Launch a new ESS R session from DIRECTORY and return its console buffer.
-ESS owns the process and terminal transport.  Never reuse a preexisting R
-process, even if ESS selects that buffer during startup.  No code is queued."
+  "Launch ESS R in remote DIRECTORY and return its new console.
+ESS owns the process, filters and terminal.  Never reuse a preexisting R
+process; do not infer a remote process from the source buffer alone."
   (glassmacs-remote-r--ensure-ess)
   (let ((launch-buffer (generate-new-buffer " *Glassmacs remote R launch*"))
         (before (process-list))
@@ -135,9 +135,6 @@ process, even if ESS selects that buffer during startup.  No code is queued."
         (with-current-buffer launch-buffer
           (setq default-directory directory)
           (call-interactively #'R)
-          ;; ESS may change buffer or window selection during startup.  Find
-          ;; exactly one *new* process with a live console on the requested
-          ;; remote host, rather than relying on current-buffer after R.
           (let ((new (cl-remove-if (lambda (proc) (memq proc before))
                                    (process-list))))
             (dolist (proc new)
