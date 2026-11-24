@@ -94,6 +94,9 @@ these same commands, so they cannot disagree about the queue."
                   :enable glassmacs-r-target-session))
     (define-key menu [list-sessions]
       '(menu-item "List R Sessions" glassmacs-r-list-sessions))
+    (define-key menu [health]
+      '(menu-item "R Session Health…" glassmacs-diagnostics-r-sessions
+                  :help "Inspect all live R sessions and open their queues or consoles"))
     (define-key menu [graphics-separator] menu-bar-separator)
     (define-key menu [graphics-list]
       '(menu-item "List Graphics Devices" glassmacs-r-graphics-list-devices
@@ -150,6 +153,9 @@ these same commands, so they cannot disagree about the queue."
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [list-sessions]
       '(menu-item "List R Sessions" glassmacs-r-list-sessions))
+    (define-key menu [health]
+      '(menu-item "R Session Health…" glassmacs-diagnostics-r-sessions
+                  :help "Inspect all live R sessions and open their queues or consoles"))
     (define-key menu [start]
       '(menu-item "Start Another R Session" glassmacs-r-start-session))
     (define-key menu [history]
@@ -191,6 +197,9 @@ comint's Break, Stop and Kill without modifying comint's shared map.")
   (let ((menu (make-sparse-keymap "R")))
     (define-key menu [list-sessions]
       '(menu-item "List R Sessions" glassmacs-r-list-sessions))
+    (define-key menu [health]
+      '(menu-item "R Session Health…" glassmacs-diagnostics-r-sessions
+                  :help "Inspect all live R sessions and open their queues or consoles"))
     (define-key menu [new-console]
       '(menu-item "New R Console" glassmacs-r-new-console))
     (define-key menu [switch-console]
