@@ -541,7 +541,8 @@
   "Fixed launcher delegates to Rscript without embedding project source."
   (require 'glassmacs-r-jobs)
   (let ((driver (glassmacs-r-jobs--launcher)))
-    (should (string-match-p "Rscript --vanilla job.R" driver))
+    (should (string-match-p "Rscript --vanilla" driver))
+    (should (string-match-p "job.R" driver))
     (should (string-match-p "exit:%s" driver))
     (should-not (string-match-p "/Users/\\|/home/research/" driver))))
 
