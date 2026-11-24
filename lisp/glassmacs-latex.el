@@ -124,17 +124,27 @@ Safe to call repeatedly; settings the user customized are kept."
 
 (defun glassmacs-knit-sweave-pdf ()
   "Knit the current Sweave/knitr document to PDF and show it.
-Runs knitr::knit2pdf() with Rscript in the document's directory, without
-blocking Emacs, then opens the PDF.  SyncTeX positions refer to the
-generated .tex file, not the .Rnw source."
+With the experimental local job adapter enabled, keep the reported PDF
+associated with the source and its independent build log.  Otherwise
+preserve the existing single-process renderer and viewer behavior.
+SyncTeX positions refer to generated .tex, not the original .Rnw source."
   (interactive)
   (let* ((file (glassmacs--current-file))
          (pdf (concat (file-name-sans-extension file) ".pdf")))
-    (glassmacs-run-process
-     "Rscript"
-     (list "-e" (format "knitr::knit2pdf(%s)" (glassmacs-r-quote file)))
-     (file-name-directory file)
-     (lambda () (glassmacs-latex-open-pdf pdf)))))
+    (if glassmacs-document-use-job-adapter
+        (glassmacs-document-render--local
+         'sweave file "Rscript"
+         (list "-e"
+               (format "result <- knitr::knit2pdf(%s); cat(%S, normalizePath(result), \"\\n\", sep = \"\")"
+                       (glassmacs-r-quote file)
+                       glassmacs--render-output-marker))
+         (concat "^" (regexp-quote glassmacs--render-output-marker)
+                 "\\(.+\\)$"))
+      (glassmacs-run-process
+       "Rscript"
+       (list "-e" (format "knitr::knit2pdf(%s)" (glassmacs-r-quote file)))
+       (file-name-directory file)
+       (lambda () (glassmacs-latex-open-pdf pdf))))))
 
 (provide 'glassmacs-latex)
 ;;; glassmacs-latex.el ends here
