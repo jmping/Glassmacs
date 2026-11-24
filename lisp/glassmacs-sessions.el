@@ -1020,16 +1020,17 @@ A failed launch never changes source targets or creates a queue entry."
          (origin-buffer (window-buffer origin-window))
          (origin-frame (selected-frame)))
     (glassmacs-remote--require-executable "ssh")
-    (let ((default-directory remote-directory))
-      (condition-case error-data
-          (glassmacs-remote-r--start-ess remote-directory)
-        (file-error
-         (user-error "Could not start ESS R on %s: %s"
-                     host (error-message-string error-data)))))
-    (let* ((console (current-buffer))
-           (proc (and (boundp 'ess-local-process-name)
-                      ess-local-process-name
-                      (get-process ess-local-process-name))))
+    (let* ((console
+            (condition-case error-data
+                (glassmacs-remote-r--start-ess remote-directory)
+              (file-error
+               (user-error "Could not start ESS R on %s: %s"
+                           host (error-message-string error-data)))))
+           (proc (and (buffer-live-p console)
+                      (with-current-buffer console
+                        (and (boundp 'ess-local-process-name)
+                             ess-local-process-name
+                             (get-process ess-local-process-name))))))
       (glassmacs-remote-r--verify-process proc remote-directory)
       (let ((session (glassmacs-sessions-register proc)))
         ;; Refresh the authoritative location from the verified ESS process.
