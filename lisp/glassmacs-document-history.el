@@ -128,5 +128,24 @@ Does not probe or open the output file."
                         :key (lambda (entry) (alist-get 'source entry))
                         :test #'equal))))
 
+(defun glassmacs-document-history-list ()
+  "Return a copy of remembered local outputs, newest first.
+This reads only the private local index and never probes or opens outputs."
+  (copy-tree (glassmacs-document-history--read)))
+
+(defun glassmacs-document-history-forget (source)
+  "Forget the exact local SOURCE entry without touching any output file.
+If there is no index or no matching record, leave the filesystem unchanged.
+A malformed index is never overwritten."
+  (unless (glassmacs-document-history--local-path-p source)
+    (user-error "Only local source paths can be forgotten"))
+  (let* ((entries (glassmacs-document-history--read))
+         (remaining (cl-remove source entries
+                               :key (lambda (entry) (alist-get 'source entry))
+                               :test #'equal)))
+    (when (< (length remaining) (length entries))
+      (glassmacs-document-history--write remaining)
+      t)))
+
 (provide 'glassmacs-document-history)
 ;;; glassmacs-document-history.el ends here
