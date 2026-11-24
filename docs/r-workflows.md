@@ -170,6 +170,30 @@ functionality; no such integration result has yet been obtained. The
 verification of console context alone cannot prove which binary is executing
 until the host's R prompt and execution are exercised end-to-end.
 
+### Durable remote Rscript jobs (experimental)
+
+A durable job is **not** an ESS R console. Choose **R > Submit Durable Remote
+Rscript Job…**, specify an SSH alias, a remote working directory, and a
+source `.R` file. Glassmacs copies the script into a private per-job
+directory under `.glassmacs-jobs/<job-id>/` and explicitly launches
+`Rscript --vanilla` through a detached remote driver. The driver writes
+`stdout.log`, `stderr.log`, `pid`, and a textual `status` marker.
+This is an opt-in server-side process and never uses the interactive R
+queue or automatically replays any source command.
+
+Use **R > Inspect Remote Job ID…** to check a job after restarting Glassmacs,
+or **R > Open Remote Job Log…** to inspect output. Keep the opaque job ID,
+host, and remote working directory: they are needed for later inspection.
+The in-app job list shows submissions made during the current application
+run only; it is not a query of the remote server.
+
+**Limits and safety:** A lost connection during submission can leave the
+outcome uncertain. Do not blindly resubmit; inspect the remote job directory
+first. A missing status marker is unknown, not proof that a computation
+failed. No scheduler integration, guaranteed process survival across server
+reboots, automatic cancellation, or GUI-tested macOS lifecycle is claimed.
+An opt-in real SSH/Rscript integration test is required before beta release.
+
 ### Remote ESS disconnection and manual recovery (experimental)
 
 The R session registry distinguishes a remote ESS transport loss from an
