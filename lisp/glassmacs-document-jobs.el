@@ -43,7 +43,7 @@ root in a different local/remote location."
     (user-error "A project root must be an absolute directory"))
   (let* ((remote (file-remote-p source))
          (root-remote (and project-root (file-remote-p project-root))))
-    (unless (equal remote root-remote)
+    (when (and project-root (not (equal remote root-remote)))
       (user-error "Document and project root must have the same location"))
     (glassmacs-document-context--make
      :source source
