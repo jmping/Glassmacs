@@ -358,5 +358,83 @@
       (should-not (glassmacs-session-entries session))
       (should (= glassmacs-sessions--entry-counter 0)))))
 
+
+;;; Remote ESS launch: network-free wiring and safety regressions.
+
+(ert-deftest glassmacs-remote-r-launch-context-is-network-free ()
+  "A startup descriptor uses SSH/TRAMP without making a connection."
+  (cl-letf (((symbol-function 'tramp-maybe-open-connection)
+             (lambda (&rest _) (ert-fail "Launch context attempted SSH"))))
+    (let ((context (glassmacs-remote-r-launch-context
+                    "research" "/home/user/project with spaces")))
+      (should (equal (plist-get context :directory)
+                     "/ssh:research:/home/user/project with spaces/"))
+      (should (equal (plist-get (plist-get context :identity) :host)
+                     "research")))))
+
+(ert-deftest glassmacs-remote-r-launch-context-rejects-invalid-input ()
+  "Reject malformed locations before ESS startup."
+  (should-error (glassmacs-remote-r-launch-context
+                 "bad host" "/home/user") :type 'user-error)
+  (should-error (glassmacs-remote-r-launch-context
+                 "research" "relative/path") :type 'user-error))
+
+(ert-deftest glassmacs-remote-r-ess-startup-uses-remote-directory ()
+  "ESS keeps responsibility for starting R in the selected TRAMP context."
+  (let (seen)
+    (cl-letf (((symbol-function 'glassmacs-remote-r--ensure-ess) #'ignore)
+              ((symbol-function 'call-interactively)
+               (lambda (fn &rest _)
+                 (setq seen (cons fn default-directory)))))
+      (glassmacs-remote-r--start-ess
+       "/ssh:research:/home/user/project/")
+      (should (eq (car seen) 'R))
+      (should (equal (cdr seen) "/ssh:research:/home/user/project/")))))
+
+(ert-deftest glassmacs-remote-r-verify-rejects-local-console ()
+  "A local process must not be misreported as a remote R process."
+  (let* ((buffer (generate-new-buffer " *remote R verify local*"))
+         (process (make-pipe-process :name "remote-r-test-local"
+                                     :buffer buffer :noquery t)))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer
+            (setq default-directory "/"))
+          (should-error
+           (glassmacs-remote-r--verify-process
+            process "/ssh:research:/work/") :type 'user-error))
+      (delete-process process)
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-remote-r-verify-accepts-matching-context ()
+  "Verification checks method and host, not the exact working directory."
+  (let* ((buffer (generate-new-buffer " *remote R verify matched*"))
+         (process (make-pipe-process :name "remote-r-test-matched"
+                                     :buffer buffer :noquery t)))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer
+            (setq default-directory "/ssh:research:/other/"))
+          (should (eq (glassmacs-remote-r--verify-process
+                       process "/ssh:research:/work/") process))
+          (should-error (glassmacs-remote-r--verify-process
+                         process "/ssh:different:/work/") :type 'user-error))
+      (delete-process process)
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-remote-r-start-failure-preserves-source-target ()
+  "An ESS launch error does not alter the originating source's target."
+  (require 'glassmacs-sessions)
+  (with-temp-buffer
+    (setq glassmacs-r-target-session "R-original")
+    (cl-letf (((symbol-function 'glassmacs-remote--require-executable)
+               (lambda (_name) "/usr/bin/ssh"))
+              ((symbol-function 'glassmacs-remote-r--start-ess)
+               (lambda (_dir) (signal 'file-error '("connection denied")))))
+      (should-error
+       (glassmacs-r-start-remote-session "research" "/home/user")
+       :type 'user-error)
+      (should (equal glassmacs-r-target-session "R-original")))))
+
 (provide 'test-glassmacs-remote)
 ;;; test-glassmacs-remote.el ends here
