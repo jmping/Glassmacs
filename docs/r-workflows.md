@@ -240,6 +240,17 @@ one render runs at a time; starting another while one is running is refused.
 A missing executable is reported immediately. R packages such as `rmarkdown` or
 `knitr` must be installed in the selected R library.
 
+**Experimental research-build adapter (draft campaign #111):** Set
+`glassmacs-document-use-job-adapter` to non-nil to opt into per-document
+local R Markdown/Quarto job records and independent output logs. The default
+path remains the single-process renderer described above until the new
+adapter passes integrated and packaged-app acceptance. Each opt-in job records
+its source directory, status and reported output; local cancellation and
+concurrent jobs use the separate job API. The adapter deliberately refuses a
+remote source document rather than pretending that local Rscript/Quarto can
+execute safely across SSH. Remote document rendering is deferred until the
+#102 remote campaign is accepted.
+
 ## Shiny
 
 From `app.R`, `ui.R`, or `server.R`, or a directory containing one of those
