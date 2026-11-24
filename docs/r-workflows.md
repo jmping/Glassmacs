@@ -170,6 +170,26 @@ functionality; no such integration result has yet been obtained. The
 verification of console context alone cannot prove which binary is executing
 until the host's R prompt and execution are exercised end-to-end.
 
+### Remote ESS disconnection and manual recovery (experimental)
+
+The R session registry distinguishes a remote ESS transport loss from an
+ordinary local R termination. A dead remote ESS process is marked
+**disconnected**, and its associated location remains visible. A command
+in flight is **uncertain** because it may have executed on the remote host;
+unsent queue entries become **orphaned**. Neither is automatically replayed.
+This does not assume that remote R itself exited: the server process may
+still exist, but the prior ESS connection is not safely attachable.
+
+Use **R > Disconnected R Sessions…** or
+`M-x glassmacs-r-list-disconnected-sessions` to inspect the retained records.
+Starting another remote console creates a **new session incarnation**;
+Glassmacs never associates it with the previous command queue or silently
+resumes source targets. The user must explicitly evaluate which computations
+completed and relink the appropriate source documents.
+
+**This is loss detection and safe manual recovery, not reattachment.**
+Durable remote jobs are a separate workstream with server-side ownership.
+
 ### Remote execution development status
 
 The session identity and route-approval checks in PR #102 are purely local
