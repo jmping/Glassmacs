@@ -34,7 +34,7 @@
           :pid (concat root "pid") :status (concat root "status"))))
 
 (defun glassmacs-r-jobs--launcher ()
-  "Return a constant remote launcher without interpolated user data."
+  "Return a fixed POSIX driver with no user interpolation."
   "#!/bin/sh\nset -eu\numask 077\ncd \"$(dirname \"$0\")\"\nprintf \"running\\n\" > status\nRscript --vanilla job.R > stdout.log 2> stderr.log &\nchild=$!\nprintf \"%s\\n\" \"$child\" > pid\nwait \"$child\" && result=0 || result=$?\nprintf \"exit:%s\\n\" \"$result\" > status\nexit \"$result\"\n")
 
 (defun glassmacs-r-jobs--run (remote &rest argv)
