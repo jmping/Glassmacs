@@ -30,7 +30,7 @@ If the Cloudflare interface offers a Pages-specific workflow instead, use root `
 - Do not describe experimental features as verified on a signed or notarized macOS build.
 - Do not invent screenshots, binaries, release dates, or download links.
 - The Download button leads to the release catalog; GitHub Releases hosts all binaries.
-- Maintain `src/data/releases.json` in the same release-publication change: add the exact published tag, date, asset filename, checksum where available, stability and evidence. Keep previous public versions, mark withdrawn builds explicitly, and remove a candidate entry when promoted (update the release page accordingly).
+- Maintain `src/data/releases.json` in the same release-publication change: add the exact published tag, date, asset filename, checksum where available, stability and evidence; preserve the previous and validation fields used by the distribution guide. Keep previous public versions, mark withdrawn builds explicitly, and populate the validation object only after publication; when superseding a validation release, archive its version, asset, checksum/source links and evidence in the historical catalog before replacing it.
 - Confirm public asset and release links against GitHub before merging; never link an unpublished DMG. Keep the catalog review date current. The GitHub releases index is the fallback for newer releases.
 - Update the public roadmap and canonical technical roadmap when maturity gates change; never equate notarization with stability. Run `npm run build` and check links and mobile layout before deployment.
 - Maintain a clear distinction between Aquamacs inspiration and any official affiliation.
