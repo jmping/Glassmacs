@@ -26,7 +26,7 @@
 Do not accept TRAMP syntax, shell redirection, traversal or absolute paths."
   (unless (and (stringp name) (not (string-empty-p name))
                (not (file-name-absolute-p name))
-               (not (string-match-p "[:\\\\\r\n\0]" name))
+               (not (string-match-p "[[:cntrl:]:\\\\]" name))
                (not (string-match-p "\\`[~/]" name))
                (not (member ".." (split-string name "/" t)))
                (not (member "." (split-string name "/" t)))
