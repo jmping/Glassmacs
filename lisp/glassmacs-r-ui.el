@@ -71,6 +71,9 @@ these same commands, so they cannot disagree about the queue."
       '(menu-item "Start R and Target This Buffer" glassmacs-r-start-and-target-session))
     (define-key menu [start-unbound]
       '(menu-item "New R Console" glassmacs-r-new-console))
+    (define-key menu [start-remote]
+      '(menu-item "New Remote R Console…" glassmacs-r-start-remote-and-target
+                  :help "Start an independent ESS R process on an SSH host"))
     (define-key menu [switch-console]
       '(menu-item "Switch R Console…" glassmacs-r-switch-console
                   :enable (glassmacs-r-ui--menu-has-session-p)))
@@ -158,6 +161,9 @@ these same commands, so they cannot disagree about the queue."
                   :help "Inspect all live R sessions and open their queues or consoles"))
     (define-key menu [start]
       '(menu-item "Start Another R Session" glassmacs-r-start-session))
+    (define-key menu [start-remote]
+      '(menu-item "New Remote R Console…" glassmacs-r-start-remote-session
+                  :help "Start independent ESS R on an SSH host"))
     (define-key menu [history]
       '(menu-item "Previous Command" comint-previous-input))
     (define-key menu [graphics-separator] menu-bar-separator)
@@ -202,6 +208,9 @@ comint's Break, Stop and Kill without modifying comint's shared map.")
                   :help "Inspect all live R sessions and open their queues or consoles"))
     (define-key menu [new-console]
       '(menu-item "New R Console" glassmacs-r-new-console))
+    (define-key menu [remote-console]
+      '(menu-item "New Remote R Console…" glassmacs-r-start-remote-session
+                  :help "Start an independent ESS R session over SSH"))
     (define-key menu [switch-console]
       '(menu-item "Show R Console…" glassmacs-r-switch-console
                   :enable (glassmacs-r-ui--menu-has-session-p)))
