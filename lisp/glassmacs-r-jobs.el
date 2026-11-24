@@ -39,13 +39,12 @@
 
 (defun glassmacs-r-jobs--run (remote &rest argv)
   "Execute the fixed command ARGV via TRAMP REMOTE."
-  (let ((default-directory remote))
-    (with-temp-buffer
-      (setq default-directory remote)
-      (let ((status (apply #'process-file (car argv) nil t nil (cdr argv))))
-        (unless (and (integerp status) (= status 0))
-          (user-error "Remote job launch returned %s" status))
-        status))))
+  (with-temp-buffer
+    (setq default-directory remote)
+    (let ((status (apply #'process-file (car argv) nil t nil (cdr argv))))
+      (unless (and (integerp status) (= status 0))
+        (user-error "Remote job launch returned %s" status))
+      status)))
 
 (defun glassmacs-r-jobs-submit (host directory source-file)
   "Submit a copy of an R script as a detached job on SSH HOST.
