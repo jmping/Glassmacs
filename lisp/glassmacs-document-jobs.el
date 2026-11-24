@@ -50,7 +50,7 @@ root in a different local/remote location."
 KIND identifies the adapter (such as `rmarkdown' or `quarto').
 STATUS is a conservative lifecycle marker.  An uncertain job must be
 reconciled explicitly; this record never starts or replays work."
-  id context kind status log-buffer output-file error)
+  id context kind status log-buffer output-file error process)
 
 (defconst glassmacs-document-jobs--allowed-transitions
   '((pending . (running cancelled failed uncertain))
