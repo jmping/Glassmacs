@@ -401,6 +401,11 @@ as a local Shiny app instead, since it cannot be rendered to a file."
                   :enable (let ((job (glassmacs-document-build-current-job)))
                             (and job (buffer-live-p
                                       (glassmacs-document-job-log-buffer job))))))
+    (define-key menu [build-remembered]
+      '(menu-item "Open Remembered Build Output"
+                  glassmacs-document-build-open-remembered-output
+                  :visible (bound-and-true-p
+                            glassmacs-document-remember-build-outputs)))
     (define-key menu [build-output]
       '(menu-item "Open Last Build Output" glassmacs-document-build-open-last-output
                   :visible (bound-and-true-p glassmacs-document-use-job-adapter)
