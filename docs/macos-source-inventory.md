@@ -16,6 +16,17 @@ before marking `corresponding_source_and_licenses` as passed.
 | Other bundled dynamic libraries and executables | The upstream dependency manifest gives direct dependencies and versions per architecture, not the complete transitive closure. The app validator inspected 547 Mach-O files; 64, 68 and 62 top-level dylibs were found in the arm64, x86_64 macOS 11 and x86_64 macOS 10.12 library directories respectively. | Map every actual binary to its exact source, modifications, applicable licenses and notices, including static components and SDK materials. |
 | R | R is an external, separately installed executable, not bundled by the Glassmacs build. | Its separate distributor's terms apply; do not imply R is included. |
 
+The upstream-linked Emacs source archive and GNU's
+[`emacs-31.1.tar.xz`](https://ftp.gnu.org/gnu/emacs/emacs-31.1.tar.xz)
+have different SHA-256 values; GNU's is
+`1da5790d9580c81932b5bf700633114468da7b3412d69faa767daebf974f4586`.
+A comparison of regular-file contents and symlink targets found no differences
+among shared paths. The upstream archive alone contains
+`java/AndroidManifest.xml` and `test/manual/noverlay/Makefile`; GNU's archive
+alone contains `admin/unidata/unidata-gen.elc`, `admin/unidata/unidata.txt`,
+`admin/unidata/uvs.elc`, `lisp/loaddefs.el` and `lisp/loaddefs.elc`. This
+comparison does not establish the build inputs or all corresponding source.
+
 The unique top-level dylib names inspected include Lerc, X11/Xau/Xdmcp/Xext/
 Xrender/XCB, brotli, bzip2, libc++/libc++abi, Cairo, datrie, dav1d,
 libdeflate, expat, libffi, fontconfig, FreeType, FriBidi, libgcc/libgccjit,
