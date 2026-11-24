@@ -34,14 +34,8 @@
           :pid (concat root "pid") :status (concat root "status"))))
 
 (defun glassmacs-r-jobs--launcher ()
-  "Return a fixed shell script; no user input is interpolated."
-  (mapconcat #'identity
-             '("#!/bin/sh" "set -eu" "umask 077" "cd \"$(dirname \"$0\")\""
-               "printf 'running\\n' > status"
-               "Rscript --vanilla job.R > stdout.log 2> stderr.log &"
-               "child=$!" "printf '%s\\n' \"$child\" > pid"
-               "wait \"$child\" && result=0 || result=$?"
-               "printf 'exit:%s\\n' \"$result\" > status" "exit \"$result\"") "\n"))
+  "Return a constant remote launcher without interpolated user data."
+  "#!/bin/sh\nset -eu\numask 077\ncd \"$(dirname \"$0\")\"\nprintf \"running\\n\" > status\nRscript --vanilla job.R > stdout.log 2> stderr.log &\nchild=$!\nprintf \"%s\\n\" \"$child\" > pid\nwait \"$child\" && result=0 || result=$?\nprintf \"exit:%s\\n\" \"$result\" > status\nexit \"$result\"\n")
 
 (defun glassmacs-r-jobs--run (remote &rest argv)
   "Execute the fixed command ARGV via TRAMP REMOTE."
