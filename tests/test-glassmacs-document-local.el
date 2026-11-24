@@ -87,5 +87,48 @@
       (when (buffer-live-p (glassmacs-document-job-log-buffer job))
         (kill-buffer (glassmacs-document-job-log-buffer job))))))
 
+
+(ert-deftest glassmacs-document-local-missing-executable-is-failed ()
+  "An unavailable renderer is a terminal failure, not a pending phantom job."
+  (let ((job (glassmacs-document-local-test--job "missing-executable")))
+    (cl-letf (((symbol-function 'executable-find) (lambda (_program) nil)))
+      (should-error
+       (glassmacs-document-local-start job "no-glassmacs-renderer" nil)
+       :type 'user-error))
+    (should (eq (glassmacs-document-job-status job) 'failed))
+    (should (string-match-p "Required executable"
+                            (glassmacs-document-job-error job)))
+    (should-not (glassmacs-document-job-process job))
+    (should-not (glassmacs-document-job-log-buffer job))))
+
+(ert-deftest glassmacs-document-local-reconciles-early-process-exit ()
+  "If a sentinel runs before registration, reconcile once after setup."
+  (let* ((job (glassmacs-document-local-test--job "early-exit"))
+         (real-make-process (symbol-function 'make-process))
+         (callback-count 0)
+         (process nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'make-process)
+                   (lambda (&rest args)
+                     (let ((early (apply real-make-process args)))
+                       ;; The child has no job property yet.  Simulate the
+                       ;; sentinel observing exit before registration.
+                       (while (process-live-p early)
+                         (accept-process-output early 0.05))
+                       (glassmacs-document-local--sentinel early "finished")
+                       early))))
+          (setq process
+                (glassmacs-document-local-start
+                 job "sh" '("-c" "printf done")
+                 (lambda (_job) (cl-incf callback-count))))
+          (should (eq (glassmacs-document-job-status job) 'succeeded))
+          (should (= callback-count 1))
+          (glassmacs-document-local--sentinel process "duplicate")
+          (should (= callback-count 1)))
+      (when (and process (process-live-p process))
+        (delete-process process))
+      (when (buffer-live-p (glassmacs-document-job-log-buffer job))
+        (kill-buffer (glassmacs-document-job-log-buffer job))))))
+
 (provide 'test-glassmacs-document-local)
 ;;; test-glassmacs-document-local.el ends here
