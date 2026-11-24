@@ -7,10 +7,18 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'project)
 
 (defgroup glassmacs-document-jobs nil
   "Document build context and lifecycle records."
   :group 'glassmacs)
+
+(defcustom glassmacs-document-detect-project-root nil
+  "When non-nil, attach local `project.el' roots to document contexts.
+This is metadata only: it does not change working directories, choose
+an R process or map remote paths.  Remote project probing is skipped."
+  :type 'boolean
+  :group 'glassmacs-document-jobs)
 
 (cl-defstruct (glassmacs-document-context
                (:constructor glassmacs-document-context--make))
@@ -43,6 +51,21 @@ root in a different local/remote location."
      :location (if remote 'remote 'local)
      :project-root project-root
      :target-id target-id)))
+
+(defun glassmacs-document-context-for-file (source &optional target-id)
+  "Build SOURCE's context, optionally consulting local upstream project.el.
+Project discovery is a local metadata hint only and never selects a remote
+execution target or changes the document's working directory."
+  (let ((root
+         (when (and glassmacs-document-detect-project-root
+                    (stringp source)
+                    (file-name-absolute-p source)
+                    (not (file-remote-p source)))
+           (when-let* ((project (ignore-errors
+                                 (project-current nil
+                                                  (file-name-directory source)))))
+             (ignore-errors (project-root project))))))
+    (glassmacs-document-context-create source root target-id)))
 
 (cl-defstruct (glassmacs-document-job
                (:constructor glassmacs-document-job--make))
