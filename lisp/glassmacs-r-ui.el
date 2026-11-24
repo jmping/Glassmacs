@@ -85,6 +85,10 @@ these same commands, so they cannot disagree about the queue."
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [show-target]
       '(menu-item "Show Current R Target" glassmacs-r-show-target-session))
+    (define-key menu [approve-cross-location]
+      '(menu-item "Approve Cross-Host R Target…" glassmacs-r-approve-cross-location-target
+                  :help "Explicitly authorize an R target on a different host for this document"
+                  :enable glassmacs-r-target-session))
     (define-key menu [clear-target]
       '(menu-item "Clear R Target" glassmacs-r-clear-session-target
                   :enable glassmacs-r-target-session))
