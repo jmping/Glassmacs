@@ -525,6 +525,12 @@ deleted or replayed."
       (when (buffer-live-p buffer)
         (with-current-buffer buffer
           (glassmacs-r--reset-output-state))))
+    ;; Freeze the registration-time location before the console is lost.
+    ;; Legacy sessions may not yet have a snapshot in the struct.
+    (unless (glassmacs-session-execution-identity session)
+      (setf (glassmacs-session-execution-identity session)
+            (glassmacs-remote-execution-identity
+             (glassmacs-session-directory session))))
     (let ((remote (glassmacs-r-session-remote-p session)))
       (setf (glassmacs-session-state session) 'terminated
             (glassmacs-session-ended-at session) (current-time)
