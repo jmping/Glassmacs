@@ -175,6 +175,38 @@ identity to an unrelated source buffer."
     (glassmacs-open-rendered-output
      (glassmacs-document-job-output-file job))))
 
+(defun glassmacs-document-build-show-status ()
+  "Show a read-only snapshot of the current source's last build.
+This does not poll, restart, cancel, or reopen any job or output."
+  (interactive)
+  (let* ((job (glassmacs-document-build-current-job))
+         (context (and job (glassmacs-document-job-context job))))
+    (unless job
+      (user-error "No build is linked to this document"))
+    (let ((buffer (get-buffer-create "*Glassmacs Document Build Status*")))
+      (with-current-buffer buffer
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert (format "Source: %s\n" (glassmacs-document-context-source context)))
+          (insert (format "Job: %s\nKind: %s\nStatus: %s\n"
+                          (glassmacs-document-job-id job)
+                          (glassmacs-document-job-kind job)
+                          (glassmacs-document-job-status job)))
+          (when-let* ((root (glassmacs-document-context-project-root context)))
+            (insert (format "Project: %s\n" root)))
+          (when-let* ((output (glassmacs-document-job-output-file job)))
+            (insert (format "Output: %s\n" output)))
+          (when-let* ((error (glassmacs-document-job-error job)))
+            (insert (format "Note: %s\n" error)))
+          (insert (format "Log: %s\n"
+                          (if (buffer-live-p (glassmacs-document-job-log-buffer job))
+                              (buffer-name (glassmacs-document-job-log-buffer job))
+                            "not retained")))
+          (goto-char (point-min))
+          (special-mode)))
+      (display-buffer buffer)
+      buffer)))
+
 (defun glassmacs-document-build-show-last-log ()
   "Display the current document's independent build log."
   (interactive)
