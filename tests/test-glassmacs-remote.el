@@ -386,8 +386,8 @@
               ((symbol-function 'call-interactively)
                (lambda (fn &rest _)
                  (setq seen (cons fn default-directory)))))
-      (glassmacs-remote-r--start-ess
-       "/ssh:research:/home/user/project/")
+      (should-not (glassmacs-remote-r--start-ess
+                   "/ssh:research:/home/user/project/"))
       (should (eq (car seen) 'R))
       (should (equal (cdr seen) "/ssh:research:/home/user/project/")))))
 
