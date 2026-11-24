@@ -3,6 +3,7 @@
 (require 'cl-lib)
 
 (require 'subr-x)
+(require 'json)
 
 (require 'glassmacs-remote)
 
@@ -10,7 +11,77 @@
 
 (cl-defstruct (glassmacs-r-job (:constructor glassmacs-r-job--make) (:copier nil)) id host directory root source state)
 
-(defvar glassmacs-r-jobs--list nil "Jobs submitted during this Emacs invocation.")
+(defvar glassmacs-r-jobs--list nil "Known durable R jobs, loaded from local metadata.")
+(defvar glassmacs-r-jobs--loaded nil "Whether the local job index has been read.")
+(defcustom glassmacs-r-jobs-record-file
+  (expand-file-name "r-jobs.json" user-emacs-directory)
+  "Private local JSON index of job IDs, SSH aliases and directories.
+No secrets, R source code, or remote output are stored in this file."
+  :type 'file :group 'glassmacs-r-jobs)
+
+(defun glassmacs-r-jobs--row (job)
+  "Serialize only the safe metadata for JOB."
+  (list (cons 'id (glassmacs-r-job-id job))
+        (cons 'host (glassmacs-r-job-host job))
+        (cons 'directory (glassmacs-r-job-directory job))
+        (cons 'state (symbol-name (glassmacs-r-job-state job)))))
+
+(defun glassmacs-r-jobs--decode-row (row)
+  "Decode one locally stored row without connecting to SSH."
+  (let* ((id (alist-get 'id row))
+         (host (alist-get 'host row))
+         (directory (alist-get 'directory row))
+         (state (alist-get 'state row)))
+    (glassmacs-r-jobs--validate-id id)
+    (glassmacs-remote-r-launch-context host directory)
+    (glassmacs-r-job--make :id id :host host :directory directory
+                          :root (plist-get (glassmacs-r-jobs--paths
+                                            host directory id) :root)
+                          :state (if (member state
+                                             '("submitting" "submitted" "starting"
+                                               "running" "cancel-requested"
+                                               "cancelled" "completed" "failed"
+                                               "unknown" "unreachable"))
+                                     (intern state) 'unknown))))
+
+(defun glassmacs-r-jobs--load ()
+  "Load a local JSON registry once; never execute code from the file."
+  (unless glassmacs-r-jobs--loaded
+    (when (file-remote-p glassmacs-r-jobs-record-file)
+      (user-error "Durable R job index must be stored locally"))
+    (when (file-exists-p glassmacs-r-jobs-record-file)
+      (let ((json-object-type 'alist)
+            (json-array-type 'list)
+            (json-key-type 'symbol))
+        (let ((data (json-read-file glassmacs-r-jobs-record-file)))
+          (unless (equal (alist-get 'version data) 1)
+            (user-error "Unsupported durable R job index version"))
+          (setq glassmacs-r-jobs--list
+                (mapcar #'glassmacs-r-jobs--decode-row
+                        (alist-get 'jobs data))))))
+    (setq glassmacs-r-jobs--loaded t))
+  glassmacs-r-jobs--list)
+
+(defun glassmacs-r-jobs--save ()
+  "Atomically save a mode-0600 JSON index on the local machine."
+  (when (file-remote-p glassmacs-r-jobs-record-file)
+    (user-error "Durable R job index must be stored locally"))
+  (let* ((folder (file-name-directory glassmacs-r-jobs-record-file))
+         (content (json-encode
+                   (list (cons 'version 1)
+                         (cons 'jobs (vconcat
+                                      (mapcar #'glassmacs-r-jobs--row
+                                              glassmacs-r-jobs--list))))))
+         temp-file)
+    (make-directory folder t)
+    (unwind-protect
+        (progn
+          (setq temp-file (make-temp-file (expand-file-name ".r-jobs-" folder)))
+          (with-temp-file temp-file (insert content "\n"))
+          (set-file-modes temp-file #o600)
+          (rename-file temp-file glassmacs-r-jobs-record-file t))
+      (when (and temp-file (file-exists-p temp-file))
+        (delete-file temp-file)))))
 
 (defconst glassmacs-r-jobs--id-regexp "\\`glassmacs-r-[[:xdigit:]]\\{24\\}\\'")
 
@@ -57,6 +128,7 @@ A network failure can leave an uncertain submission: inspect its directory."
                      (read-string "Remote working directory: " "/")
                      (read-file-name "R script: " nil nil t)))
   (glassmacs-remote-r-launch-context host directory)
+  (glassmacs-r-jobs--load)
   (unless (and (file-regular-p source-file) (string-match-p "\\.R\\'" source-file))
     (user-error "Select an existing .R source file"))
   (glassmacs-remote--require-executable "ssh")
@@ -64,8 +136,9 @@ A network failure can leave an uncertain submission: inspect its directory."
          (root (plist-get paths :root))
          (job (glassmacs-r-job--make :id id :host host :directory directory :root root
                                      :source source-file :state 'submitting)))
-    (push job glassmacs-r-jobs--list)
     (when (file-exists-p root) (user-error "Job ID collision"))
+    (push job glassmacs-r-jobs--list)
+    (glassmacs-r-jobs--save)
     (make-directory root t)
     (set-file-modes (file-name-directory (directory-file-name root)) #o700)
     (set-file-modes root #o700)
@@ -81,6 +154,7 @@ A network failure can leave an uncertain submission: inspect its directory."
     (set-file-modes (plist-get paths :launcher) #o700)
     (glassmacs-r-jobs--run root "sh" "-c" "nohup sh ./launch.sh </dev/null >/dev/null 2>&1 &")
     (setf (glassmacs-r-job-state job) 'submitted)
+    (glassmacs-r-jobs--save)
     (when (called-interactively-p 'interactive) (message "Submitted remote R job %s" id))
     id))
 
@@ -92,21 +166,64 @@ A network failure can leave an uncertain submission: inspect its directory."
       (string-trim (buffer-string)))))
 
 (defun glassmacs-r-jobs-status (host directory id)
-  "Read server status of ID without depending on an ESS session."
+  "Read server status without involving ESS or replaying commands.
+A running status marker may become stale if the server process disappears."
   (interactive (list (glassmacs-remote--read-host)
                      (read-string "Remote job directory: " "/")
                      (read-string "Job ID: ")))
-  (let* ((file (plist-get (glassmacs-r-jobs--paths host directory id) :status))
-         (marker (glassmacs-r-jobs--read-marker file))
+  (let* ((paths (glassmacs-r-jobs--paths host directory id))
+         (marker (glassmacs-r-jobs--read-marker (plist-get paths :status)))
          (state (cond
-                 ((equal marker "running") 'running)
-                 ((and marker (string-match "\\`exit:\\([0-9]+\\)\\'" marker))
-                  (if (= (string-to-number (match-string 1 marker)) 0)
+                 ((equal marker "cancelled") 'cancelled)
+                 ((equal marker "starting") 'starting)
+                 ((equal marker "running")
+                  (if (file-exists-p (plist-get paths :cancel))
+                      'cancel-requested 'running))
+                 ((and marker (string-match "^exit:\\([0-9]+\\)$" marker))
+                  (if (zerop (string-to-number (match-string 1 marker)))
                       'completed 'failed))
                  (t 'unknown))))
     (when (called-interactively-p 'interactive)
       (message "Remote R job %s: %s" id state))
     state))
+
+(defun glassmacs-r-jobs-request-cancel (host directory id)
+  "Request cancellation without signalling an unverified or reused PID.
+Only the running server-side job driver can signal its own child.
+A request cannot guarantee that the remote R process has terminated."
+  (interactive (list (glassmacs-remote--read-host)
+                     (read-string "Remote working directory: " "/")
+                     (read-string "Job ID: ")))
+  (let* ((paths (glassmacs-r-jobs--paths host directory id))
+         (state (glassmacs-r-jobs-status host directory id)))
+    (when (memq state '(completed failed cancelled))
+      (user-error "Remote job %s already finished (%s)" id state))
+    (unless (file-regular-p (plist-get paths :source))
+      (user-error "Remote job source not found; no request sent"))
+    (unless (yes-or-no-p
+             (format "Request cancellation of remote R job %s on %s? " id host))
+      (user-error "Cancellation was not requested"))
+    (with-temp-file (plist-get paths :cancel)
+      (insert "requested\n"))
+    (when (called-interactively-p 'interactive)
+      (message "Cancellation requested for %s; verify final status" id))
+    'cancel-requested))
+
+(defun glassmacs-r-jobs-refresh ()
+  "Explicitly refresh recorded jobs, preserving SSH connection uncertainty."
+  (interactive)
+  (glassmacs-r-jobs--load)
+  (dolist (job glassmacs-r-jobs--list)
+    (setf (glassmacs-r-job-state job)
+          (condition-case nil
+              (glassmacs-r-jobs-status
+               (glassmacs-r-job-host job)
+               (glassmacs-r-job-directory job)
+               (glassmacs-r-job-id job))
+            (file-error 'unreachable))))
+  (glassmacs-r-jobs--save)
+  (when (called-interactively-p 'interactive)
+    (glassmacs-r-jobs-list)))
 
 (defun glassmacs-r-jobs-open-log (host directory id &optional stderr)
   "Open the stdout or STDERR log for ID via TRAMP."
@@ -119,12 +236,14 @@ A network failure can leave an uncertain submission: inspect its directory."
     (find-file-read-only file)))
 
 (defun glassmacs-r-jobs-list ()
-  "Display this Emacs invocation's remote job submissions."
+  "Display remembered remote R job IDs; no remote host is contacted."
   (interactive)
+  (glassmacs-r-jobs--load)
   (with-current-buffer (get-buffer-create "*Glassmacs R Jobs*")
     (let ((inhibit-read-only t))
       (erase-buffer)
-      (insert "Remote Rscript jobs are independent of ESS sessions.\n")
+      (insert "Remote Rscript jobs are independent of ESS sessions.\n"
+              "Statuses are snapshots; use M-x glassmacs-r-jobs-refresh to update.\n\n")
       (dolist (job glassmacs-r-jobs--list)
         (insert (format "%s  %s  %s\n" (glassmacs-r-job-id job)
                         (glassmacs-r-job-host job) (glassmacs-r-job-state job))))
