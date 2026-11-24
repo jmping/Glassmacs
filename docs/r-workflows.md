@@ -147,6 +147,29 @@ multiple-device lifecycle remain unverified until the acceptance test
 runs on the built app.
 
 
+### Starting an SSH-hosted ESS R session (experimental)
+
+The **R > New Remote R Console…** action (or
+`M-x glassmacs-r-start-remote-session`) explicitly prompts for a configured
+OpenSSH host alias and an **absolute directory on that host**. It delegates
+process creation to ESS from a TRAMP SSH directory and then registers the
+result in the normal R session registry and FIFO queue. A source-buffer
+variant links the new console to the originating R document.
+
+The launch is opt-in: opening local R is unchanged. Source documents on a
+different remote host still need explicit cross-location approval before
+submitting code. Glassmacs does not synthesize remote shell commands, disable
+SSH host verification, automatically replay commands, or claim that an R
+process survives disconnection. Failed SSH/ESS launches report an error and
+do not modify source targets.
+
+**Verification limits:** automated tests mock the startup boundary and check
+TRAMP identity and failure handling. A genuine SSH host with R and compatible
+ESS/TRAMP startup behavior is required to establish real interactive remote R
+functionality; no such integration result has yet been obtained. The
+verification of console context alone cannot prove which binary is executing
+until the host's R prompt and execution are exercised end-to-end.
+
 ### Remote execution development status
 
 The session identity and route-approval checks in PR #102 are purely local
