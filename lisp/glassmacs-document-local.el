@@ -48,6 +48,8 @@ Only `pending' local jobs are accepted, and there is no shell interpolation."
     (user-error "A program and string argument list are required"))
   (let ((executable (executable-find program)))
     (unless executable
+      (glassmacs-document-job-transition
+       job 'failed nil (format "Required executable not found on PATH: %s" program))
       (user-error "Required executable not found on PATH: %s" program))
     (let* ((directory (glassmacs-document-context-directory
                        (glassmacs-document-job-context job)))
@@ -71,9 +73,14 @@ Only `pending' local jobs are accepted, and there is no shell interpolation."
          (signal (car err) (cdr err))))
       (setf (glassmacs-document-job-log-buffer job) buffer
             (glassmacs-document-job-process job) process)
+      ;; A very short-lived child can exit before the job/process properties
+      ;; have been installed.  Reconcile its actual terminal status once the
+      ;; record is ready; the sentinel is guarded against duplicate delivery.
       (process-put process 'glassmacs-document-job job)
       (process-put process 'glassmacs-document-on-success on-success)
       (glassmacs-document-job-transition job 'running)
+      (when (memq (process-status process) '(exit signal))
+        (glassmacs-document-local--sentinel process "already exited"))
       process)))
 
 (defun glassmacs-document-local-cancel (job)
