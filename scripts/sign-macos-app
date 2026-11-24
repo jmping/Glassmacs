@@ -4,6 +4,10 @@ set -euo pipefail
 
 app=${1:?Usage: GLASSMACS_SIGN_IDENTITY=<certificate SHA-1> scripts/sign-macos-app /path/to/Glassmacs.app}
 identity=${GLASSMACS_SIGN_IDENTITY:?Set GLASSMACS_SIGN_IDENTITY to a Developer ID Application certificate SHA-1}
+[[ "$identity" =~ ^[[:xdigit:]]{40}$ ]] || {
+  printf 'Signing identity must be a full certificate SHA-1.\n' >&2
+  exit 1
+}
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 app=$(CDPATH='' cd -- "$app" && pwd)
 
@@ -28,6 +32,15 @@ fi
 count=0
 quit_alert_app="$app/Contents/Helpers/GlassmacsQuitAlert.app"
 quit_alert_binary="$quit_alert_app/Contents/MacOS/GlassmacsQuitAlert"
+while IFS= read -r -d '' bundle; do
+  case "$bundle" in
+    "$quit_alert_app") ;;
+    *) printf 'Unsupported nested code bundle; add explicit inside-out signing: %s\n' "$bundle" >&2; exit 1 ;;
+  esac
+done < <(/usr/bin/find "$app/Contents" -type d \
+  \( -name '*.app' -o -name '*.framework' -o -name '*.xpc' -o -name '*.bundle' \
+     -o -name '*.appex' -o -name '*.plugin' -o -name '*.kext' \
+     -o -name '*.qlgenerator' -o -name '*.mdimporter' -o -name '*.component' \) -print0)
 if [ -d "$quit_alert_app" ]; then
   /usr/bin/codesign --force --sign "$identity" --options runtime --timestamp \
     "$quit_alert_binary"

@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""Publish a reviewed macOS release; see docs/macos-distribution.md."""
+
+import argparse
+import hashlib
+import json
+import plistlib
+import re
+import subprocess
+import sys
+import tarfile
+import tempfile
+import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+REPO = "jmping/Glassmacs"
+VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(alpha|beta|rc)\.(0|[1-9]\d*))?$")
+CHECKS = (
+    "automated_tests", "native_gui_arm64", "native_gui_x86_64",
+    "clean_install_arm64", "clean_install_x86_64", "native_compilation",
+    "dependency_audit", "ess_r", "corresponding_source_and_licenses",
+)
+VALIDATION_REQUIRED_CHECKS = (
+    "automated_tests", "dependency_audit", "ess_r", "corresponding_source_and_licenses",
+)
+
+
+def fail(message):
+    raise ValueError(message)
+
+
+def digest(path):
+    result = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            result.update(chunk)
+    return result.hexdigest()
+
+
+def validate_source_archive(path):
+    if path.name.endswith(".tar.gz") and tarfile.is_tarfile(path):
+        with tarfile.open(path, "r:gz") as archive:
+            if not any(member.isfile() for member in archive):
+                fail("Corresponding source archive contains no files")
+    elif path.name.endswith(".zip") and zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as archive:
+            if not any(not entry.is_dir() for entry in archive.infolist()):
+                fail("Corresponding source archive contains no files")
+    else:
+        fail("Corresponding source must be a readable .tar.gz or .zip archive")
+
+
+def validate_evidence(data, dmg, source, validation=False):
+    if not isinstance(data, dict):
+        fail("Evidence must be a JSON object")
+    version = data.get("version")
+    match = VERSION.fullmatch(version) if isinstance(version, str) else None
+    if not match:
+        fail("Invalid release version")
+    if validation and not match.group(4):
+        fail("Validation releases must use a prerelease version")
+    commit = data.get("commit")
+    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        fail("Evidence must name the full source commit SHA")
+    if dmg.name != f"Glassmacs-v{version}.dmg":
+        fail("DMG filename must match the release version")
+    if data.get("dmg_sha256") != digest(dmg) or data.get("source_sha256") != digest(source):
+        fail("Evidence SHA-256 does not match the provided artifacts")
+    validate_source_archive(source)
+    checks = data.get("checks")
+    if not isinstance(checks, dict):
+        fail("Missing evidence checks")
+    for name in CHECKS:
+        check = checks.get(name)
+        allowed = ("pass",) if not validation or name in VALIDATION_REQUIRED_CHECKS else (
+            "pass", "fail", "not_tested")
+        if (not isinstance(check, dict) or check.get("result") not in allowed
+                or not isinstance(check.get("reviewer"), str) or not check["reviewer"].strip()
+                or not isinstance(check.get("evidence"), str) or not check["evidence"].strip()):
+            fail(f"Missing acceptable result and evidence for {name}")
+    if validation:
+        app_commit = data.get("application_commit")
+        if not isinstance(app_commit, str) or not re.fullmatch(r"[0-9a-f]{40}", app_commit):
+            fail("Validation evidence must identify the application source commit")
+        if not isinstance(data.get("provenance"), str) or not data["provenance"].strip():
+            fail("Validation evidence must explain candidate provenance")
+    return version, commit, bool(match.group(4))
+
+
+def run(*args, capture=False):
+    result = subprocess.run(args, check=True, text=True, capture_output=capture)
+    return result.stdout.strip() if capture else None
+
+
+def validate_bundle_version(info, version, legacy_bundle_version):
+    version_matches = info.get("GlassmacsReleaseVersion") == version
+    if legacy_bundle_version:
+        version_matches = (not info.get("GlassmacsReleaseVersion") and
+                           info.get("CFBundleShortVersionString") == legacy_bundle_version)
+    if info.get("CFBundleIdentifier") != "org.glassmacs.Glassmacs" or not version_matches:
+        fail("Mounted app bundle identifier or release version does not match")
+
+
+def verify_signed_artifact(dmg, version, legacy_bundle_version=None):
+    log_path = Path(str(dmg) + ".notary-log.json")
+    with log_path.open(encoding="utf-8") as handle:
+        report = json.load(handle)
+    if (report.get("status") != "Accepted" or
+            any(issue.get("severity", "").lower() == "error" for issue in report.get("issues") or [])):
+        fail("Apple notarization log does not report an accepted artifact")
+    run("codesign", "--verify", "--strict", str(dmg))
+    result = subprocess.run(["codesign", "-dv", "--verbose=4", str(dmg)],
+                            check=True, text=True, capture_output=True)
+    if not all(token in result.stderr for token in ("Authority=Developer ID Application:", "Timestamp=")):
+        fail("DMG lacks Developer ID signing or a secure timestamp")
+    match = re.search(r"^CDHash=([0-9a-f]+)$", result.stderr, re.MULTILINE)
+    ticket = report.get("ticketContents") or []
+    if not match or not any(
+        entry.get("path") == report.get("archiveFilename")
+        and entry.get("digestAlgorithm") == "SHA-256"
+        and entry.get("cdhash") == match.group(1)
+        for entry in ticket
+    ):
+        fail("Apple notarization log does not match the disk image signature")
+    run("xcrun", "stapler", "validate", str(dmg))
+    run("spctl", "--assess", "--type", "open", "--context", "context:primary-signature", str(dmg))
+    with tempfile.TemporaryDirectory(prefix="glassmacs-release-") as temp:
+        mount = Path(temp) / "mount"
+        mount.mkdir()
+        run("hdiutil", "attach", "-quiet", "-nobrowse", "-readonly", "-mountpoint", str(mount), str(dmg))
+        try:
+            app = mount / "Glassmacs.app"
+            with (app / "Contents" / "Info.plist").open("rb") as handle:
+                info = plistlib.load(handle)
+            validate_bundle_version(info, version, legacy_bundle_version)
+            run("codesign", "--verify", "--deep", "--strict", str(app))
+            result = subprocess.run(["codesign", "-dv", "--verbose=4", str(app)],
+                                    check=True, text=True, capture_output=True)
+            metadata = result.stderr
+            if not all(token in metadata for token in ("Authority=Developer ID Application:", "(runtime)", "Timestamp=")):
+                fail("App lacks Developer ID, hardened runtime, or a secure timestamp")
+            run("xcrun", "stapler", "validate", str(app))
+            run("spctl", "--assess", "--type", "execute", str(app))
+            run(str(ROOT / "scripts" / "validate-macos-app"), str(app))
+        finally:
+            run("hdiutil", "detach", "-quiet", str(mount))
+    return log_path
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dmg", type=Path, required=True)
+    parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--evidence", type=Path, required=True)
+    parser.add_argument("--evidence-artifact", type=Path, action="append", default=[],
+                        help="additional reviewed, privacy-scrubbed validation evidence")
+    parser.add_argument("--notes", type=Path, required=True)
+    parser.add_argument("--validation-prerelease", action="store_true",
+                        help="record rather than require clean-machine and GUI checks")
+    parser.add_argument("--legacy-bundle-version",
+                        help="for a validation candidate built before GlassmacsReleaseVersion existed")
+    parser.add_argument("--publish", action="store_true", required=True,
+                        help="explicitly publish after all checks pass")
+    args = parser.parse_args()
+    with args.evidence.open(encoding="utf-8") as handle:
+        evidence = json.load(handle)
+    if args.legacy_bundle_version and not args.validation_prerelease:
+        fail("Legacy candidates require --validation-prerelease")
+    if args.validation_prerelease and not args.evidence_artifact:
+        fail("Validation prereleases require a reviewed evidence artifact")
+    for path in args.evidence_artifact:
+        if not path.is_file():
+            fail(f"Evidence artifact not found: {path}")
+    version, commit, prerelease = validate_evidence(
+        evidence, args.dmg, args.source, validation=args.validation_prerelease)
+    if args.legacy_bundle_version and evidence.get("legacy_bundle_version") != args.legacy_bundle_version:
+        fail("Legacy bundle version must match the candidate evidence")
+    tag = "v" + version
+    if not args.notes.read_text(encoding="utf-8").strip():
+        fail("Release notes are empty")
+    head = run("git", "-C", str(ROOT), "rev-parse", "HEAD", capture=True)
+    if run("git", "-C", str(ROOT), "status", "--porcelain", capture=True):
+        fail("Release checkout must be clean")
+    local_tag = run("git", "-C", str(ROOT), "rev-parse", f"refs/tags/{tag}^{{commit}}", capture=True)
+    remote = run("git", "-C", str(ROOT), "ls-remote", "--tags", "origin",
+                 f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}", capture=True)
+    remote_refs = dict(line.split("\t")[::-1] for line in remote.splitlines())
+    remote_commit = remote_refs.get(f"refs/tags/{tag}^{{}}", remote_refs.get(f"refs/tags/{tag}"))
+    release_commit = run("gh", "api", f"repos/{REPO}/commits/{tag}", "--jq", ".sha", capture=True)
+    if commit != head or commit != local_tag or commit != remote_commit or commit != release_commit:
+        fail("Evidence, checkout, local, origin and release repository tags must identify the same commit")
+    if args.validation_prerelease:
+        run("git", "-C", str(ROOT), "merge-base", "--is-ancestor", evidence["application_commit"], commit)
+    log = verify_signed_artifact(args.dmg.resolve(), version, args.legacy_bundle_version)
+    with tempfile.TemporaryDirectory(prefix="glassmacs-checksums-") as temp:
+        sums = Path(temp) / "SHA256SUMS.txt"
+        sums.write_text(f"{digest(args.dmg)}  {args.dmg.name}\n{digest(args.source)}  {args.source.name}\n",
+                        encoding="utf-8")
+        command = ["gh", "release", "create", tag, str(args.dmg), str(args.source), str(sums),
+                   str(log), str(args.evidence), str(ROOT / "scripts" / "collect-validation-report"),
+                   str(ROOT / "docs" / "validation-acceptance.md")]
+        command.extend(str(path) for path in args.evidence_artifact)
+        command.extend(["--repo", REPO, "--verify-tag", "--draft",
+                        "--title", f"Glassmacs {tag}", "--notes-file", str(args.notes)])
+        if prerelease:
+            command.append("--prerelease")
+        run(*command)
+        run("gh", "release", "edit", tag, "--repo", REPO, "--draft=false")
+    print(f"Published {REPO} {tag}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (ValueError, OSError, subprocess.CalledProcessError, json.JSONDecodeError,
+            plistlib.InvalidFileException, tarfile.TarError, zipfile.BadZipFile) as error:
+        print(f"Release refused: {error}", file=sys.stderr)
+        sys.exit(1)
