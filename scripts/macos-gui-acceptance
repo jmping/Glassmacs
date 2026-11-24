@@ -1283,12 +1283,12 @@ def research_document_concurrent_real_render(ctx):
     harness = ctx.harness
     first = harness.document(
         "phase2-first.Rmd",
-        "---\\ntitle: First\\noutput: html_document\\n---\\n\\n"
-        "```{r}\\nSys.sleep(8)\\n101 + 1\\n```\\n")
+        "---\ntitle: First\noutput: html_document\n---\n\n"
+        "```{r}\nSys.sleep(8)\n101 + 1\n```\n")
     second = harness.document(
         "phase2-second.Rmd",
-        "---\\ntitle: Second\\noutput: html_document\\n---\\n\\n"
-        "```{r}\\nSys.sleep(8)\\n202 + 2\\n```\\n")
+        "---\ntitle: Second\noutput: html_document\n---\n\n"
+        "```{r}\nSys.sleep(8)\n202 + 2\n```\n")
     instance = harness.launch(harness.new_home("research-documents"), files=[first])
     ctx.ready(instance)
     emacs = instance.emacs
