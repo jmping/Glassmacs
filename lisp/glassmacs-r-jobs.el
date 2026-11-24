@@ -38,14 +38,13 @@
   "#!/bin/sh\nset -eu\numask 077\ncd \"$(dirname \"$0\")\"\nprintf \"running\\n\" > status\nRscript --vanilla job.R > stdout.log 2> stderr.log &\nchild=$!\nprintf \"%s\\n\" \"$child\" > pid\nwait \"$child\" && result=0 || result=$?\nprintf \"exit:%s\\n\" \"$result\" > status\nexit \"$result\"\n")
 
 (defun glassmacs-r-jobs--run (remote &rest argv)
-  "Execute the fixed command ARGV via TRAMP REMOTE."
-  (let ((default-directory remote))
-    (with-temp-buffer
-      (setq default-directory remote)
-      (let ((status (apply #'process-file (car argv) nil t nil (cdr argv))))
-        (unless (and (integerp status) (= status 0))
-          (user-error "Remote job launch returned %s" status))
-        status))))
+  "Execute a fixed command over TRAMP REMOTE; do not use a local shell."
+  (with-temp-buffer
+    (setq default-directory remote)
+    (let ((status (apply #'process-file (car argv) nil t nil (cdr argv))))
+      (unless (and (integerp status) (zerop status))
+        (user-error "Remote job command returned %s" status))
+      status)))
 
 (defun glassmacs-r-jobs-submit (host directory source-file)
   "Submit a copy of an R script as a detached job on SSH HOST.
