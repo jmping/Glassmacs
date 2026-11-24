@@ -128,9 +128,11 @@ A descriptor is not proof of a connection or of an executable R."
 ESS owns the process, filter, prompts, process buffer and connection.
 This function does not interpret R output or create an independent queue."
   (glassmacs-remote-r--ensure-ess)
-  (let ((default-directory directory))
-    ;; R relies on current-buffer and default-directory for ESS startup.
-    ;; Never interpolate host or path into a shell command.
+  ;; ESS's R startup reads both the current buffer's directory and dynamic
+  ;; default-directory.  A temporary buffer makes the remote origin explicit
+  ;; without mutating the user's source document or visiting a remote file.
+  (with-temp-buffer
+    (setq default-directory directory)
     (call-interactively #'R)))
 
 (defun glassmacs-remote-r--verify-process (process directory)
