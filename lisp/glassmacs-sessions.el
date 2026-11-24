@@ -1132,9 +1132,17 @@ when no live target exists or SOURCE is blank."
     (unless (eq (glassmacs-session-state session) 'ready)
       (user-error "R session %s has terminated; command not queued"
                   (glassmacs-session-id session)))
-    (when (and origin (plist-get origin :buffer)
-               (equal (plist-get origin :buffer) (buffer-name)))
-      (glassmacs-r--check-cross-location session))
+    ;; Chunk modes often submit from an indirect buffer while the origin
+    ;; records its base document.  Validate the recorded source, not only
+    ;; the current buffer; missing origins fail closed rather than bypassing
+    ;; the remote-location gate.
+    (when-let* ((source-name (plist-get origin :buffer)))
+      (let ((source-buffer (get-buffer source-name)))
+        (unless (buffer-live-p source-buffer)
+          (user-error "R source buffer %s is no longer live; command not queued"
+                      source-name))
+        (with-current-buffer source-buffer
+          (glassmacs-r--check-cross-location session))))
     (let ((entry (glassmacs-entry--make
                   :id (format "cmd-%d" (cl-incf glassmacs-sessions--entry-counter))
                   :session-id (glassmacs-session-id session)
