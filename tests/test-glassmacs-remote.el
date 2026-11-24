@@ -526,5 +526,43 @@
     (should (equal (glassmacs-r-session-connection-state session)
                    'disconnected))))
 
+
+(ert-deftest glassmacs-r-jobs-id-paths-do-not-connect ()
+  "Malformed IDs must not construct arbitrary remote file paths."
+  (require 'glassmacs-r-jobs)
+  (should-error (glassmacs-r-jobs--paths "research" "/analysis/" "../etc")
+                :type 'user-error)
+  (let* ((id "glassmacs-r-aabbccddeeff001122334455")
+         (paths (glassmacs-r-jobs--paths "research" "/analysis/" id)))
+    (should (equal (plist-get paths :status)
+                   (concat "/ssh:research:/analysis/.glassmacs-jobs/" id "/status")))))
+
+(ert-deftest glassmacs-r-jobs-driver-contains-no-source-interpolation ()
+  "Fixed launcher delegates to Rscript without embedding project source."
+  (require 'glassmacs-r-jobs)
+  (let ((driver (glassmacs-r-jobs--launcher)))
+    (should (string-match-p "Rscript --vanilla job.R" driver))
+    (should (string-match-p "exit:%s" driver))
+    (should-not (string-match-p "/Users/\\|/home/research/" driver))))
+
+(ert-deftest glassmacs-r-jobs-status-reader-maps-exit-codes ()
+  "Server markers can be read without running SSH or ESS."
+  (require 'glassmacs-r-jobs)
+  (let ((glassmacs-r-jobs--list nil))
+    (cl-letf (((symbol-function 'glassmacs-r-jobs--paths)
+               (lambda (&rest _) '(:status "/mock/status")))
+              ((symbol-function 'glassmacs-r-jobs--read-marker)
+               (lambda (_path) "exit:0")))
+      (should (eq (glassmacs-r-jobs-status
+                   "research" "/analysis/" "glassmacs-r-aabbccddeeff001122334455")
+                  'completed)))
+    (cl-letf (((symbol-function 'glassmacs-r-jobs--paths)
+               (lambda (&rest _) '(:status "/mock/status")))
+              ((symbol-function 'glassmacs-r-jobs--read-marker)
+               (lambda (_path) "exit:1")))
+      (should (eq (glassmacs-r-jobs-status
+                   "research" "/analysis/" "glassmacs-r-aabbccddeeff001122334455")
+                  'failed)))))
+
 (provide 'test-glassmacs-remote)
 ;;; test-glassmacs-remote.el ends here
