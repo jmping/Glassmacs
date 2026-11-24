@@ -130,7 +130,7 @@ starts the same app again, used by `glassmacs-shiny-reload'."
                           (if (file-exists-p (expand-file-name "app.R" directory))
                               "app.R" "ui.R")
                           directory)))
-             (context (glassmacs-document-context-create source))
+             (context (glassmacs-document-context-for-file source))
              (job (glassmacs-document-job-new
                    (format "shiny-%d" (process-id glassmacs-shiny-process))
                    context 'shiny buffer)))
