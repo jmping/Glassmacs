@@ -16,7 +16,7 @@
       "stage": "Alpha",
       "summary": "Initial signed universal application, GNU Emacs 31.1 and bundled ESS 26.5.0.",
       "asset": "Glassmacs-0.1-alpha-macOS-signed.zip",
-      "sha256": null,
+      "sha256": "c3f8d7515b91eeecbc269c25553b1fcd1735fb8ad6cef3b8d104316bba2217cc",
       "evidence": "Release notes report 369 expected ERT results, 18 skips, 42 Python tests, Swift success and Gatekeeper acceptance; hands-on signed-app GUI testing outstanding."
     }
   ],
@@ -25,5 +25,11 @@
     "stage": "Unpublished validation candidate",
     "evidence": "Maintainer-reported signed and notarized DMG, Gatekeeper and mounted-app checks passed; ERT 489 passed / 18 skipped, Python 49 passed, Swift 7 passed; arm64 probe produced an .eln file.",
     "blockers": "Corresponding-source compliance, publication and provenance review remain outstanding. Clean-machine, Intel and interactive GUI validation remain outstanding."
+  },
+  "validation": null,
+  "previous": {
+    "tag": "v0.1.0-alpha.2",
+    "asset": "https://github.com/jmping/Glassmacs/releases/download/v0.1.0-alpha.2/Glassmacs-v0.1.0-alpha.1-1-g9fe137d-20261103T162606Z.zip",
+    "released": "2026-11-03"
   }
 }
