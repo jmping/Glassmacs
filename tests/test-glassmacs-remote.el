@@ -728,6 +728,28 @@
        (glassmacs-r-artifacts-preview-session session "plots/graph.png")
        :type 'user-error))))
 
+(ert-deftest glassmacs-r-artifacts-preview-preserves-explicit-ssh-identity ()
+  "Session artifact retrieval retains an explicit SSH user and port."
+  (require 'glassmacs-r-artifacts)
+  (require 'glassmacs-sessions)
+  (let* ((directory "/ssh:analyst@research#2222:/work/")
+         (session (glassmacs-session--make
+                   :id "R-explicit-ssh" :directory directory
+                   :execution-identity
+                   (glassmacs-remote-execution-identity directory)))
+         (seen nil))
+    (cl-letf (((symbol-function 'glassmacs-r-artifacts--bounded-file)
+               (lambda (context)
+                 (setq seen context)
+                 (plist-get context :remote-path)))
+              ((symbol-function 'find-file-read-only) #'identity))
+      (should (equal
+               (glassmacs-r-artifacts-preview-session session "plot.pdf")
+               "/ssh:analyst@research#2222:/work/plot.pdf"))
+      (should (equal (plist-get seen :root) directory))
+      (should-error (glassmacs-r-artifacts-preview-session session "../plot.pdf")
+                    :type 'user-error))))
+
 (ert-deftest glassmacs-r-artifacts-download-never-overwrites ()
   "Reject an existing destination without contacting the remote source."
   (require 'glassmacs-r-artifacts)
