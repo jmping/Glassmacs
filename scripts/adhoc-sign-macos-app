@@ -12,7 +12,18 @@ if [ ! -f "$app/Contents/Info.plist" ]; then
 fi
 
 count=0
+quit_alert_app="$app/Contents/Helpers/GlassmacsQuitAlert.app"
+quit_alert_binary="$quit_alert_app/Contents/MacOS/GlassmacsQuitAlert"
+if [ -d "$quit_alert_app" ]; then
+  /usr/bin/codesign --force --sign - "$quit_alert_binary"
+  count=$((count + 1))
+  /usr/bin/codesign --force --sign - "$quit_alert_app"
+fi
+
 while IFS= read -r -d '' path; do
+  case "$path" in
+    "$quit_alert_app"/*) continue ;;
+  esac
   case "$(/usr/bin/file -b "$path")" in
     *Mach-O*)
       /usr/bin/codesign --force --sign - "$path"

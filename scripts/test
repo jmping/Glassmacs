@@ -14,14 +14,26 @@ if [ -z "${GLASSMACS_HOME:-}" ]; then
   trap 'exit 1' HUP INT TERM
 fi
 
+# Fail closed if the Glassmacs quit hooks ever mask ERT's failure status.
+# This runs in a separate process so the intentionally failing assertion
+# cannot affect the actual suite's result.
+if "$emacs" -Q --batch -l "$root/init.el" \
+  --eval '(progn (require (quote ert)) (ert-deftest glassmacs-ert-exit-status-probe () (should nil)) (ert-run-tests-batch-and-exit (quote glassmacs-ert-exit-status-probe)))' \
+  >/dev/null 2>&1; then
+  echo "ERROR: failing ERT assertions returned exit status 0" >&2
+  exit 1
+fi
+
 "$emacs" -Q --batch -l "$root/init.el" -l "$root/tests/test-glassmacs.el" \
+  -l "$root/tests/test-glassmacs-menu.el" \
   -l "$root/tests/test-glassmacs-sessions.el" \
+  -l "$root/tests/test-glassmacs-close.el" \
+  -l "$root/tests/test-glassmacs-r-lifecycle.el" \
   -l "$root/tests/test-glassmacs-r-ui.el" \
   -l "$root/tests/test-glassmacs-r-graphics.el" \
   -l "$root/tests/test-glassmacs-remote.el" \
   -l "$root/tests/test-glassmacs-environment.el" \
   -l "$root/tests/test-glassmacs-packages.el" \
-  -l "$root/tests/test-glassmacs-close.el" \
   -l "$root/tests/test-glassmacs-editing.el" \
   -l "$root/tests/test-glassmacs-latex.el" \
   -l "$root/tests/test-glassmacs-spelling.el" \

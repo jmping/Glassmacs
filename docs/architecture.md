@@ -1,20 +1,14 @@
 # Glassmacs architecture
 
-## Integrated 0.1 development status — 2026-10-27
-
-PRs [#18](https://github.com/jmping/Glassmacs/pull/18), [#19](https://github.com/jmping/Glassmacs/pull/19), [#20](https://github.com/jmping/Glassmacs/pull/20), [#21](https://github.com/jmping/Glassmacs/pull/21), and [#22](https://github.com/jmping/Glassmacs/pull/22) have merged into `main` (most recently #22 at `604e44e`). Their PR CI succeeded (Emacs ERT, ESS/R integration, macOS launcher), **not** interactive Cocoa GUI acceptance.
-
-Implemented: native Cocoa application/menu/window infrastructure; configurable document opening; New Buffer in Mode; ESS-based R menus and contextual toolbar actions; R sessions, explicit targeting, queue/output controls; Save As and modified-document review; keyboard, toolbar and document preferences. R Markdown, Quarto, Sweave, Shiny and remote workflows have partial integrations, not fully verified end-to-end behavior.
-
-Outstanding: real macOS testing for reopening, document safety, keyboard/menu dispatch, R execution/session targets, native Quartz plotting, toolbar image/layout and preference persistence; release candidate signing/notarization, Gatekeeper and licensing/source obligations. **The next separate audit** will compare current menus against Aquamacs historical source, followed by historical issue triage; do not equate design inventory with demonstrated parity.
-
 > **Document ID:** DOC-ARCH  
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-27
+> **Last reviewed:** 2026-11-06
 > **Coverage:** Target technical architecture, invariants, security and integration contracts  
 > **Supersedes:** None
+
+> **Verification note (2026-11-06):** This document describes its subject area, not a current PR integration queue. For implementation and acceptance evidence consult the [acceptance matrix](acceptance-matrix.md); native macOS GUI acceptance is local, not a GitHub CI gate. Historical milestones and dated claims below should not be interpreted as current release certification.
 
 
 ## Product contract
@@ -154,7 +148,7 @@ Repeated source evaluation must never make the Glassmacs GUI wait synchronously 
 - Each submitted unit has a stable ID, target session/host, project, source file/buffer and source range, captured code snapshot, submission timestamp, status and optional dependencies. Snapshot code when enqueued so later source edits cannot silently alter a pending command; allow explicit editing of the queued snapshot before dispatch.
 - States should distinguish `pending`, `dispatching`, `running`, `completed`, `failed`, `cancelled` and `interrupted`, with a separate `paused` flag on the queue. Only a single active evaluation may own a given sequential ESS session; unrelated sessions may run concurrently.
 - Preserve FIFO by default. Allow inspection, editing, reordering, deleting selected pending entries, clearing future work, pausing after the current evaluation, and resuming. Show a preview of the exact code and target R session before dispatch. No action on pending entries should alter already-dispatched code.
-- **Interrupt current** sends a supported ESS/process interrupt and leaves future work paused pending explicit user action. **Cancel pending** only removes commands not dispatched. **Terminate session** is a distinct explicit action. Never imply that interrupting R rolls back side effects already performed.
+- **Interrupt current** sends a supported ESS/process interrupt and holds the work that was already queued behind it pending explicit user action (Resume Queue). Commands submitted after the interrupt are new, explicit user actions: they run and echo normally rather than silently joining a paused queue. **Cancel pending** only removes commands not dispatched. **Terminate session** is a distinct explicit action. Never imply that interrupting R rolls back side effects already performed.
 - A source region may be queued as one atomic unit. Splitting it into expressions is optional and must use a correct R parser/ESS-supported expression boundary mechanism; never split arbitrary R code by physical lines. Respect multiline functions, pipes, braces, strings and comments.
 - Dispatch the next entry only when supported ESS signals establish that the previous evaluation is finished and the target process is ready. Do not infer completion from a timeout or arbitrary output text alone. Define behavior for prompts, errors, debugger/browser prompts, `readline()`, interactive input, process restarts, lost SSH connections and changed working directories.
 - Integrate with bounded console output: output suppression must not be mistaken for evaluation completion; queue progress and status must remain accurate when printing is flooded or discarded. Keep queue metadata and retained logs bounded.

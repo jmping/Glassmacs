@@ -1,20 +1,14 @@
 # Keyboard profile
 
-## Integrated 0.1 development status — 2026-10-27
-
-PRs [#18](https://github.com/jmping/Glassmacs/pull/18), [#19](https://github.com/jmping/Glassmacs/pull/19), [#20](https://github.com/jmping/Glassmacs/pull/20), [#21](https://github.com/jmping/Glassmacs/pull/21), and [#22](https://github.com/jmping/Glassmacs/pull/22) have merged into `main` (most recently #22 at `604e44e`). Their PR CI succeeded (Emacs ERT, ESS/R integration, macOS launcher), **not** interactive Cocoa GUI acceptance.
-
-Implemented: native Cocoa application/menu/window infrastructure; configurable document opening; New Buffer in Mode; ESS-based R menus and contextual toolbar actions; R sessions, explicit targeting, queue/output controls; Save As and modified-document review; keyboard, toolbar and document preferences. R Markdown, Quarto, Sweave, Shiny and remote workflows have partial integrations, not fully verified end-to-end behavior.
-
-Outstanding: real macOS testing for reopening, document safety, keyboard/menu dispatch, R execution/session targets, native Quartz plotting, toolbar image/layout and preference persistence; release candidate signing/notarization, Gatekeeper and licensing/source obligations. **The next separate audit** will compare current menus against Aquamacs historical source, followed by historical issue triage; do not equate design inventory with demonstrated parity.
-
 > **Document ID:** DOC-KEYS  
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-28
+> **Last reviewed:** 2026-11-06
 > **Coverage:** Keyboard profile, implemented mappings and intended shortcuts  
 > **Supersedes:** None
+
+> **Verification note (2026-11-06):** This document describes its subject area, not a current PR integration queue. For implementation and acceptance evidence consult the [acceptance matrix](acceptance-matrix.md); native macOS GUI acceptance is local, not a GitHub CI gate. Historical milestones and dated claims below should not be interpreted as current release certification.
 
 
 The configurable `glassmacs-keyboard-profile` supports
@@ -85,14 +79,14 @@ compatibility. No Aquamacs source or preference behavior was imported.
 
 ## Compatibility audit and pending behavior
 
-See the [proposed Aquamacs behavior inventory](aquamacs-compatibility.md) and [menu architecture](menu-architecture.md) for full parity coverage and menu command state. Interactive Command-O and Command-N now follow the configurable graphical document-opening policy, whose macOS default is a separate native Emacs frame. Actual Cocoa behavior remains unverified. Command-W dispatches the context-aware `glassmacs-close-document` command with Save / Don't Save / Cancel protection (implemented 2026-10-28; GUI unverified). Menu shortcut labels should reflect effective bindings, not copied Aquamacs annotation strings.
+See the [proposed Aquamacs behavior inventory](aquamacs-compatibility.md) and [menu architecture](menu-architecture.md) for full parity coverage and menu command state. Interactive Command-O and Command-N now follow the configurable graphical document-opening policy, whose macOS default is a separate native Emacs frame. Actual Cocoa behavior remains unverified. Command-W dispatches the context-aware `glassmacs-close-document` command with Save / Don't Save / Cancel protection (implemented 2026-10-28; GUI unverified). Glassmacs-owned menu entries now compute shortcut labels from active keymaps when menus refresh; native rendering still needs macOS acceptance.
 
 ## Aquamacs-specific command and conflict audit
 
 The current Glassmacs profile binds Command-N/O/S/Shift-S/W/Q/C/V/X/A/Z/F to `glassmacs-new-document`, `find-file`, `save-buffer`, `write-file`, `glassmacs-close-document`, `save-buffers-kill-emacs`, `kill-ring-save`, `yank`, `kill-region`, `mark-whole-buffer`, `undo`, and `isearch-forward`. Command-O applies the configurable interactive document-opening policy; Command-N creates an untitled document under the same policy. Command-W closes the document and its window (asking about unsaved changes) and preserves the app on final-frame close; Command-Shift-G, Command-Up/Down and Command-Delete were added on 2026-10-28; Command-Q follows Emacs's save-and-quit path. Dock reopen is bridged to Cocoa's native application-reopen callback in the packaged app; the packaged-app GUI acceptance run checks it, and clean-machine verification is a manual check. This is a partial macOS convenience layer, not full Aquamacs compatibility. In particular:
 
 - Command-W runs `glassmacs-close-document`: it kills only an ordinary document that no other window shows, after Save / Don't Save / Cancel, and never kills consoles or special buffers. Closing a window does not kill a buffer shown in another window or frame.
-- `aquamacs-menu.el` constructs menu shortcut labels dynamically from effective bindings. One historical File > Open declaration appears to annotate Command-S; do not copy that text. Verify the command's effective keymap at runtime.
+- `aquamacs-menu.el` and Glassmacs-owned menus construct shortcut labels dynamically from effective bindings. One historical File > Open declaration appears to annotate Command-S; do not copy that text. Cocoa-owned and upstream menus remain untouched.
 - Preserve `C-x`, `C-c`, `M-x`, and ESS commands such as `C-c C-c` and `C-c C-r`. Bindings installed globally must not displace a mode-local command with a stronger context-specific meaning.
 - Command-Shift-S is the current `write-file` binding. Tests must verify shifted Cocoa key event normalization instead of assuming `[super-S]` behaves identically for every layout.
 

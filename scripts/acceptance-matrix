@@ -38,7 +38,7 @@ VALUES = {
     "packaged_app": {"ci", "NOT RUN"},
 }
 LAYERS = {"A", "B", "C", "D"}
-LAYER_NAMES = {"A": "batch", "B": "packaged app, static", "C": "GUI in CI",
+LAYER_NAMES = {"A": "batch", "B": "packaged app, static", "C": "GUI on local Mac",
                "D": "manual"}
 
 
@@ -152,18 +152,18 @@ def render_matrix(data, checks):
                     data["reviewed"])]
     lines.append(
         "Statuses are kept apart on purpose. **Implemented** means the behavior exists; "
-        "**automated** means tests check it; **packaged app** says whether those checks run "
+        "**automated** means tests check it; **packaged app** says whether automated checks run "
         "against the built Glassmacs.app in CI (`ci`) or not at all (`NOT RUN`); **clean "
         "machine** records a dated manual run on a fresh Mac, and is `NOT RUN` until someone "
         "records one. A green batch run is never GUI acceptance.\n\n"
         "Layers: **A** batch tests (`./scripts/test`), **B** static checks of the packaged app "
-        "(`scripts/validate-macos-app`), **C** GUI scenarios on the packaged app in CI "
+        "(`scripts/validate-macos-app`), **C** GUI scenarios on a local Mac "
         "(`scripts/macos-gui-acceptance`), **D** manual "
         "([checklist](macos-acceptance-checklist.md)). In a running Glassmacs, "
         "`M-x glassmacs-self-check` runs the in-app subset.\n\n"
-        "The latest GUI outcomes are in the `macos-gui-acceptance` job summary and its "
-        "`Glassmacs-GUI-acceptance` artifact; `scripts/acceptance-matrix outcomes "
-        "results.json` maps them onto these IDs.\n")
+        "Local GUI outcomes are recorded by `scripts/macos-gui-acceptance`; "
+        "`scripts/acceptance-matrix outcomes results.json` maps them onto these IDs. "
+        "GitHub CI does not run GUI acceptance.\n")
     lines.append("| ID | Check | Sev. | Evidence | Layers | Implemented | Automated | "
                  "Packaged app | Clean machine |")
     lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")

@@ -6,7 +6,8 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .library(name: "GlassmacsLauncherCore", targets: ["GlassmacsLauncherCore"]),
-        .executable(name: "GlassmacsLauncher", targets: ["GlassmacsLauncher"])
+        .executable(name: "GlassmacsLauncher", targets: ["GlassmacsLauncher"]),
+        .executable(name: "GlassmacsQuitAlert", targets: ["GlassmacsQuitAlert"])
     ],
     targets: [
         .target(name: "GlassmacsLauncherCore"),
@@ -14,6 +15,7 @@ let package = Package(
             name: "GlassmacsLauncher",
             dependencies: ["GlassmacsLauncherCore"]
         ),
+        .executableTarget(name: "GlassmacsQuitAlert"),
         .testTarget(
             name: "GlassmacsLauncherCoreTests",
             dependencies: ["GlassmacsLauncherCore"]

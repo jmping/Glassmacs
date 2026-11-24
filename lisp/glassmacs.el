@@ -6,8 +6,10 @@
 (require 'glassmacs-editing)
 (require 'glassmacs-recovery)
 (require 'glassmacs-keys)
+(require 'glassmacs-menu)
 (require 'glassmacs-r)
 (require 'glassmacs-sessions)
+(require 'glassmacs-r-queue)
 (require 'glassmacs-r-graphics)
 (require 'glassmacs-r-ui)
 (require 'glassmacs-remote)
@@ -42,6 +44,9 @@
 ;; After custom.el, so the user's environment preferences apply.
 (glassmacs-environment-initialize)
 (glassmacs-editing-apply)
+;; Use the familiar macOS insertion caret unless the user customized it.
+(unless (get 'cursor-type 'saved-value)
+  (setq-default cursor-type 'bar))
 (glassmacs--install-hybrid-bindings)
 ;; General document toolbar; R buffers install their own contextual map.
 (glassmacs-aquamacs-toolbar-install)

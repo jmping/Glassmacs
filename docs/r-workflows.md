@@ -1,22 +1,14 @@
 # R and reproducible-document workflows
 
-## Integrated 0.1 development status — 2026-10-27
-
-PRs [#18](https://github.com/jmping/Glassmacs/pull/18), [#19](https://github.com/jmping/Glassmacs/pull/19), [#20](https://github.com/jmping/Glassmacs/pull/20), [#21](https://github.com/jmping/Glassmacs/pull/21), and [#22](https://github.com/jmping/Glassmacs/pull/22) have merged into `main`. The most recent merge was #22 at `604e44e`. Their pull-request CI completed successfully (Emacs ERT, ESS/R integration, and macOS launcher build). These results establish code integration and automated validation, **not interactive Cocoa GUI acceptance**.
-
-Implemented capabilities include native application/menu/window infrastructure; configurable new-frame/new-tab/reuse-current document opens; New Buffer in Mode and Change Buffer Mode; ESS-backed R source/console menus and contextual toolbar actions; explicit R session start, targeting, inspection and listing; execution-queue and output controls; Save Document As and non-destructive unsaved-document review; and keyboard/document/toolbar preferences. R Markdown, Quarto and Sweave chunk execution, rendering and Shiny are implemented and tested in CI with real R (and, for chunk buffers, real polymode); remote workflows are preliminary, and none of this has been validated on a signed macOS build. Neither complete historical Aquamacs parity nor a production release is claimed.
-
-**Still outstanding:** signed-app testing of Cocoa reopen/close, document safety and focus, R source-to-console execution, session targeting, native R/Quartz plotting, toolbar image/layout, persistent preferences, and optional rendering/Shiny workflows. A releasable 0.1 build also needs candidate-specific signing, notarization, Gatekeeper checks and license/source-distribution review. Earlier signed builds do not certify the current `main` tree.
-
-**Next audit, separate from this documentation sync:** compare current Glassmacs menu commands against historical Aquamacs menu inventory and then triage historical Aquamacs issues, recording evidence, priority and disposition without treating proposed parity as implemented behavior.
-
 > **Document ID:** DOC-R-WORKFLOWS  
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-28  
+> **Last reviewed:** 2026-11-06  
 > **Coverage:** Current and explicitly proposed R and research document workflows  
 > **Supersedes:** None
+
+> **Verification note (2026-11-06):** This document describes its subject area, not a current PR integration queue. For implementation and acceptance evidence consult the [acceptance matrix](acceptance-matrix.md); native macOS GUI acceptance is local, not a GitHub CI gate. Historical milestones and dated claims below should not be interpreted as current release certification.
 
 
 ## ESS and R
@@ -38,6 +30,47 @@ Set `glassmacs-r-executable` in `~/.config/glassmacs/custom.el` to override
 ESS's `inferior-ess-r-program` setting. No platform-specific R path is
 assumed. ESS provides completion, help, syntax highlighting, and project-aware
 session behavior.
+
+### R console window placement
+
+Customize `glassmacs-r-console-placement` to choose **Separate macOS window**
+(`separate-window`), **New tab** (`new-tab`), **Split below**, **Split right**,
+or **Current window**. On graphical macOS, separate-window is the default.
+ESS first creates and displays its inferior buffer as part of `M-x R`; after
+ESS finishes startup, Glassmacs routes that buffer through the shared buffer
+placement layer. This preserves the source view and moves an ESS-created split
+when needed. Selecting an already visible session focuses its existing
+console, so switching sessions does not create duplicate windows.
+
+**Closing a console.** Command-W or the red close button on the last view of
+a live R console opens a native alert: **Keep R Running** closes only the
+window (reopen it with R > Show R Console), **Terminate R** ends the process,
+and **Cancel** changes nothing. Terminating a session that is running a
+command or has queued work asks once more. The R process is ended only after
+the whole close succeeds, so cancelling a later unsaved-document question
+leaves R running. Closing a source document never asks about R. Set
+`glassmacs-confirm-console-window-close` to nil to always keep R running.
+
+**Quitting with R running.** If any R session is live, quitting first asks
+natively: **Save Session State & Quit** preserves open documents (including
+unsaved changes) and windows so the next start reopens them, even when
+reopening windows is otherwise off; **Quit Without Saving Session State**
+asks about each unsaved document and does not reopen this session's windows;
+**Cancel** returns to Glassmacs. Either way the R processes end: session
+state is documents and windows, not R workspaces, and no R console is
+restarted. Save objects you need (for example with `save.image()`) first.
+
+**Local macOS acceptance procedure:** with the packaged app and ESS/R
+available, select separate-window placement, open an `.R` source file, then
+start two sessions from that source. Confirm that the source frame remains
+unchanged and each console appears in its own native window. Evaluate a distinct
+marker command in each session, check the corresponding console output, switch
+between sessions twice, and verify both original console windows remain. Repeat
+using `new-tab`; confirm both consoles are independently reachable from tabs
+without changing session targets. Also try `split-below` explicitly. ERT
+verifies placement decisions and buffer/process reuse, but it cannot establish
+native Cocoa window behavior; record the actual GUI result in the
+[acceptance matrix](acceptance-matrix.md).
 
 ### R Help window safety (Alpha)
 
@@ -112,6 +145,21 @@ GUI crash. For local diagnostic information use
 `M-x glassmacs-diagnostics`. Native Cocoa plotting, focus behavior, and
 multiple-device lifecycle remain unverified until the acceptance test
 runs on the built app.
+
+
+### R session health overview
+
+Run `M-x glassmacs-diagnostics` for aggregate counts of live and paused R
+sessions and running, pending and held commands. When a queue needs attention,
+the report points to the R menu's queue controls.
+
+Run `M-x glassmacs-diagnostics-r-sessions` for a read-only per-session
+overview. Each row shows the session ID, running/busy/idle/waiting activity,
+pause state, and pending/held command counts. Press `RET` to open that
+session's queue inspector, `c` to show its console, or `g` to refresh.
+The overview does not show R source, command history, output, paths or
+environment variables. It reports only live registered sessions and does not
+start, resume, interrupt or terminate any process on its own.
 
 ## Documents
 
@@ -322,7 +370,10 @@ roadmap's verification status.
 
 Three distinct commands are available: `glassmacs-r-stop-displaying-output`
 hides output for the active command without interrupting R;
-`glassmacs-r-interrupt` requests an interrupt and keeps pending queue work paused;
+`glassmacs-r-interrupt` requests an interrupt, records the running command as
+`uncertain` and holds the commands queued behind it (they may depend on it)
+until you choose **R > Resume Queue**, while commands you send after the
+interrupt run and are echoed as usual;
 and `glassmacs-r-terminate-session` requires interactive confirmation before
 terminating the process. When ESS recognizes the next primary prompt, normal
 output display resumes automatically. A prompt split across chunks may not be
@@ -392,11 +443,37 @@ process to print `getwd()`.
 `glassmacs-queue-submit` capture the text as an immutable snapshot and queue it
 as one unit (never split by line) on a per-session FIFO. Only one entry is
 dispatched at a time via `ess-send-string`, only when ESS reports the process
-idle; a timer polls, so Emacs is never blocked. Inspect with
-`glassmacs-queue-show` / `glassmacs-queue-pending`; `glassmacs-queue-pause`,
-`glassmacs-queue-resume`. States: `pending`, `running`, `completed`, `failed`
-(the send itself failed; the queue pauses and nothing is retried),
-`uncertain`, `orphaned`, `removed`.
+idle and not waiting at a continuation prompt; a timer polls, so Emacs is
+never blocked. States: `pending` (shown as **held** when it was queued behind
+an interrupted command), `running`, `completed`, `failed` (the send itself
+failed; the queue pauses and nothing is retried), `uncertain`, `orphaned`,
+`removed`.
+
+**Queue controls.** The same four commands appear in the R menu of every
+frame (an application-wide R menu stands in when the frame shows no R
+buffer), in an R console's **Signals** menu, in the R context menu and in
+the queue inspector: **Show R Queue…** (`glassmacs-r-show-queue`, also the
+**Queue** toolbar button), **Resume Queue** (`glassmacs-queue-resume`, which
+also releases held commands), **Pause Queue** (`glassmacs-queue-pause`) and
+**Clear Queue and Resume…** (`glassmacs-queue-clear-and-resume`, which
+removes every pending command after the usual confirmation and then
+resumes; declining leaves the queue untouched). A paused queue always says
+why: paused by you, a failed send, or R waiting for the rest of an
+incomplete expression. In that last case Resume offers **Cancel Incomplete
+Input & Resume**, which interrupts only the unfinished input instead of
+appending queued commands to it. Glassmacs detects R's `+` prompt itself,
+because ESS's own flag depends on which buffer is current when output
+arrives.
+
+**Queue inspector.** `glassmacs-r-show-queue` shows one session: its state
+in one sentence, buttons for Resume, Pause, Clear & Resume, Interrupt and
+Show Console, the running command, the pending commands in the order they
+will run, and recent results. `RET` views a command's full source,
+`M-<up>`/`M-<down>` (or `u`/`j`) run a pending command sooner or later,
+`d` removes it after confirmation, and `r`, `p`, `x`, `i`, `g` resume,
+pause, clear and resume, interrupt and refresh. Reordering is recorded in
+`glassmacs-sessions-history` as `:reordered`. The inspector refreshes
+whenever the queue changes and never changes the queue itself.
 
 **Removing pending commands.** `glassmacs-queue-remove`,
 `glassmacs-queue-remove-entries` and `glassmacs-queue-clear` all go through one
@@ -406,14 +483,16 @@ later results may change (order, dependencies, RNG state), and defaults to
 calls keep the command. Confirmed removals stay as `removed` records and in
 `glassmacs-sessions-history` with timestamp, original position, id and source.
 `glassmacs-queue-interrupt` is a separate operation: it interrupts the running
-queued command, marks it `uncertain`, pauses the queue and keeps pending work.
+queued command, marks it `uncertain` and holds the commands queued behind it
+until you resume; commands sent afterwards run as usual.
 
 **Termination.** A running entry becomes `uncertain`, pending entries become
 `orphaned`; records are kept, the queue is paused and nothing is replayed.
 
 **Limitations.** `completed` means ESS saw R return to its primary prompt, not
 that the code succeeded; R errors are not parsed. An incomplete expression
-leaves R at a continuation prompt and is marked `uncertain`. Entries typed
+leaves R at a continuation prompt, is marked `uncertain` and pauses the
+queue with that explanation. Entries typed
 directly in the console are not tracked, and a busy console delays dispatch.
 History is in memory only and bounded: `glassmacs-sessions-history-limit`
 (default 10,000 events) caps `glassmacs-sessions-history`, and
@@ -421,6 +500,6 @@ History is in memory only and bounded: `glassmacs-sessions-history-limit`
 finished queue records (`completed`, `failed`, `uncertain`, `orphaned`,
 `removed`). The oldest records are discarded first; pending and running
 entries are never discarded. Set either option to nil to keep everything.
-Not implemented: editing or reordering entries, a
-queue buffer UI, persistence across Emacs restarts, SSH/remote sessions. See
+Not implemented: editing queued source, persistence across Emacs restarts,
+SSH/remote sessions. See
 [architecture](architecture.md) and [roadmap](roadmap.md).

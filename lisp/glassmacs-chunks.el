@@ -408,6 +408,8 @@ as a local Shiny app instead, since it cannot be rendered to a file."
     menu)
   "Menu of R chunk and document commands.")
 
+(glassmacs-menu-install-dynamic-keys glassmacs-document-menu)
+
 (defvar glassmacs-document-mode-map
   (let ((map (make-sparse-keymap)))
     ;; Shortcuts familiar from RStudio, on Command (Super) so that ESS's and

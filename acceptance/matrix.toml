@@ -422,14 +422,14 @@ id = "CLOSE-002"
 title = "Quitting with unsaved documents asks first"
 severity = "P0"
 evidence = ["glassmacs:issue-34-scenario-6"]
-exposure = "Command-Q and other quit paths must not discard edits silently."
+exposure = "Each modified document gets Save / Don't Save / Cancel and a freshly unchecked native Apply-to-all checkbox; quit paths must not discard edits silently."
 layers = ["A", "C", "D"]
 tests = ["ert:glassmacs-recovery-direct-kill-guard-blocks-unsaved-documents", "ert:glassmacs-macos-explicit-quit-is-not-intercepted", "gui:quit-with-unsaved-document-asks"]
 implemented = "yes"
 automated = "partial"
 packaged_app = "ci"
 clean_machine = "NOT RUN"
-manual = ["With an unsaved document, choose Quit from the Dock icon's menu and log out of macOS: both ask before quitting."]
+manual = ["With two modified documents, verify the native checkbox starts unchecked for each prompt and after cancel or failed save; test Save, Don't Save and Cancel scope.", "Choose Quit from the Dock icon's menu and log out of macOS with unsaved documents: both must use the same safeguards."]
 
 [[check]]
 id = "RESTORE-001"
@@ -486,6 +486,20 @@ automated = "partial"
 packaged_app = "NOT RUN"
 clean_machine = "NOT RUN"
 manual = ["With German and French layouts, type @, {, [ and é with Option; with Japanese or Chinese input, compose and commit text in a document and the minibuffer."]
+
+[[check]]
+id = "KEY-003"
+title = "Glassmacs menu shortcuts follow active keymaps"
+severity = "P2"
+evidence = ["glassmacs:issue-90-key-003"]
+exposure = "A static accelerator can mislead users after a keyboard-profile, mode-map or user-override change."
+layers = ["A", "C", "D"]
+tests = ["ert:glassmacs-menu-keys-follow-active-profile-and-mode-map", "ert:glassmacs-menu-keys-respect-user-override-and-unbound-state", "ert:glassmacs-menu-keys-refresh-without-touching-upstream-menus", "ert:glassmacs-menu-command-field-unwraps-emacs-command-form", "ert:glassmacs-menu-keeps-ess-mode-bindings-authoritative", "gui:dynamic-menu-shortcut-labels"]
+implemented = "partial"
+automated = "yes"
+packaged_app = "ci"
+clean_machine = "NOT RUN"
+manual = ["On macOS, switch Hybrid / Traditional profiles and change among an R source buffer, ESS console and ordinary text buffer; open Glassmacs menus and verify each Glassmacs-owned shortcut matches the active binding, updates on the next menu invocation, and disappears when unbound. Confirm Cocoa-owned and upstream menu items retain their behavior."]
 
 [[check]]
 id = "CLIP-001"
@@ -621,6 +635,36 @@ packaged_app = "NOT RUN"
 clean_machine = "NOT RUN"
 manual = ["With CRAN R installed, start R from the R menu, evaluate plot(cars): a Quartz window shows the plot and editing focus returns to the document."]
 rationale = "R is not installed on the macOS runner; ESS/R runs in the Linux integration job."
+
+[[check]]
+id = "RCONSOLE-001"
+title = "ESS consoles preserve configured frame and tab placement"
+severity = "P0"
+evidence = ["glassmacs:release-candidate-2885efd"]
+exposure = "ESS displays the inferior buffer during synchronous startup, which can replace or split the source view before Glassmacs applies its configured console presentation."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-r-started-console-moves-ess-view-to-separate-frame", "ert:glassmacs-r-started-console-honors-tab-placement", "ert:glassmacs-r-selecting-console-reuses-existing-window", "ert:glassmacs-r-output-integration-real-ess-concurrent-sessions"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["On the packaged macOS app with R and ESS, select separate-window placement, open one R source file, and start two R sessions. Confirm the source frame stays intact, each console has its own native window, both processes remain live, and distinct commands reach the intended process. Switch sessions repeatedly and confirm the same windows are reused. Repeat with new-tab placement, then test explicit split-below placement."]
+rationale = "ERT verifies routing through the presentation abstraction; only local macOS GUI testing can verify native window placement."
+
+[[check]]
+id = "RQUEUE-001"
+title = "R session state, queue controls and lifecycle dialogs are visible and agree"
+severity = "P0"
+evidence = ["glassmacs:pr98-usage-notes"]
+exposure = "A paused or held R queue pointed to a Resume Queue command that was absent outside R buffers; console close offered only Hide; quitting asked Emacs's typed yes/no about live processes."
+layers = ["A", "D"]
+tests = ["ert:glassmacs-r-menu-is-available-outside-r-buffers", "ert:glassmacs-r-buffers-show-one-r-menu-and-queue-signals", "ert:glassmacs-r-queue-controls-are-in-every-r-menu", "ert:glassmacs-queue-inspector-shows-and-controls-the-queue", "ert:glassmacs-r-continuation-resume-integration-real-ess", "ert:glassmacs-console-close-terminating-busy-r-needs-second-confirmation", "ert:glassmacs-console-terminate-waits-for-a-successful-close", "ert:glassmacs-quit-with-r-asks-natively-and-honors-each-choice", "ert:glassmacs-dialog-native-helper-receives-spec-and-answers"]
+implemented = "yes"
+automated = "partial"
+packaged_app = "NOT RUN"
+clean_machine = "NOT RUN"
+manual = ["On the packaged app with R and ESS, start a console and pause its queue. With focus in a plain document, an R console and the queue inspector in turn, confirm exactly one R menu is shown and R > Resume Queue resumes. In the console, confirm the Signals menu still has comint's entries and also lists Show R Queue, Resume Queue, Pause Queue and Clear Queue and Resume. Click the Queue toolbar button; reorder, remove and resume commands there. Send an incomplete expression from a source file, confirm the pause explanation, and resume with Cancel Incomplete Input. Close the console with Command-W and with the red button: confirm the native Keep R Running / Cancel / Terminate R alert, the extra confirmation while a command runs, and that Keep R Running leaves the session listed. Quit with a live session: confirm the native Save Session State & Quit / Quit Without Saving Session State / Cancel alert, then relaunch and confirm documents and windows reopen only after Save Session State and no R console is restarted."]
+rationale = "ERT verifies the shared queue and lifecycle functions, menu keymaps and the dialog protocol; native NSAlert presentation and the merged Cocoa menus need local GUI verification."
 
 [[check]]
 id = "SYNC-001"

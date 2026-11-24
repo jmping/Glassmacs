@@ -2,6 +2,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'json)
 
 (defgroup glassmacs-recovery nil
   "Durable recovery for ordinary Glassmacs document buffers."
@@ -149,14 +150,15 @@ Never snapshot process buffers, remote files, or special buffers."
   "Return the durable in-flight recovery transaction path."
   (expand-file-name "transaction.eldata" glassmacs-recovery-directory))
 
-(defun glassmacs-recovery--write-index-transaction (index records)
+(defun glassmacs-recovery--write-index-transaction (index records &optional windows)
   "Publish RECORDS to INDEX with an in-flight transaction marker.
 A failed publication retains the marker, preventing reclamation."
   (glassmacs-recovery--require-clean-transaction)
   (let* ((target (expand-file-name index glassmacs-recovery-directory))
          (marker (glassmacs-recovery--transaction-path))
          (old (glassmacs-recovery--read-index index))
-         (new (list :version 1 :buffers records)))
+         (new (append (list :version 1 :buffers records)
+                      (when windows (list :windows windows)))))
     (glassmacs-recovery--write-private
      marker (prin1-to-string
              (list :version 1 :index index :old old :new new)))
@@ -306,6 +308,127 @@ Return the number of recorded buffers.  Never write original documents."
             (unless (eobp) (error "Trailing recovery manifest data"))
             data))))))
 
+(defun glassmacs-recovery--safe-frame-dimension (value minimum maximum)
+  "Return bounded integer VALUE for a recovered frame, or nil."
+  (when (and (integerp value) (<= minimum value) (<= value maximum))
+    value))
+
+(defun glassmacs-recovery--restore-view (window record)
+  "Restore WINDOW's point and scroll start from bounded data-only RECORD."
+  (when (and (window-live-p window) (listp record))
+    (let* ((buffer (window-buffer window))
+           (limit (with-current-buffer buffer (point-max)))
+           (point (plist-get record :point))
+           (start (plist-get record :start)))
+      (when (and (integerp point) (<= 1 point limit))
+        (set-window-point window point))
+      (when (and (integerp start) (<= 1 start limit))
+        (set-window-start window start t)))))
+
+(defun glassmacs-recovery--buffer-for-id (id)
+  "Resolve a durable recovery ID to an existing live document buffer."
+  (when (stringp id)
+    (cl-find-if (lambda (candidate)
+                  (and (buffer-live-p candidate)
+                       (equal (buffer-local-value
+                               'glassmacs-recovery--id candidate) id)))
+                (buffer-list))))
+
+(defun glassmacs-recovery--restore-tab (frame record)
+  "Restore one document tab RECORD in FRAME, without starting processes.
+Return non-nil if the tab has any recoverable documents."
+  (when (and (listp record) (listp (plist-get record :buffers)))
+    (let ((buffers (delq nil
+                         (mapcar #'glassmacs-recovery--buffer-for-id
+                                 (plist-get record :buffers)))))
+      (when buffers
+        (with-selected-frame frame
+          (delete-other-windows)
+          (set-window-buffer (selected-window) (car buffers))
+          (dolist (buffer (cdr buffers))
+            (condition-case nil
+                (let ((window (split-window (selected-window) nil 'right)))
+                  (set-window-buffer window buffer)
+                  (select-window window))
+              (error
+               (display-buffer buffer))))
+          (dolist (window (window-list frame 'never))
+            (let* ((buffer (window-buffer window))
+                   (id (and (buffer-live-p buffer)
+                            (buffer-local-value
+                             'glassmacs-recovery--id buffer)))
+                   (view (cl-find id (plist-get record :views)
+                                  :key (lambda (entry)
+                                         (plist-get entry :id))
+                                  :test #'equal)))
+              (glassmacs-recovery--restore-view window view)))
+          (let* ((selected-id (plist-get record :selected))
+                 (selected (and (stringp selected-id)
+                                (cl-find-if
+                                 (lambda (window)
+                                   (equal (buffer-local-value
+                                           'glassmacs-recovery--id
+                                           (window-buffer window))
+                                          selected-id))
+                                 (window-list frame 'never)))))
+            (when selected (select-window selected))))
+        t))))
+
+(defun glassmacs-recovery--restore-window-layout (manifest)
+  "Recreate saved document frames and tabs using bounded data-only records.
+Legacy frame records without :tabs restore exactly one layout.  Missing
+documents are skipped, without launching any R processes."
+  (when (display-graphic-p)
+    (dolist (record (plist-get manifest :windows))
+      (when (listp record)
+        (let* ((tabs (if (and (plist-member record :tabs)
+                              (listp (plist-get record :tabs)))
+                         (plist-get record :tabs)
+                       (list record)))
+               (recoverable (cl-remove-if-not
+                             (lambda (tab)
+                               (and (listp tab)
+                                    (listp (plist-get tab :buffers))
+                                    (cl-some #'glassmacs-recovery--buffer-for-id
+                                             (plist-get tab :buffers))))
+                             tabs))
+               (width (glassmacs-recovery--safe-frame-dimension
+                       (plist-get record :width) 20 500))
+               (height (glassmacs-recovery--safe-frame-dimension
+                        (plist-get record :height) 8 300))
+               (left (glassmacs-recovery--safe-frame-dimension
+                      (plist-get record :left) -10000 10000))
+               (top (glassmacs-recovery--safe-frame-dimension
+                     (plist-get record :top) -10000 10000))
+               (active (plist-get record :active-tab)))
+          (when recoverable
+            (let ((frame (make-frame))
+                  (restored-indices nil))
+              (with-selected-frame frame
+                (cl-loop for tab in tabs
+                         for index from 1
+                         when (memq tab recoverable)
+                         do (progn
+                              (when restored-indices
+                                (require 'tab-bar)
+                                (tab-bar-mode 1)
+                                (tab-bar-new-tab))
+                              (when (glassmacs-recovery--restore-tab frame tab)
+                                (push index restored-indices))))
+                (when (and (integerp active)
+                           (memq active restored-indices)
+                           (bound-and-true-p tab-bar-mode))
+                  (tab-bar-select-tab
+                   (1+ (cl-position active (reverse restored-indices)))))
+                (when (and width height)
+                  (condition-case nil
+                      (set-frame-size frame width height)
+                    (error nil)))
+                (when (and left top)
+                  (condition-case nil
+                      (set-frame-position frame left top)
+                    (error nil)))))))))))
+
 (defun glassmacs-recovery-restore-crash ()
   "Restore the crash index without modifying the preserved-buffer index."
   (interactive)
@@ -322,6 +445,7 @@ never overwritten.  Calling this repeatedly does not duplicate buffers."
   (let* ((manifest (or glassmacs-recovery--restoring-index
                        (glassmacs-recovery--read-manifest)))
          (records (plist-get manifest :buffers))
+         (restored nil)
          (count 0))
     (unless (or (null manifest) (eq (plist-get manifest :version) 1))
       (user-error "Unsupported Glassmacs recovery manifest"))
@@ -356,12 +480,24 @@ never overwritten.  Calling this repeatedly does not duplicate buffers."
                   (setq-local buffer-file-name nil)
                   (setq-local glassmacs-recovery-source-file file)
                   (set-buffer-modified-p t))
+                (push buffer restored)
                 (cl-incf count)))
              ((and (not dirty) file (file-readable-p file))
               (let ((buffer (find-file-noselect file)))
                 (with-current-buffer buffer
                   (setq-local glassmacs-recovery--id id))
+                (push buffer restored)
                 (cl-incf count))))))))
+    ;; On confirmed startup recovery, reconstruct visible document frames.
+    ;; Older manifests have no :windows metadata and retain the original
+    ;; interactive-only presentation behavior.
+    (if (plist-get manifest :windows)
+        (glassmacs-recovery--restore-window-layout manifest)
+      (when (and (called-interactively-p 'interactive)
+                 (display-graphic-p)
+                 (fboundp 'glassmacs-present-buffer))
+        (dolist (buffer (nreverse restored))
+          (glassmacs-present-buffer buffer 'open 'new-frame))))
     (when (called-interactively-p 'interactive)
       (message "Restored %d preserved document buffers" count))
     count))
@@ -544,25 +680,241 @@ A positive retain decision resets the review count for the item."
              (y-or-n-p "Glassmacs has crash-recovery snapshots. Review them? "))
         (glassmacs-recovery-restore-crash))))))
 
-(defun glassmacs-recovery-quit ()
-  "Quit without per-document prompts only after successful preservation.
-If preservation fails, remain in Emacs and display the error."
-  (interactive)
-  (if (not glassmacs-preserve-open-buffers-on-quit)
-      (save-buffers-kill-emacs)
-    (condition-case err
-        (progn
-          (glassmacs-recovery-preserve)
-          ;; The built-in quit command prompts for modified buffers.
-          ;; After a durable snapshot, suppress only that document prompt;
-          ;; preserve other kill-emacs queries.
-          (let ((buffer-offer-save nil)
-                (save-silently t))
+(defun glassmacs-recovery--native-quit-decision (buffer)
+  "Return (ACTION . APPLY-ALL) from a fresh macOS alert for BUFFER.
+The checkbox is created anew, with state explicitly set to zero.  If
+the native dialog cannot run, return nil and use the safe fallback."
+  (let* ((open (executable-find "open"))
+         (helper-app (expand-file-name
+                      "../Helpers/GlassmacsQuitAlert.app" invocation-directory))
+         (helper (expand-file-name "Contents/MacOS/GlassmacsQuitAlert"
+                                   helper-app)))
+    (when (and (eq system-type 'darwin) (display-graphic-p))
+      (cond
+       ((not open)
+        (message "Glassmacs native quit helper unavailable: `open' was not found")
+        nil)
+       ((not (file-executable-p helper))
+        (message "Glassmacs native quit helper is not executable: %s" helper)
+        nil)
+       (t
+        (let ((response-file (make-temp-file "glassmacs-quit-response-"))
+              (output (generate-new-buffer " *glassmacs-quit-helper*")))
+        (unwind-protect
+            (condition-case err
+                (let ((status (process-file open nil output nil "-n" "-W" "-a"
+                                            helper-app "--args" response-file
+                                            (buffer-name buffer))))
+                  (if (and (zerop status) (file-readable-p response-file))
+                      (with-temp-buffer
+                        (let ((json-object-type 'alist))
+                          (insert-file-contents response-file)
+                          (goto-char (point-min))
+                          (let* ((response (json-read))
+                                 (error-text (cdr (assq 'error response)))
+                                 (action (cdr (assq 'action response)))
+                                 (all (cdr (assq 'all response))))
+                            (cond
+                             (error-text
+                              (message "Glassmacs native quit helper failed: %s" error-text)
+                              nil)
+                             ((member action '("save" "discard" "cancel"))
+                              (cons (intern action) (eq all t)))
+                             (t
+                              (message "Glassmacs native quit helper returned an invalid action")
+                              nil)))))
+                    (message "Glassmacs native quit helper failed (status %s): %s"
+                             status
+                             (with-current-buffer output
+                               (string-trim (buffer-string))))
+                    nil))
+              (error
+               (message "Glassmacs native quit helper failed: %s"
+                         (error-message-string err))
+               nil))
+          (ignore-errors (delete-file response-file))
+          (kill-buffer output))))))))
+
+(defun glassmacs-recovery--quit-decision (buffer)
+  "Ask about BUFFER; the scope checkbox defaults unchecked each time.
+A non-native fallback asks scope separately, defaulting to current file."
+  (or (glassmacs-recovery--native-quit-decision buffer)
+      (let* ((action
+              (pcase (condition-case nil
+                         (car (read-multiple-choice
+                               (format "Save changes to %s? " (buffer-name buffer))
+                               '((?s "Save" "Save this document")
+                                 (?d "Don't Save" "Discard changes on quit")
+                                 (?c "Cancel" "Keep Glassmacs open"))))
+                       (quit ?c))
+                (?s 'save) (?d 'discard) (_ 'cancel)))
+             (all (and (not (eq action 'cancel))
+                       (eq (condition-case nil
+                               (car (read-multiple-choice
+                                     "Apply this choice to all remaining documents? "
+                                     '((?n "No" "Only this document")
+                                       (?y "Yes" "All remaining documents"))))
+                             ;; Never broaden the decision on a dismissed or
+                             ;; failed scope prompt.
+                             ((quit error) ?n))
+                           ?y))))
+        (cons action all))))
+
+(defun glassmacs-recovery--quit-reviewed ()
+  "Review modified documents individually; never reuse checkbox state.
+Discard decisions are staged until quit, and restored if quit is vetoed."
+  (let ((dirty (cl-remove-if-not #'buffer-modified-p
+                                  (glassmacs-recovery--documents)))
+        (discard nil)
+        (apply-action nil)
+        (cancelled nil))
+    (catch 'cancel
+      (dolist (buffer dirty)
+        (when (and (buffer-live-p buffer) (buffer-modified-p buffer))
+          (let* ((decision (if apply-action
+                               (cons apply-action nil)
+                             (glassmacs-recovery--quit-decision buffer)))
+                 (action (car decision)))
+            (when (eq action 'cancel)
+              (setq cancelled t)
+              (throw 'cancel nil))
+            (when (cdr decision)
+              (setq apply-action action))
+            (pcase action
+              ('save
+               (condition-case err
+                   (with-current-buffer buffer
+                     (save-buffer)
+                     (when (buffer-modified-p)
+                       (error "Document remains modified")))
+                 ((error quit)
+                  (message "Quit canceled: %s" (error-message-string err))
+                  (setq cancelled t)
+                  (throw 'cancel nil))))
+              ('discard (push buffer discard))
+              (_ (setq cancelled t) (throw 'cancel nil)))))))
+    (if cancelled
+        (progn (message "Quit canceled") nil)
+      (unwind-protect
+          (progn
+            (dolist (buffer discard)
+              (when (buffer-live-p buffer)
+                (with-current-buffer buffer (set-buffer-modified-p nil))))
+            ;; Suppress Emacs's nine-choice prompt only after every document
+            ;; has been reviewed; other quit hooks still run.
             (cl-letf (((symbol-function 'save-some-buffers)
                        (lambda (&rest _) nil)))
-              (save-buffers-kill-emacs))))
-      (error (message "Glassmacs quit canceled: %s" (error-message-string err))
-             nil))))
+              (let ((glassmacs-recovery--save-reviewed-quit t))
+                (save-buffers-kill-emacs))))
+        (dolist (buffer discard)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p t))))))))
+
+(defun glassmacs-recovery--quit-preserving ()
+  "Preserve every document, then quit without per-document prompts.
+If preservation fails, remain in Emacs and display the error."
+  (condition-case err
+      (progn
+        (glassmacs-recovery-preserve)
+        ;; The built-in quit command prompts for modified buffers.
+        ;; After a durable snapshot, suppress only that document prompt;
+        ;; preserve other kill-emacs queries.
+        (let ((buffer-offer-save nil)
+              (save-silently t)
+              (glassmacs-recovery--save-reviewed-quit t))
+          (cl-letf (((symbol-function 'save-some-buffers)
+                     (lambda (&rest _) nil)))
+            (save-buffers-kill-emacs))))
+    (error (message "Glassmacs quit canceled: %s" (error-message-string err))
+           nil)))
+
+(declare-function glassmacs-sessions-refresh "glassmacs-sessions")
+(declare-function glassmacs-sessions-live "glassmacs-sessions")
+(declare-function glassmacs-sessions-status-text "glassmacs-sessions")
+(declare-function glassmacs-session-process "glassmacs-sessions")
+(declare-function glassmacs-dialog-choose "glassmacs-dialogs")
+(declare-function glassmacs-workspace-save-for-next-launch "glassmacs-workspace")
+(declare-function glassmacs-workspace-forget "glassmacs-workspace")
+(defvar desktop-save-mode)
+
+(defun glassmacs-recovery--live-r-sessions ()
+  "Return the live R sessions that quitting would end."
+  (when (fboundp 'glassmacs-sessions-live)
+    (glassmacs-sessions-refresh)
+    (glassmacs-sessions-live)))
+
+(defun glassmacs-recovery--r-quit-decision (sessions)
+  "Ask how to quit while R SESSIONS run: `save', `discard' or `cancel'."
+  (require 'glassmacs-dialogs)
+  (glassmacs-dialog-choose
+   (if (cdr sessions)
+       (format "Quit Glassmacs with %d R sessions running?" (length sessions))
+     "Quit Glassmacs with an R session running?")
+   '((save "Save Session State & Quit" :key ?s :default t
+           :description "Reopen documents and windows next time, then quit")
+     (cancel "Cancel" :key ?c :cancel t :description "Return to Glassmacs")
+     (discard "Quit Without Saving Session State" :key ?q
+              :description "Review unsaved documents; do not reopen this session"))
+   (concat (mapconcat #'glassmacs-sessions-status-text sessions "\n")
+           "\n\nQuitting ends these R processes.  R objects you have not saved "
+           "(for example with save.image()) are lost.\n\n"
+           "Save Session State reopens your documents and windows next time, "
+           "including unsaved changes.  Quit Without Saving Session State asks "
+           "about each unsaved document and does not reopen this session's "
+           "windows.  Neither restarts R.")))
+
+(defun glassmacs-recovery--quit-ending-r (sessions thunk on-exit)
+  "Call THUNK to quit after the R SESSIONS decision was made.
+Emacs's own active-process question is skipped for these R processes
+only; other processes still ask.  ON-EXIT runs from `kill-emacs-hook',
+so it acts only if the quit really happens.  A canceled quit restores
+the processes' exit queries."
+  (let* ((processes (mapcar #'glassmacs-session-process sessions))
+         (flags (mapcar #'process-query-on-exit-flag processes))
+         (kill-emacs-hook (cons on-exit kill-emacs-hook)))
+    (unwind-protect
+        (progn
+          (dolist (process processes)
+            (set-process-query-on-exit-flag process nil))
+          (funcall thunk))
+      ;; Reached only when the quit did not happen.
+      (cl-mapc (lambda (process flag)
+                 (when (process-live-p process)
+                   (set-process-query-on-exit-flag process flag)))
+               processes flags))))
+
+(defun glassmacs-recovery-quit ()
+  "Quit Glassmacs through the document and R session review.
+With live R sessions, first ask natively whether to save the session
+state, quit without saving it, or cancel.  Otherwise quit without
+per-document prompts only after successful preservation, or review each
+modified document, according to `glassmacs-preserve-open-buffers-on-quit'."
+  (interactive)
+  (let ((sessions (glassmacs-recovery--live-r-sessions)))
+    (if (null sessions)
+        (if glassmacs-preserve-open-buffers-on-quit
+            (glassmacs-recovery--quit-preserving)
+          (glassmacs-recovery--quit-reviewed))
+      (pcase (glassmacs-recovery--r-quit-decision sessions)
+        ('save
+         (glassmacs-recovery--quit-ending-r
+          sessions #'glassmacs-recovery--quit-preserving
+          (lambda ()
+            (when (fboundp 'glassmacs-workspace-save-for-next-launch)
+              (with-demoted-errors "Glassmacs could not save the workspace: %S"
+                (glassmacs-workspace-save-for-next-launch))))))
+        ('discard
+         (glassmacs-recovery--quit-ending-r
+          sessions
+          (lambda ()
+            ;; Do not record this session's windows for the next start.
+            (let ((desktop-save-mode nil))
+              (glassmacs-recovery--quit-reviewed)))
+          (lambda ()
+            (when (fboundp 'glassmacs-workspace-forget)
+              (with-demoted-errors "Glassmacs could not remove the workspace: %S"
+                (glassmacs-workspace-forget))))))
+        (_ (message "Quit canceled") nil)))))
 
 (defun glassmacs-recovery--quit-safety-check ()
   "Prevent native or alternate quit paths from silently losing dirty documents.
@@ -585,13 +937,91 @@ termination; when disabled, refuse a direct dirty-buffer termination."
       nil))))
 
 (defun glassmacs-recovery--reviewed-quit-advice (original &rest args)
-  "Mark the ordinary Emacs save/review quit path for ORIGINAL and ARGS."
-  (let ((glassmacs-recovery--save-reviewed-quit t))
-    (apply original args)))
+  "Route native direct quit calls through Glassmacs review.
+ORIGINAL and ARGS are used only for the guarded, already-reviewed quit."
+  (if (or noninteractive glassmacs-recovery--save-reviewed-quit)
+      ;; ERT uses (kill-emacs 1) to report failed assertions.  Intercepting
+      ;; that call via the GUI quit coordinator discarded its status and made
+      ;; failing CI runs appear green.  Batch Emacs has no native quit dialog.
+      (apply original args)
+    (glassmacs-recovery-quit)))
 
 (advice-add 'save-buffers-kill-emacs :around
             #'glassmacs-recovery--reviewed-quit-advice)
+(advice-add 'kill-emacs :around
+            #'glassmacs-recovery--reviewed-quit-advice)
 (add-hook 'kill-emacs-query-functions #'glassmacs-recovery--quit-safety-check)
+
+(defun glassmacs-recovery--tab-window-record (frame)
+  "Snapshot the current tab of FRAME using only document identifiers.
+A tab without recoverable documents is omitted; R processes and special
+buffers are not serialized or restarted."
+  (let* ((windows (window-list frame 'never))
+         (buffers (cl-remove-duplicates
+                   (cl-loop for window in windows
+                            for buffer = (window-buffer window)
+                            when (glassmacs-recovery--eligible-p buffer)
+                            collect (with-current-buffer buffer
+                                      (glassmacs-recovery--id)))
+                   :test #'equal)))
+    (when buffers
+      (list :buffers buffers
+            :selected (let ((selected (window-buffer
+                                       (frame-selected-window frame))))
+                        (when (glassmacs-recovery--eligible-p selected)
+                          (with-current-buffer selected
+                            (glassmacs-recovery--id))))
+            :views (cl-loop for window in windows
+                            for buffer = (window-buffer window)
+                            when (glassmacs-recovery--eligible-p buffer)
+                            collect (list :id (with-current-buffer buffer
+                                                (glassmacs-recovery--id))
+                                          :point (window-point window)
+                                          :start (window-start window)))))))
+
+(defun glassmacs-recovery--frame-tab-records (frame)
+  "Collect every recoverable tab in FRAME without changing final selection."
+  (with-selected-frame frame
+    (if (not (and (bound-and-true-p tab-bar-mode)
+                  (> (length (funcall tab-bar-tabs-function frame)) 1)))
+        (list (glassmacs-recovery--tab-window-record frame))
+      (let ((original (1+ (tab-bar--current-tab-index)))
+            (count (length (funcall tab-bar-tabs-function frame)))
+            records)
+        (unwind-protect
+            (dotimes (index count)
+              (tab-bar-select-tab (1+ index))
+              (push (glassmacs-recovery--tab-window-record frame) records))
+          (tab-bar-select-tab original))
+        (nreverse records)))))
+
+(defun glassmacs-recovery--open-window-records ()
+  "Record recoverable document tabs in visible frames without process data.
+The :tabs field preserves tab order, including tabs without documents;
+:active-tab preserves the selected tab.  Legacy :buffers, :selected and
+:views fields mirror the selected tab for older recovery consumers."
+  (let (records)
+    (dolist (frame (frame-list))
+      (when (and (frame-live-p frame) (frame-visible-p frame)
+                 (not (frame-parameter frame 'minibuffer-only)))
+        (let* ((tabs (glassmacs-recovery--frame-tab-records frame))
+               (active (if (and (bound-and-true-p tab-bar-mode)
+                                (> (length tabs) 1))
+                           (with-selected-frame frame
+                             (1+ (tab-bar--current-tab-index)))
+                         1))
+               (selected (nth (1- active) tabs)))
+          (when (cl-some #'identity tabs)
+            (push (list :buffers (plist-get selected :buffers)
+                        :left (frame-parameter frame 'left)
+                        :top (frame-parameter frame 'top)
+                        :width (frame-width frame)
+                        :height (frame-height frame)
+                        :selected (plist-get selected :selected)
+                        :views (plist-get selected :views)
+                        :tabs tabs :active-tab active)
+                  records)))))
+    (nreverse records)))
 
 (defun glassmacs-recovery--periodic-snapshot ()
   "Best-effort snapshots for crash recovery; do not replace quit manifest."
@@ -599,13 +1029,18 @@ termination; when disabled, refuse a direct dirty-buffer termination."
     (condition-case err
         (progn
           (glassmacs-recovery--ensure-directory)
-          (let ((records nil))
+          (let ((records nil)
+                (windows (glassmacs-recovery--open-window-records)))
+            ;; Include clean, file-backed documents so a forced quit can
+            ;; reconstruct visible source windows, not just dirty snapshots.
             (dolist (buffer (glassmacs-recovery--documents))
-              (when (buffer-modified-p buffer)
+              (when (or (buffer-modified-p buffer)
+                        (and (buffer-file-name buffer)
+                             (not (file-remote-p (buffer-file-name buffer)))))
                 (push (glassmacs-recovery--snapshot buffer) records)))
-            (when records
+            (when (or records windows)
               (glassmacs-recovery--write-index-transaction
-               "crash.eldata" (nreverse records)))))
+               "crash.eldata" (nreverse records) windows))))
       (error (display-warning 'glassmacs-recovery
                               (error-message-string err) :warning)))))
 
