@@ -124,13 +124,10 @@ A descriptor is not proof of a connection or of an executable R."
     (user-error "ESS does not provide the R startup command")))
 
 (defun glassmacs-remote-r--start-ess (directory)
-  "Start an ESS R process from remote DIRECTORY through TRAMP.
-ESS owns the process, filter, prompts, process buffer and connection.
-This function does not interpret R output or create an independent queue."
+  "Launch a new ESS R session from DIRECTORY and return its console buffer.
+ESS owns the process and terminal transport.  Never reuse a preexisting R
+process, even if ESS selects that buffer during startup.  No code is queued."
   (glassmacs-remote-r--ensure-ess)
-  ;; ESS owns startup.  Give it a transient source buffer whose actual
-  ;; default-directory is remote, without changing the user's document.
-  ;; Resolve the console from a new ESS process, not from a selected frame.
   (let ((launch-buffer (generate-new-buffer " *Glassmacs remote R launch*"))
         (before (process-list))
         console)
@@ -138,16 +135,25 @@ This function does not interpret R output or create an independent queue."
         (with-current-buffer launch-buffer
           (setq default-directory directory)
           (call-interactively #'R)
-          (let* ((name (and (boundp 'ess-local-process-name)
-                            ess-local-process-name))
-                 (proc (and (stringp name) (get-process name))))
-            (setq console (and (processp proc)
-                               (not (memq proc before))
-                               (process-buffer proc)))))
+          ;; ESS may change buffer or window selection during startup.  Find
+          ;; exactly one *new* process with a live console on the requested
+          ;; remote host, rather than relying on current-buffer after R.
+          (let ((new (cl-remove-if (lambda (proc) (memq proc before))
+                                   (process-list))))
+            (dolist (proc new)
+              (let ((buffer (process-buffer proc)))
+                (when (and (process-live-p proc)
+                           (buffer-live-p buffer)
+                           (equal (glassmacs-remote-execution-identity
+                                   (buffer-local-value 'default-directory buffer))
+                                  (glassmacs-remote-execution-identity directory)))
+                  (when console
+                    (user-error "Remote R launch created multiple matching processes"))
+                  (setq console buffer))))))
       (when (buffer-live-p launch-buffer)
         (kill-buffer launch-buffer)))
     (unless (buffer-live-p console)
-      (user-error "ESS did not create a distinct remote R console"))
+      (user-error "ESS did not create a new R process on the requested host"))
     console))
 
 (defun glassmacs-remote-r--verify-process (process directory)
