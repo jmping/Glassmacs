@@ -3,6 +3,7 @@
 (require 'glassmacs-core)
 (require 'glassmacs-packages)
 (require 'glassmacs-document-local)
+(require 'glassmacs-document-history)
 
 (defun glassmacs-rmarkdown-mode ()
   "Use poly-R for an R Markdown file when available."
@@ -133,7 +134,8 @@ Remote documents are not implicitly executed through this adapter."
                                   finished pattern)))
                (setf (glassmacs-document-job-output-file finished) output)
                (when glassmacs-render-open-output
-                 (glassmacs-open-rendered-output output)))))))
+                 (glassmacs-open-rendered-output output))
+               (glassmacs-document-history-record finished))))))
     (setq glassmacs-document-last-job job)
     (display-buffer (glassmacs-document-job-log-buffer job))
     process))
@@ -151,6 +153,16 @@ identity to an unrelated source buffer."
                          (glassmacs-document-job-context
                           glassmacs-document-last-job))))
         glassmacs-document-last-job))))
+
+(defun glassmacs-document-build-open-remembered-output ()
+  "Explicitly open a remembered local output for the current source document."
+  (interactive)
+  (let* ((base (or (buffer-base-buffer) (current-buffer)))
+         (source (buffer-local-value 'buffer-file-name base))
+         (output (and source (glassmacs-document-history-find source))))
+    (unless output
+      (user-error "No remembered local build output for this document"))
+    (glassmacs-open-rendered-output output)))
 
 (defun glassmacs-document-build-open-last-output ()
   "Open the current document's most recently reported successful build output."
