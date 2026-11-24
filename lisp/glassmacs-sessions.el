@@ -528,6 +528,11 @@ directory at registration, not an independently verified remote process."
         (glassmacs-r-source-execution-identity)
         (glassmacs-r-session-execution-identity session)))
 
+(defun glassmacs-r--approval-for-document ()
+  "Return the current document's cross-location approval token."
+  (with-current-buffer (or (buffer-base-buffer) (current-buffer))
+    glassmacs-r-cross-location-approval))
+
 (defun glassmacs-r--check-cross-location (session)
   "Refuse remote-source routing to a different execution context by default.
 The approval is tied to a source location, process session ID, and
@@ -535,9 +540,7 @@ registration-time target location; stale approvals never silently apply."
   (let ((source (glassmacs-r-source-execution-identity))
         (target (glassmacs-r-session-execution-identity session)))
     (when (and (glassmacs-remote-cross-location-p source target)
-               (not (equal (with-current-buffer (or (buffer-base-buffer)
-                                                  (current-buffer))
-                             glassmacs-r-cross-location-approval)
+               (not (equal (glassmacs-r--approval-for-document)
                            (glassmacs-r--route-approval session))))
       (user-error
        "Remote source at %s targets R at %s; use M-x glassmacs-r-approve-cross-location-target to authorize this document"
