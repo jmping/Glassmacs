@@ -98,6 +98,59 @@ the user explicitly approves a specific cross-location R target."
   (and (eq (plist-get source :kind) 'remote)
        (not (equal source target))))
 
+
+;;; Explicit remote ESS startup over SSH/TRAMP.
+
+(defun glassmacs-remote-r-directory (host directory)
+  "Return an SSH TRAMP directory for HOST and absolute DIRECTORY.
+Reject malformed names before establishing any connection."
+  (file-name-as-directory
+   (glassmacs-remote-make-path host directory)))
+
+(defun glassmacs-remote-r-launch-context (host directory)
+  "Return a validated, network-free remote ESS launch descriptor.
+Only SSH aliases and absolute remote directories are supported.
+A descriptor is not proof of a connection or of an executable R."
+  (let ((path (glassmacs-remote-r-directory host directory)))
+    (list :directory path
+          :identity (glassmacs-remote-execution-identity path))))
+
+(defun glassmacs-remote-r--ensure-ess ()
+  "Require ESS R startup support or signal a clear error."
+  (unless (locate-library "ess-site")
+    (user-error "Remote R requires ESS; install the ess package first"))
+  (require 'ess-site)
+  (unless (fboundp 'R)
+    (user-error "ESS does not provide the R startup command")))
+
+(defun glassmacs-remote-r--start-ess (directory)
+  "Start an ESS R process from remote DIRECTORY through TRAMP.
+ESS owns the process, filter, prompts, process buffer and connection.
+This function does not interpret R output or create an independent queue."
+  (glassmacs-remote-r--ensure-ess)
+  (let ((default-directory directory))
+    ;; R relies on current-buffer and default-directory for ESS startup.
+    ;; Never interpolate host or path into a shell command.
+    (call-interactively #'R)))
+
+(defun glassmacs-remote-r--verify-process (process directory)
+  "Ensure PROCESS is live and associated with remote DIRECTORY.
+Never relabel a local R process as remote.  The ESS console's remote
+directory is a location check, not an independent query to R getwd()."
+  (unless (and (processp process) (process-live-p process))
+    (user-error "ESS did not start a live remote R process"))
+  (let* ((buffer (process-buffer process))
+         (actual (and (buffer-live-p buffer)
+                      (buffer-local-value 'default-directory buffer)))
+         (expected-id (glassmacs-remote-execution-identity directory))
+         (actual-id (glassmacs-remote-execution-identity actual)))
+    (unless (and actual
+                 (file-remote-p actual)
+                 (equal expected-id actual-id))
+      (user-error
+       "ESS R process was not created on the requested remote execution host"))
+    process))
+
 (defun glassmacs-remote-tool-status ()
   "Return local availability of SSH, Mosh, and tmux executables."
   (mapcar (lambda (program)
