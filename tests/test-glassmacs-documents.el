@@ -355,5 +355,43 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
       (should (glassmacs--confirm-console-windows-close
                (list (selected-window)))))))
 
+
+(ert-deftest glassmacs-documents-opt-in-render-records-per-job-output ()
+  "The experimental adapter stores each output in its own job record."
+  (let ((glassmacs-document-use-job-adapter t)
+        (glassmacs-render-open-output t)
+        opened captured)
+    (with-temp-buffer
+      (setq buffer-file-name "/tmp/project/analysis.qmd")
+      (cl-letf (((symbol-function 'glassmacs-document-local-start)
+                 (lambda (job program args on-success)
+                   (setq captured (list job program args))
+                   (let ((log (generate-new-buffer "*Glassmacs Test Build*")))
+                     (setf (glassmacs-document-job-log-buffer job) log)
+                     (with-current-buffer log
+                       (insert "Output created: analysis.html\n"))
+                     (funcall on-success job))
+                   'mock-process))
+                ((symbol-function 'display-buffer) (lambda (&rest _) nil))
+                ((symbol-function 'glassmacs-open-rendered-output)
+                 (lambda (file) (setq opened file))))
+        (should (eq (glassmacs-render-quarto) 'mock-process))
+        (should (eq (cadr captured) "quarto"))
+        (should (equal (caddr captured) '("render" "/tmp/project/analysis.qmd")))
+        (should (eq (glassmacs-document-job-kind glassmacs-document-last-job)
+                    'quarto))
+        (should (equal (glassmacs-document-job-output-file
+                        glassmacs-document-last-job)
+                       "/tmp/project/analysis.html"))
+        (should (equal opened "/tmp/project/analysis.html"))
+        (kill-buffer (glassmacs-document-job-log-buffer (car captured)))))))
+
+(ert-deftest glassmacs-documents-opt-in-render-refuses-remote-source ()
+  "Opting into the local renderer cannot silently run a remote document."
+  (let ((glassmacs-document-use-job-adapter t))
+    (with-temp-buffer
+      (setq buffer-file-name "/ssh:research:/work/analysis.qmd")
+      (should-error (glassmacs-render-quarto) :type 'user-error))))
+
 (provide 'test-glassmacs-documents)
 ;;; test-glassmacs-documents.el ends here
