@@ -138,6 +138,48 @@ Remote documents are not implicitly executed through this adapter."
     (display-buffer (glassmacs-document-job-log-buffer job))
     process))
 
+
+(defun glassmacs-document-build-current-job ()
+  "Return this document's last job if its source identity still matches.
+For polymode chunks, inspect the base document's job without transferring
+identity to an unrelated source buffer."
+  (let ((base (or (buffer-base-buffer) (current-buffer))))
+    (with-current-buffer base
+      (when (and (glassmacs-document-job-p glassmacs-document-last-job)
+                 (equal buffer-file-name
+                        (glassmacs-document-context-source
+                         (glassmacs-document-job-context
+                          glassmacs-document-last-job))))
+        glassmacs-document-last-job))))
+
+(defun glassmacs-document-build-open-last-output ()
+  "Open the current document's most recently reported successful build output."
+  (interactive)
+  (let ((job (glassmacs-document-build-current-job)))
+    (unless (and job
+                 (eq (glassmacs-document-job-status job) 'succeeded)
+                 (glassmacs-document-job-output-file job))
+      (user-error "No successful build output is linked to this document"))
+    (glassmacs-open-rendered-output
+     (glassmacs-document-job-output-file job))))
+
+(defun glassmacs-document-build-show-last-log ()
+  "Display the current document's independent build log."
+  (interactive)
+  (let* ((job (glassmacs-document-build-current-job))
+         (log (and job (glassmacs-document-job-log-buffer job))))
+    (unless (buffer-live-p log)
+      (user-error "No retained build log is linked to this document"))
+    (display-buffer log)))
+
+(defun glassmacs-document-build-cancel ()
+  "Cancel only the current document's running experimental local build."
+  (interactive)
+  (let ((job (glassmacs-document-build-current-job)))
+    (unless job
+      (user-error "No build is linked to this document"))
+    (glassmacs-document-local-cancel job)))
+
 (defconst glassmacs--render-output-marker "GLASSMACS_RENDER_OUTPUT="
   "Prefix of the line on which Glassmacs's R render command prints its output.")
 
