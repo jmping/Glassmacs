@@ -74,7 +74,7 @@
 (ert-deftest glassmacs-document-local-cancel-does-not-restart ()
   (let* ((job (glassmacs-document-local-test--job "cancel"))
          (process (glassmacs-document-local-start
-                   job "sh" '("-c" "sleep 10"))))
+                   job "sh" '("-c" "exec sleep 10"))))
     (unwind-protect
         (progn
           (glassmacs-document-local-cancel job)
