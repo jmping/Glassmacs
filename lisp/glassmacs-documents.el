@@ -122,7 +122,7 @@ Remote documents are not implicitly executed through this adapter."
 
 (defun glassmacs-document-render--local (kind file program arguments pattern)
   "Run a local KIND build of FILE through a distinct job with output PATTERN."
-  (let* ((context (glassmacs-document-context-create file))
+  (let* ((context (glassmacs-document-context-for-file file))
          (job (glassmacs-document-job-new
                (format "%s-%d" kind (cl-incf glassmacs-document-render--serial))
                context kind))
