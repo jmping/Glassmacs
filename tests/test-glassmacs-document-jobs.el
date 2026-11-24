@@ -71,5 +71,36 @@
     (glassmacs-document-job-transition job 'failed nil "confirmed failed")
     (should (equal (glassmacs-document-job-error job) "confirmed failed"))))
 
+
+(ert-deftest glassmacs-document-project-context-is-explicit-and-local ()
+  "Project root is captured only when opted in, without changing directory."
+  (let ((glassmacs-document-detect-project-root t)
+        (calls 0))
+    (cl-letf (((symbol-function 'project-current)
+               (lambda (&rest _) (cl-incf calls) 'mock-project))
+              ((symbol-function 'project-root)
+               (lambda (_project) "/tmp/research/")))
+      (let ((context (glassmacs-document-context-for-file
+                      "/tmp/research/sub/paper.qmd" "R-1")))
+        (should (equal (glassmacs-document-context-project-root context)
+                       "/tmp/research/"))
+        (should (equal (glassmacs-document-context-directory context)
+                       "/tmp/research/sub/"))
+        (should (equal (glassmacs-document-context-target-id context) "R-1"))
+        (should (= calls 1))))
+    (let ((glassmacs-document-detect-project-root nil))
+      (should-not (glassmacs-document-context-project-root
+                   (glassmacs-document-context-for-file
+                    "/tmp/research/paper.qmd"))))))
+
+(ert-deftest glassmacs-document-project-context-skips-remote-discovery ()
+  (let ((glassmacs-document-detect-project-root t))
+    (cl-letf (((symbol-function 'project-current)
+               (lambda (&rest _) (error "Should not probe remote project"))))
+      (let ((context (glassmacs-document-context-for-file
+                      "/ssh:research:/work/paper.qmd")))
+        (should (eq (glassmacs-document-context-location context) 'remote))
+        (should-not (glassmacs-document-context-project-root context))))))
+
 (provide 'test-glassmacs-document-jobs)
 ;;; test-glassmacs-document-jobs.el ends here
