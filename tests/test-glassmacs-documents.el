@@ -393,5 +393,47 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
       (setq buffer-file-name "/ssh:research:/work/analysis.qmd")
       (should-error (glassmacs-render-quarto) :type 'user-error))))
 
+
+(ert-deftest glassmacs-documents-linked-build-output-follows-source-identity ()
+  "A previously reported output belongs to its exact source buffer."
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/project/paper.qmd")
+    (let* ((context (glassmacs-document-context-create buffer-file-name))
+           (job (glassmacs-document-job-new "linked-1" context 'quarto))
+           (opened nil))
+      (glassmacs-document-job-transition job 'running)
+      (glassmacs-document-job-transition job 'succeeded "/tmp/project/paper.html")
+      (setq glassmacs-document-last-job job)
+      (cl-letf (((symbol-function 'glassmacs-open-rendered-output)
+                 (lambda (output) (setq opened output))))
+        (glassmacs-document-build-open-last-output)
+        (should (equal opened "/tmp/project/paper.html"))
+        (setq buffer-file-name "/tmp/project/other.qmd")
+        (should-not (glassmacs-document-build-current-job))
+        (should-error (glassmacs-document-build-open-last-output)
+                      :type 'user-error)))))
+
+(ert-deftest glassmacs-documents-linked-build-log-and-cancel-are-scoped ()
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/project/paper.Rmd")
+    (let* ((context (glassmacs-document-context-create buffer-file-name))
+           (job (glassmacs-document-job-new "linked-2" context 'rmarkdown))
+           (log (generate-new-buffer "*Glassmacs Link Test*"))
+           cancelled shown)
+      (unwind-protect
+          (progn
+            (setf (glassmacs-document-job-log-buffer job) log)
+            (glassmacs-document-job-transition job 'running)
+            (setq glassmacs-document-last-job job)
+            (cl-letf (((symbol-function 'glassmacs-document-local-cancel)
+                       (lambda (target) (setq cancelled target)))
+                      ((symbol-function 'display-buffer)
+                       (lambda (buffer &rest _) (setq shown buffer))))
+              (glassmacs-document-build-show-last-log)
+              (glassmacs-document-build-cancel)
+              (should (eq shown log))
+              (should (eq cancelled job))))
+        (kill-buffer log)))))
+
 (provide 'test-glassmacs-documents)
 ;;; test-glassmacs-documents.el ends here
