@@ -1005,6 +1005,68 @@ buffer; existing splits and other windows are never deleted."
              origin-window (window-prev-buffers origin-window))))
         id))))
 
+
+(defun glassmacs-r-start-remote-session (host directory)
+  "Start an independent ESS R console on SSH HOST in remote DIRECTORY.
+Only explicitly requested SSH/TRAMP contexts are eligible.  Register the
+result in the existing ESS session registry and preserve source windows.
+A failed launch never changes source targets or creates a queue entry."
+  (interactive
+   (list (glassmacs-remote--read-host)
+         (read-string "Remote R working directory (absolute): " "/")))
+  (let* ((context (glassmacs-remote-r-launch-context host directory))
+         (remote-directory (plist-get context :directory))
+         (origin-window (selected-window))
+         (origin-buffer (window-buffer origin-window))
+         (origin-frame (selected-frame)))
+    (glassmacs-remote--require-executable "ssh")
+    (let ((default-directory remote-directory))
+      (condition-case error-data
+          (glassmacs-remote-r--start-ess remote-directory)
+        (file-error
+         (user-error "Could not start ESS R on %s: %s"
+                     host (error-message-string error-data)))))
+    (let* ((console (current-buffer))
+           (proc (and (boundp 'ess-local-process-name)
+                      ess-local-process-name
+                      (get-process ess-local-process-name))))
+      (glassmacs-remote-r--verify-process proc remote-directory)
+      (let ((session (glassmacs-sessions-register proc)))
+        ;; Refresh the authoritative location from the verified ESS process.
+        (setf (glassmacs-session-directory session)
+              (buffer-local-value 'default-directory console)
+              (glassmacs-session-execution-identity session)
+              (plist-get context :identity))
+        (when (or (eq glassmacs-r-console-placement 'new-tab)
+                  (and (display-graphic-p)
+                       (eq glassmacs-r-console-placement 'separate-window)))
+          (glassmacs-r--present-started-console
+           console origin-window origin-buffer)
+          (when (and (frame-live-p origin-frame)
+                     (window-live-p origin-window))
+            (set-window-prev-buffers
+             origin-window (window-prev-buffers origin-window))))
+        (message "Started remote R session %s on %s"
+                 (glassmacs-session-id session)
+                 (glassmacs-remote-execution-label
+                  (glassmacs-session-execution-identity session)))
+        (glassmacs-session-id session)))))
+
+(defun glassmacs-r-start-remote-and-target (host directory)
+  "Start an independent remote R console and link this source document.
+Linking a source on another host still requires explicit route approval
+before evaluation; the new session itself is never implicitly authorized."
+  (interactive
+   (list (glassmacs-remote--read-host)
+         (read-string "Remote R working directory (absolute): " "/")))
+  (let* ((source (current-buffer))
+         (id (glassmacs-r-start-remote-session host directory)))
+    (when (buffer-live-p source)
+      (with-current-buffer source
+        (when (derived-mode-p 'ess-r-mode 'R-mode)
+          (glassmacs-r-select-session id))))
+    id))
+
 (defun glassmacs-r-new-console ()
   "Start a new independent R console, even when one already exists."
   (interactive)
