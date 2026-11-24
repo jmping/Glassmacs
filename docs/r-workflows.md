@@ -147,6 +147,14 @@ multiple-device lifecycle remain unverified until the acceptance test
 runs on the built app.
 
 
+### Remote execution development status
+
+The session identity and route-approval checks in PR #102 are purely local
+metadata and do not connect to SSH. The next stacked workstream (PR #103)
+will launch remote ESS explicitly. Until that implementation is independently
+validated, **a TRAMP-marked console directory is not evidence that R is
+executing remotely**. Existing local ESS behavior remains the default.
+
 ### Execution location and cross-host routing
 
 A registered ESS console now records a **path-free execution-context identity**
