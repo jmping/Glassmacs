@@ -2,6 +2,7 @@
 
 (require 'glassmacs-core)
 (require 'glassmacs-packages)
+(require 'glassmacs-document-local)
 
 (defun glassmacs-rmarkdown-mode ()
   "Use poly-R for an R Markdown file when available."
@@ -92,6 +93,51 @@ application."
   :type 'boolean
   :group 'glassmacs)
 
+
+(defcustom glassmacs-document-use-job-adapter nil
+  "Use independent local job records and logs for document rendering.
+Experimental: the existing single-process rendering path remains the
+default until the per-job adapter passes full packaged-app acceptance.
+Remote documents are not implicitly executed through this adapter."
+  :type 'boolean
+  :group 'glassmacs)
+
+(defvar glassmacs-document-render--serial 0
+  "Serial number for local document jobs in this Emacs process.")
+
+(defvar-local glassmacs-document-last-job nil
+  "Most recent document job initiated from this source buffer.")
+
+(defun glassmacs-document-render--reported-output (job pattern)
+  "Find PATTERN's output file in JOB's own log without reading global logs."
+  (when-let* ((buffer (glassmacs-document-job-log-buffer job)))
+    (with-current-buffer buffer
+      (save-excursion
+        (goto-char (point-max))
+        (when (re-search-backward pattern nil t)
+          (expand-file-name (string-trim (match-string-no-properties 1))
+                            (glassmacs-document-context-directory
+                             (glassmacs-document-job-context job))))))))
+
+(defun glassmacs-document-render--local (kind file program arguments pattern)
+  "Run a local KIND build of FILE through a distinct job with output PATTERN."
+  (let* ((context (glassmacs-document-context-create file))
+         (job (glassmacs-document-job-new
+               (format "%s-%d" kind (cl-incf glassmacs-document-render--serial))
+               context kind))
+         (process
+          (glassmacs-document-local-start
+           job program arguments
+           (lambda (finished)
+             (when-let* ((output (glassmacs-document-render--reported-output
+                                  finished pattern)))
+               (setf (glassmacs-document-job-output-file finished) output)
+               (when glassmacs-render-open-output
+                 (glassmacs-open-rendered-output output)))))))
+    (setq glassmacs-document-last-job job)
+    (display-buffer (glassmacs-document-job-log-buffer job))
+    process))
+
 (defconst glassmacs--render-output-marker "GLASSMACS_RENDER_OUTPUT="
   "Prefix of the line on which Glassmacs's R render command prints its output.")
 
@@ -129,33 +175,34 @@ relative to DIRECTORY unless absolute."
         (message "Rendered; the output file was not reported")))))
 
 (defun glassmacs-render-rmarkdown ()
-  "Render the current R Markdown file with rmarkdown::render() and open it.
-Runs without blocking Emacs.  rmarkdown::render() returns the output file,
-which Glassmacs prints and then opens (see `glassmacs-render-open-output')."
+  "Render the current R Markdown file with rmarkdown::render() and open it."
   (interactive)
   (let* ((file (glassmacs--current-file))
-         (directory (file-name-directory file)))
-    (glassmacs-run-process
-     "Rscript"
-     (list "-e" (format "cat(%S, normalizePath(rmarkdown::render(%s)), \"\\n\", sep = \"\")"
-                        glassmacs--render-output-marker (glassmacs-r-quote file)))
-     directory
-     (lambda ()
-       (glassmacs--open-render-output
-        (concat "^" (regexp-quote glassmacs--render-output-marker) "\\(.+\\)$")
-        directory)))))
+         (directory (file-name-directory file))
+         (arguments
+          (list "-e"
+                (format "cat(%S, normalizePath(rmarkdown::render(%s)), \"\\n\", sep = \"\")"
+                        glassmacs--render-output-marker (glassmacs-r-quote file))))
+         (pattern (concat "^" (regexp-quote glassmacs--render-output-marker)
+                          "\\(.+\\)$")))
+    (if glassmacs-document-use-job-adapter
+        (glassmacs-document-render--local 'rmarkdown file "Rscript" arguments pattern)
+      (glassmacs-run-process
+       "Rscript" arguments directory
+       (lambda () (glassmacs--open-render-output pattern directory))))))
 
 (defun glassmacs-render-quarto ()
-  "Render the current Quarto document with the Quarto CLI and open it.
-Runs without blocking Emacs; the file Quarto reports as \"Output created\"
-is opened (see `glassmacs-render-open-output')."
+  "Render the current Quarto document with the Quarto CLI and open it."
   (interactive)
   (let* ((file (glassmacs--current-file))
-         (directory (file-name-directory file)))
-    (glassmacs-run-process
-     "quarto" (list "render" file) directory
-     (lambda ()
-       (glassmacs--open-render-output "^Output created: \\(.+\\)$" directory)))))
+         (directory (file-name-directory file))
+         (arguments (list "render" file))
+         (pattern "^Output created: \\(.+\\)$"))
+    (if glassmacs-document-use-job-adapter
+        (glassmacs-document-render--local 'quarto file "quarto" arguments pattern)
+      (glassmacs-run-process
+       "quarto" arguments directory
+       (lambda () (glassmacs--open-render-output pattern directory))))))
 
 (defun glassmacs-knit-sweave ()
   "Knit the current Sweave or knitr document using knitr::knit()."
