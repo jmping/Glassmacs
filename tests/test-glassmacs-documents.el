@@ -153,6 +153,38 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
                         :type 'user-error))
       (delete-file file))))
 
+(ert-deftest glassmacs-documents-build-status-is-scoped-and-read-only ()
+  "Inspect the last job without opening output or operating on a process."
+  (let* ((source (generate-new-buffer " *glassmacs-status-source*"))
+         (other (generate-new-buffer " *glassmacs-status-other*"))
+         (log (generate-new-buffer " *glassmacs-status-log*"))
+         (job (glassmacs-document-job-new
+               "status-1"
+               (glassmacs-document-context-create "/tmp/analysis.qmd")
+               'quarto log))
+         shown)
+    (unwind-protect
+        (progn
+          (glassmacs-document-job-transition job 'running)
+          (glassmacs-document-job-transition job 'failed nil "renderer exited")
+          (with-current-buffer source
+            (setq buffer-file-name "/tmp/analysis.qmd")
+            (setq glassmacs-document-last-job job)
+            (cl-letf (((symbol-function 'display-buffer)
+                       (lambda (buffer &rest _) (setq shown buffer))))
+              (should (eq (glassmacs-document-build-show-status) shown)))
+            (with-current-buffer shown
+              (should buffer-read-only)
+              (should (string-match-p "Status: failed" (buffer-string)))
+              (should (string-match-p "renderer exited" (buffer-string)))
+              (should (string-match-p "status-1" (buffer-string)))))
+          (with-current-buffer other
+            (setq buffer-file-name "/tmp/unrelated.qmd")
+            (should-error (glassmacs-document-build-show-status)
+                          :type 'user-error)))
+      (dolist (buffer (list source other log shown))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
 ;;; Shiny apps and interactive documents
 
 (defmacro glassmacs-documents-test--fresh-shiny (&rest body)
