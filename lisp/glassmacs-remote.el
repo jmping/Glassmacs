@@ -1,5 +1,7 @@
 ;;; glassmacs-remote.el --- Remote file and terminal helpers -*- lexical-binding: t; -*-
 
+(require 'subr-x)
+
 (defgroup glassmacs-remote nil
   "Remote file and terminal workflows for Glassmacs."
   :group 'glassmacs)
