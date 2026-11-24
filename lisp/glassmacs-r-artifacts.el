@@ -119,9 +119,15 @@ Never overwrite an existing local file or write to another TRAMP host."
       (user-error "R console directory no longer matches its registered SSH host"))
     (unless (equal (plist-get location :method) "ssh")
       (user-error "Remote R artifact preview requires an SSH console"))
-    (let* ((local-directory
-            (plist-get (glassmacs-remote-context remote-directory) :localname))
-           (context (glassmacs-r-artifacts--location host local-directory relative))
+    (glassmacs-r-artifacts--validate-relative relative)
+    ;; Preserve the selected session's complete TRAMP identity, including
+    ;; explicit SSH user and port; rebuilding from HOST would discard them.
+    (let* ((root (file-name-as-directory remote-directory))
+           (context (list :host host
+                          :directory (plist-get
+                                      (glassmacs-remote-context root) :localname)
+                          :relative relative :root root
+                          :remote-path (concat root relative)))
            (path (glassmacs-r-artifacts--bounded-file context)))
       (glassmacs-r-artifacts--record context (glassmacs-session-id session))
       (find-file-read-only path))))
