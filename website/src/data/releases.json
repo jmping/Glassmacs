@@ -1,0 +1,29 @@
+{
+  "reviewed": "2026-11-23",
+  "releases": [
+    {
+      "version": "v0.1.0-alpha.2",
+      "date": "2026-11-03",
+      "stage": "Alpha",
+      "summary": "Separate R console windows, toolbar launch controls, console window actions, preferences behavior and command echo.",
+      "asset": "Glassmacs-v0.1.0-alpha.1-1-g9fe137d-20261103T162606Z.zip",
+      "sha256": "d4b0caa5987c036ea872293a11c78d9855fb1bf5b83b0fa05d8efab71f136ed8",
+      "evidence": "Release notes report Developer ID signing, notarization and stapling; experimental single-user testing, not broad acceptance."
+    },
+    {
+      "version": "v0.1.0-alpha.1",
+      "date": "2026-11-03",
+      "stage": "Alpha",
+      "summary": "Initial signed universal application, GNU Emacs 31.1 and bundled ESS 26.5.0.",
+      "asset": "Glassmacs-0.1-alpha-macOS-signed.zip",
+      "sha256": null,
+      "evidence": "Release notes report 369 expected ERT results, 18 skips, 42 Python tests, Swift success and Gatekeeper acceptance; hands-on signed-app GUI testing outstanding."
+    }
+  ],
+  "candidate": {
+    "commit": "b7f19966e447ad94c5d894211a2dfe15a86c184e",
+    "stage": "Unpublished validation candidate",
+    "evidence": "Maintainer-reported signed and notarized DMG, Gatekeeper and mounted-app checks passed; ERT 489 passed / 18 skipped, Python 49 passed, Swift 7 passed; arm64 probe produced an .eln file.",
+    "blockers": "Corresponding-source compliance, publication and provenance review remain outstanding. Clean-machine, Intel and interactive GUI validation remain outstanding."
+  }
+}
