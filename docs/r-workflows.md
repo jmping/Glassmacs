@@ -170,6 +170,35 @@ functionality; no such integration result has yet been obtained. The
 verification of console context alone cannot prove which binary is executing
 until the host's R prompt and execution are exercised end-to-end.
 
+### Remote R graphics artifacts and local retrieval (experimental)
+
+The remote artifact viewer is opt-in, uses TRAMP/OpenSSH and **does not**
+require X11 forwarding. Choose **R > Preview Remote Artifact…**, enter the
+configured SSH alias, project root and a project-relative PNG/JPEG/SVG/PDF
+(or HTML/text/CSV) path. Glassmacs verifies that the path remains within
+the remote project root even after resolving symlinks, that it is a regular
+file, and that it does not exceed the configured `glassmacs-r-artifacts-max-bytes`
+(default: 64 MiB). The Emacs viewer opens the selected remote file read-only.
+**R > Download Remote Artifact…** copies the same bounded artifact to an
+explicit **local** destination without replacing an existing file.
+
+**R > Preview Artifact from R Session…** resolves the currently selected
+remote ESS console, verifies that its current TRAMP location still matches
+its registered remote identity, and associates the preview with that
+session ID. **R > R Artifact History…** shows explicitly accessed artifacts
+and their recorded locations. It is in-memory navigation/provenance only,
+not automatic plot-device capture. Base graphics and ggplot2 may write
+files using standard R calls such as `png("plots/result.png")` or
+`pdf("plots/result.pdf")` followed by `dev.off()`; Glassmacs does not
+silently change the R graphics device. The user is responsible for selecting
+a relative path to an existing result.
+
+A durable `Rscript` job may produce files in its designated working
+directory and the same viewer can retrieve them. Transfers are explicit
+and bounded. Automated tests cover unsafe paths, oversized files, symlink
+escape, host/session identity and accidental overwrites; **no real remote
+R plot or Cocoa image/PDF preview has yet been verified**.
+
 ### Durable remote Rscript jobs (experimental)
 
 A durable job is **not** an ESS R console. Choose **R > Submit Durable Remote

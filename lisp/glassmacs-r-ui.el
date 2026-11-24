@@ -6,6 +6,7 @@
 (require 'tool-bar)
 (require 'glassmacs-sessions)
 (require 'glassmacs-r-jobs)
+(require 'glassmacs-r-artifacts)
 (require 'glassmacs-r-graphics)
 
 (defgroup glassmacs-r-ui nil
@@ -123,6 +124,19 @@ these same commands, so they cannot disagree about the queue."
     (define-key menu [durable-logs]
       '(menu-item "Open Remote Job Log…" glassmacs-r-jobs-open-log
                   :help "View server-side stdout/stderr using TRAMP"))
+    (define-key menu [remote-artifacts-divider] menu-bar-separator)
+    (define-key menu [remote-artifacts-preview]
+      '(menu-item "Preview Remote Artifact…" glassmacs-r-artifacts-preview
+                  :help "Preview a bounded PNG/SVG/PDF or other supported research output"))
+    (define-key menu [remote-artifacts-from-session]
+      '(menu-item "Preview Artifact from R Session…" glassmacs-r-artifacts-preview-session
+                  :help "Use the selected remote ESS host and remember the R session"))
+    (define-key menu [remote-artifacts-download]
+      '(menu-item "Download Remote Artifact…" glassmacs-r-artifacts-download
+                  :help "Explicit, size-bounded transfer to a local filename"))
+    (define-key menu [remote-artifacts-history]
+      '(menu-item "R Artifact History…" glassmacs-r-artifacts-list-history
+                  :help "List previews and their associated R session identities"))
     (define-key menu [graphics-separator] menu-bar-separator)
     (define-key menu [graphics-list]
       '(menu-item "List Graphics Devices" glassmacs-r-graphics-list-devices
@@ -204,6 +218,19 @@ these same commands, so they cannot disagree about the queue."
     (define-key menu [durable-logs]
       '(menu-item "Open Remote Job Log…" glassmacs-r-jobs-open-log
                   :help "View server-side stdout/stderr using TRAMP"))
+    (define-key menu [remote-artifacts-divider] menu-bar-separator)
+    (define-key menu [remote-artifacts-preview]
+      '(menu-item "Preview Remote Artifact…" glassmacs-r-artifacts-preview
+                  :help "Preview a bounded PNG/SVG/PDF or other supported research output"))
+    (define-key menu [remote-artifacts-from-session]
+      '(menu-item "Preview Artifact from R Session…" glassmacs-r-artifacts-preview-session
+                  :help "Use the selected remote ESS host and remember the R session"))
+    (define-key menu [remote-artifacts-download]
+      '(menu-item "Download Remote Artifact…" glassmacs-r-artifacts-download
+                  :help "Explicit, size-bounded transfer to a local filename"))
+    (define-key menu [remote-artifacts-history]
+      '(menu-item "R Artifact History…" glassmacs-r-artifacts-list-history
+                  :help "List previews and their associated R session identities"))
     (define-key menu [start]
       '(menu-item "Start Another R Session" glassmacs-r-start-session))
     (define-key menu [start-remote]
@@ -273,6 +300,19 @@ comint's Break, Stop and Kill without modifying comint's shared map.")
     (define-key menu [durable-logs]
       '(menu-item "Open Remote Job Log…" glassmacs-r-jobs-open-log
                   :help "View server-side stdout/stderr using TRAMP"))
+    (define-key menu [remote-artifacts-divider] menu-bar-separator)
+    (define-key menu [remote-artifacts-preview]
+      '(menu-item "Preview Remote Artifact…" glassmacs-r-artifacts-preview
+                  :help "Preview a bounded PNG/SVG/PDF or other supported research output"))
+    (define-key menu [remote-artifacts-from-session]
+      '(menu-item "Preview Artifact from R Session…" glassmacs-r-artifacts-preview-session
+                  :help "Use the selected remote ESS host and remember the R session"))
+    (define-key menu [remote-artifacts-download]
+      '(menu-item "Download Remote Artifact…" glassmacs-r-artifacts-download
+                  :help "Explicit, size-bounded transfer to a local filename"))
+    (define-key menu [remote-artifacts-history]
+      '(menu-item "R Artifact History…" glassmacs-r-artifacts-list-history
+                  :help "List previews and their associated R session identities"))
     (define-key menu [new-console]
       '(menu-item "New R Console" glassmacs-r-new-console))
     (define-key menu [remote-console]
