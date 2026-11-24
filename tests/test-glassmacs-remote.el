@@ -481,5 +481,88 @@
       (when (and proc (process-live-p proc)) (delete-process proc))
       (when (buffer-live-p local-console) (kill-buffer local-console)))))
 
+(ert-deftest glassmacs-remote-r-transport-loss-orphans-queue-no-replay ()
+  "Remote ESS transport loss cannot redispatch pending or uncertain commands."
+  (require 'glassmacs-sessions)
+  (let* ((running (glassmacs-entry--make :id "running-remote" :session-id "R-host"
+                                         :source "slow()" :state 'running))
+         (pending (glassmacs-entry--make :id "pending-remote" :session-id "R-host"
+                                         :source "other()" :state 'pending))
+         (session (glassmacs-session--make
+                   :id "R-host" :directory "/ssh:research:/analysis/"
+                   :entries (list running pending))))
+    (glassmacs-sessions--terminate session)
+    (should (glassmacs-session-disconnected session))
+    (should (eq (glassmacs-r-session-connection-state session) 'disconnected))
+    (should (eq (glassmacs-entry-state running) 'uncertain))
+    (should (eq (glassmacs-entry-state pending) 'orphaned))
+    (should (glassmacs-session-paused session))
+    (should (null (glassmacs-queue--dispatchable session)))
+    (should-error (glassmacs-queue-resume session) :type 'user-error)
+    ;; Idempotent repeated sentinel/poll observations cannot alter outcomes.
+    (glassmacs-sessions--terminate session)
+    (should (eq (glassmacs-entry-state running) 'uncertain))
+    (should (eq (glassmacs-entry-state pending) 'orphaned))))
+
+(ert-deftest glassmacs-remote-r-local-termination-is-not-disconnection ()
+  "Local session termination does not claim an SSH transport was lost."
+  (require 'glassmacs-sessions)
+  (let ((session (glassmacs-session--make
+                  :id "R-local" :directory "/tmp/analysis/")))
+    (glassmacs-sessions--terminate session)
+    (should-not (glassmacs-session-disconnected session))
+    (should (eq (glassmacs-r-session-connection-state session) 'terminated))))
+
+(ert-deftest glassmacs-remote-r-disconnected-session-preserves-host ()
+  "A disconnected session keeps its original host identity for diagnostics."
+  (require 'glassmacs-sessions)
+  (let ((session (glassmacs-session--make
+                  :id "R-old" :directory "/ssh:cluster:/home/remote/")))
+    (glassmacs-sessions--terminate session)
+    (setf (glassmacs-session-directory session) "/tmp")
+    (should (equal (plist-get
+                    (glassmacs-r-session-execution-identity session) :host)
+                   "cluster"))
+    (should (equal (glassmacs-r-session-connection-state session)
+                   'disconnected))))
+
+
+(ert-deftest glassmacs-r-jobs-id-paths-do-not-connect ()
+  "Malformed IDs must not construct arbitrary remote file paths."
+  (require 'glassmacs-r-jobs)
+  (should-error (glassmacs-r-jobs--paths "research" "/analysis/" "../etc")
+                :type 'user-error)
+  (let* ((id "glassmacs-r-aabbccddeeff001122334455")
+         (paths (glassmacs-r-jobs--paths "research" "/analysis/" id)))
+    (should (equal (plist-get paths :status)
+                   (concat "/ssh:research:/analysis/.glassmacs-jobs/" id "/status")))))
+
+(ert-deftest glassmacs-r-jobs-driver-contains-no-source-interpolation ()
+  "Fixed launcher delegates to Rscript without embedding project source."
+  (require 'glassmacs-r-jobs)
+  (let ((driver (glassmacs-r-jobs--launcher)))
+    (should (string-match-p "Rscript --vanilla job.R" driver))
+    (should (string-match-p "exit:%s" driver))
+    (should-not (string-match-p "/Users/\\|/home/research/" driver))))
+
+(ert-deftest glassmacs-r-jobs-status-reader-maps-exit-codes ()
+  "Server markers can be read without running SSH or ESS."
+  (require 'glassmacs-r-jobs)
+  (let ((glassmacs-r-jobs--list nil))
+    (cl-letf (((symbol-function 'glassmacs-r-jobs--paths)
+               (lambda (&rest _) '(:status "/mock/status")))
+              ((symbol-function 'glassmacs-r-jobs--read-marker)
+               (lambda (_path) "exit:0")))
+      (should (eq (glassmacs-r-jobs-status
+                   "research" "/analysis/" "glassmacs-r-aabbccddeeff001122334455")
+                  'completed)))
+    (cl-letf (((symbol-function 'glassmacs-r-jobs--paths)
+               (lambda (&rest _) '(:status "/mock/status")))
+              ((symbol-function 'glassmacs-r-jobs--read-marker)
+               (lambda (_path) "exit:1")))
+      (should (eq (glassmacs-r-jobs-status
+                   "research" "/analysis/" "glassmacs-r-aabbccddeeff001122334455")
+                  'failed)))))
+
 (provide 'test-glassmacs-remote)
 ;;; test-glassmacs-remote.el ends here
