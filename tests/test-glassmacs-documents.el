@@ -376,7 +376,7 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
                 ((symbol-function 'glassmacs-open-rendered-output)
                  (lambda (file) (setq opened file))))
         (should (eq (glassmacs-render-quarto) 'mock-process))
-        (should (eq (cadr captured) "quarto"))
+        (should (equal (cadr captured) "quarto"))
         (should (equal (caddr captured) '("render" "/tmp/project/analysis.qmd")))
         (should (eq (glassmacs-document-job-kind glassmacs-document-last-job)
                     'quarto))
