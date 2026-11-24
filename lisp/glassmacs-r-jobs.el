@@ -38,12 +38,12 @@
   "#!/bin/sh\nset -eu\numask 077\ncd \"$(dirname \"$0\")\"\nprintf \"running\\n\" > status\nRscript --vanilla job.R > stdout.log 2> stderr.log &\nchild=$!\nprintf \"%s\\n\" \"$child\" > pid\nwait \"$child\" && result=0 || result=$?\nprintf \"exit:%s\\n\" \"$result\" > status\nexit \"$result\"\n")
 
 (defun glassmacs-r-jobs--run (remote &rest argv)
-  "Execute a fixed command over TRAMP REMOTE; do not use a local shell."
+  "Execute the fixed command ARGV in remote TRAMP directory REMOTE."
   (with-temp-buffer
     (setq default-directory remote)
     (let ((status (apply #'process-file (car argv) nil t nil (cdr argv))))
       (unless (and (integerp status) (zerop status))
-        (user-error "Remote job command returned %s" status))
+        (user-error "Remote R job command exited %s" status))
       status)))
 
 (defun glassmacs-r-jobs-submit (host directory source-file)
