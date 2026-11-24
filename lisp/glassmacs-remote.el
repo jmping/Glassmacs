@@ -130,10 +130,10 @@ This function does not interpret R output or create an independent queue."
   (glassmacs-remote-r--ensure-ess)
   ;; ESS owns startup.  Give it a transient source buffer whose actual
   ;; default-directory is remote, without changing the user's document.
-  ;; ESS may switch buffers by selecting windows or by changing the current
-  ;; buffer; prefer its reported process name for resolving the console.
+  ;; Resolve the console from the new ESS process, not from a selected frame.
   (let ((origin (current-buffer))
         (launch-buffer (generate-new-buffer " *Glassmacs remote R launch*"))
+        (before (process-list))
         console)
     (unwind-protect
         (with-current-buffer launch-buffer
@@ -142,7 +142,9 @@ This function does not interpret R output or create an independent queue."
           (let* ((name (and (boundp 'ess-local-process-name)
                             ess-local-process-name))
                  (proc (and (stringp name) (get-process name))))
-            (setq console (and (processp proc) (process-buffer proc)))))
+            (setq console (and (processp proc)
+                               (not (memq proc before))
+                               (process-buffer proc)))))
       (when (buffer-live-p launch-buffer)
         (kill-buffer launch-buffer)))
     (unless (and (buffer-live-p console) (not (eq console origin)))
