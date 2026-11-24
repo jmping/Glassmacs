@@ -305,6 +305,13 @@ and single-app ownership remain authoritative; this does not turn Shiny into
 a durable or remotely reattachable job. The source association is an in-memory
 status aid, not persistent project restoration.
 
+**Optional project context:** Setting `glassmacs-document-detect-project-root`
+to non-nil attaches the local upstream Emacs `project.el` root to new build
+context records. It does not change the current working directory, select an
+ESS session, enable remote execution, or establish source-to-output mapping.
+TRAMP/SSH project probing is skipped deliberately; remote project identity
+will require an explicit, separately reviewed trust and path model.
+
 R, the Shiny R package, Quarto, and document packages are external
 dependencies; their presence is not guaranteed by installing Glassmacs.
 
