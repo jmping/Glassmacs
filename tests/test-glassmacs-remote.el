@@ -156,5 +156,102 @@
         (kill-buffer buffer))
       (delete-directory directory t))))
 
+
+;;; Remote R routing: metadata and safety checks are network-free.
+
+(ert-deftest glassmacs-remote-identity-parses-location-without-paths ()
+  "Session identity contains host information but no remote file path."
+  (let ((id (glassmacs-remote-execution-identity
+             "/ssh:research:/home/researcher/private/source.R")))
+    (should (eq (plist-get id :kind) 'remote))
+    (should (equal (plist-get id :method) "ssh"))
+    (should (equal (plist-get id :host) "research"))
+    (should (equal (glassmacs-remote-execution-label id) "ssh:research"))
+    (should-not (string-match-p "private\\|researcher" (prin1-to-string id))))
+  (should (equal (glassmacs-remote-execution-identity "/tmp/work.R")
+                 '(:kind local))))
+
+(ert-deftest glassmacs-remote-identity-cross-host-policy ()
+  "Remote source cannot silently route to a different context."
+  (let ((one (glassmacs-remote-execution-identity "/ssh:host-a:/src.R"))
+        (same (glassmacs-remote-execution-identity "/ssh:host-a:/elsewhere.R"))
+        (other (glassmacs-remote-execution-identity "/ssh:host-b:/src.R"))
+        (local (glassmacs-remote-execution-identity "/tmp/src.R")))
+    (should-not (glassmacs-remote-cross-location-p one same))
+    (should (glassmacs-remote-cross-location-p one other))
+    (should (glassmacs-remote-cross-location-p one local))
+    (should-not (glassmacs-remote-cross-location-p local other))
+    (should-not (glassmacs-remote-cross-location-p local local))))
+
+(ert-deftest glassmacs-remote-r-identity-is-snapshot-not-buffer-mutation ()
+  "Session registration identity stays fixed if its directory changes."
+  (require 'glassmacs-sessions)
+  (let ((session (glassmacs-session--make
+                  :id "R-test" :directory "/ssh:host-b:/old"
+                  :execution-identity
+                  (glassmacs-remote-execution-identity "/ssh:host-a:/old"))))
+    (setf (glassmacs-session-directory session) "/tmp/new")
+    (should (equal (plist-get (glassmacs-r-session-execution-identity session)
+                              :host)
+                   "host-a"))))
+
+(ert-deftest glassmacs-remote-r-rejects-mismatched-route-before-queueing ()
+  "A remote source targeting another host leaves its queue untouched."
+  (require 'glassmacs-sessions)
+  (let* ((session (glassmacs-session--make
+                   :id "R-mismatch" :directory "/ssh:host-b:/project"))
+         (glassmacs-sessions--list (list session))
+         (glassmacs-sessions--entry-counter 0))
+    (with-temp-buffer
+      (setq buffer-file-name "/ssh:host-a:/project/script.R")
+      (should-error
+       (glassmacs-queue-submit "print('should not run')" session
+                               (list :buffer (buffer-name)))
+       :type 'user-error)
+      (should-not (glassmacs-session-entries session))
+      (should (= glassmacs-sessions--entry-counter 0)))))
+
+(ert-deftest glassmacs-remote-r-approval-is-document-and-target-specific ()
+  "A confirmed approval does not authorize changed source or R targets."
+  (require 'glassmacs-sessions)
+  (let* ((one (glassmacs-session--make :id "R-host-b"
+                                      :directory "/ssh:host-b:/project"))
+         (other (glassmacs-session--make :id "R-host-c"
+                                        :directory "/ssh:host-c:/project"))
+         (glassmacs-sessions--list (list one other)))
+    (cl-letf (((symbol-function 'glassmacs-sessions-live)
+               (lambda () (list one other)))
+              ((symbol-function 'yes-or-no-p) (lambda (_prompt) t)))
+      (with-temp-buffer
+        (setq buffer-file-name "/ssh:host-a:/project/script.R"
+              glassmacs-r-target-session "R-host-b")
+        (should-error (glassmacs-r--check-cross-location one)
+                      :type 'user-error)
+        (glassmacs-r-approve-cross-location-target)
+        (should (eq (glassmacs-r--check-cross-location one) one))
+        (should-error (glassmacs-r--check-cross-location other)
+                      :type 'user-error)
+        (setq buffer-file-name "/ssh:host-d:/project/script.R")
+        (should-error (glassmacs-r--check-cross-location one)
+                      :type 'user-error)
+        (glassmacs-r--set-document-target "R-host-b")
+        (should-not glassmacs-r-cross-location-approval)))))
+
+(ert-deftest glassmacs-remote-r-declining-approval-does-not-authorize ()
+  "Declined confirmation leaves the cross-host block intact."
+  (require 'glassmacs-sessions)
+  (let* ((session (glassmacs-session--make
+                   :id "R-host-b" :directory "/ssh:host-b:/project"))
+         (glassmacs-sessions--list (list session)))
+    (cl-letf (((symbol-function 'glassmacs-sessions-live)
+               (lambda () (list session)))
+              ((symbol-function 'yes-or-no-p) (lambda (_prompt) nil)))
+      (with-temp-buffer
+        (setq buffer-file-name "/ssh:host-a:/project/script.R"
+              glassmacs-r-target-session "R-host-b")
+        (should-error (glassmacs-r-approve-cross-location-target)
+                      :type 'user-error)
+        (should-not glassmacs-r-cross-location-approval)))))
+
 (provide 'test-glassmacs-remote)
 ;;; test-glassmacs-remote.el ends here
