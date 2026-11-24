@@ -202,14 +202,19 @@
                    :id "R-mismatch" :directory "/ssh:host-b:/project"))
          (glassmacs-sessions--list (list session))
          (glassmacs-sessions--entry-counter 0))
-    (with-temp-buffer
-      (setq buffer-file-name "/ssh:host-a:/project/script.R")
-      (should-error
-       (glassmacs-queue-submit "print('should not run')" session
-                               (list :buffer (buffer-name)))
-       :type 'user-error)
-      (should-not (glassmacs-session-entries session))
-      (should (= glassmacs-sessions--entry-counter 0)))))
+    (cl-letf (((symbol-function 'glassmacs-sessions-refresh)
+               (lambda () (list session))))
+      (with-temp-buffer
+        (setq buffer-file-name "/ssh:host-a:/project/script.R")
+        (let ((error-data
+               (should-error
+                (glassmacs-queue-submit "print('should not run')" session
+                                        (list :buffer (buffer-name)))
+                :type 'user-error)))
+          (should (string-match-p "Remote source"
+                                  (error-message-string error-data))))
+        (should-not (glassmacs-session-entries session))
+        (should (= glassmacs-sessions--entry-counter 0))))))
 
 (ert-deftest glassmacs-remote-r-approval-is-document-and-target-specific ()
   "A confirmed approval does not authorize changed source or R targets."
