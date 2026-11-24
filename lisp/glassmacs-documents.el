@@ -164,6 +164,41 @@ identity to an unrelated source buffer."
       (user-error "No remembered local build output for this document"))
     (glassmacs-open-rendered-output output)))
 
+(defun glassmacs-document-build-browse-recent-outputs ()
+  "Choose and explicitly open a previously remembered local build output.
+The picker shows full source paths to distinguish identically named files.
+It does not refresh, render, replay, or open anything until chosen."
+  (interactive)
+  (let* ((entries (glassmacs-document-history-list))
+         (choices (mapcar
+                   (lambda (entry)
+                     (cons (format "%s  [%s, %s]"
+                                   (alist-get 'source entry)
+                                   (alist-get 'kind entry)
+                                   (alist-get 'time entry))
+                           (alist-get 'output entry)))
+                   entries)))
+    (unless choices
+      (user-error "No remembered local build outputs"))
+    (let* ((selected (completing-read "Open remembered output for: "
+                                     (mapcar #'car choices) nil t))
+           (output (cdr (assoc selected choices))))
+      (unless output
+        (user-error "No remembered output selected"))
+      (glassmacs-open-rendered-output output))))
+
+(defun glassmacs-document-build-forget-remembered-output ()
+  "Forget this source's remembered output after confirmation.
+This changes only the local metadata index; it never deletes an output file."
+  (interactive)
+  (let* ((base (or (buffer-base-buffer) (current-buffer)))
+         (source (buffer-local-value 'buffer-file-name base)))
+    (unless (and source (glassmacs-document-history-find source))
+      (user-error "No remembered local build output for this document"))
+    (when (y-or-n-p (format "Forget remembered output for %s? " source))
+      (glassmacs-document-history-forget source)
+      (message "Forgot remembered output for %s (file preserved)" source))))
+
 (defun glassmacs-document-build-open-last-output ()
   "Open the current document's most recently reported successful build output."
   (interactive)
