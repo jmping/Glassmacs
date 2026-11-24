@@ -181,17 +181,34 @@ directory under `.glassmacs-jobs/<job-id>/` and explicitly launches
 This is an opt-in server-side process and never uses the interactive R
 queue or automatically replays any source command.
 
-Use **R > Inspect Remote Job ID…** to check a job after restarting Glassmacs,
-or **R > Open Remote Job Log…** to inspect output. Keep the opaque job ID,
-host, and remote working directory: they are needed for later inspection.
-The in-app job list shows submissions made during the current application
-run only; it is not a query of the remote server.
+The remote launcher runs the copied script with its working directory set to
+the remote project directory supplied during submission, rather than the
+private metadata folder. Source files are not executed through ESS.
+
+Glassmacs stores a private local metadata index at
+`user-emacs-directory/r-jobs.json`, with mode 0600. It records job IDs,
+SSH aliases, remote working directories, and last observed states, but not
+R source, credentials, or output. **R > Durable Remote R Jobs…** can
+therefore list jobs from prior Glassmacs launches. Choose **R > Refresh
+Durable Job Status…** to query server-side markers explicitly; status is
+not polled continuously, and a stale `running` marker cannot prove the
+server process remains alive. **R > Inspect Remote Job ID…** works even
+when a job is absent from the local index. **R > Open Remote Job Log…**
+opens the stdout or stderr log through TRAMP.
+
+**R > Request Remote Job Cancellation…** creates a server-side
+`cancel-request` marker after confirmation. The detached driver polls for
+this marker and signals its own child Rscript process. Glassmacs never
+runs a guessed remote `kill <PID>` against an independently reused PID.
+Cancellation is best effort and must be verified via the final status;
+it does not guarantee termination of child processes spawned by R itself.
 
 **Limits and safety:** A lost connection during submission can leave the
 outcome uncertain. Do not blindly resubmit; inspect the remote job directory
 first. A missing status marker is unknown, not proof that a computation
 failed. No scheduler integration, guaranteed process survival across server
-reboots, automatic cancellation, or GUI-tested macOS lifecycle is claimed.
+reboots, reliable cancellation of subprocess trees, or GUI-tested macOS
+lifecycle is claimed.
 An opt-in real SSH/Rscript integration test is required before beta release.
 
 ### Remote ESS disconnection and manual recovery (experimental)
