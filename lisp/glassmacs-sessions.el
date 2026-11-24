@@ -646,8 +646,7 @@ stale explicit link.  Cancellation does not modify the document target."
       (user-error "No live R console; create one with New R Console first"))
      (t
       (let ((session (glassmacs-sessions--prompt live)))
-        ;; Validate before persisting the link: a rejected cross-host route
-        ;; must not change the document's existing target or approval.
+        ;; Keep the target unchanged when cross-location validation fails.
         (glassmacs-r--check-cross-location session)
         (glassmacs-r--set-document-target (glassmacs-session-id session))
         session)))))
