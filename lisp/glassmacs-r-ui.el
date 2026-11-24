@@ -5,6 +5,7 @@
 (require 'cl-lib)
 (require 'tool-bar)
 (require 'glassmacs-sessions)
+(require 'glassmacs-r-jobs)
 (require 'glassmacs-r-graphics)
 
 (defgroup glassmacs-r-ui nil
@@ -103,6 +104,19 @@ these same commands, so they cannot disagree about the queue."
     (define-key menu [disconnected]
       '(menu-item "Disconnected R Sessions…" glassmacs-r-list-disconnected-sessions
                   :help "Inspect disconnected remote ESS sessions and uncertain commands"))
+    (define-key menu [durable-separator] menu-bar-separator)
+    (define-key menu [durable-submit]
+      '(menu-item "Submit Durable Remote Rscript Job…" glassmacs-r-jobs-submit
+                  :help "Run an explicit R script independently of interactive ESS"))
+    (define-key menu [durable-list]
+      '(menu-item "Durable Remote R Jobs…" glassmacs-r-jobs-list
+                  :help "Inspect Rscript jobs submitted in this session"))
+    (define-key menu [durable-status]
+      '(menu-item "Inspect Remote Job ID…" glassmacs-r-jobs-status
+                  :help "Read a server-side job status after restarting Glassmacs"))
+    (define-key menu [durable-logs]
+      '(menu-item "Open Remote Job Log…" glassmacs-r-jobs-open-log
+                  :help "View server-side stdout/stderr using TRAMP"))
     (define-key menu [graphics-separator] menu-bar-separator)
     (define-key menu [graphics-list]
       '(menu-item "List Graphics Devices" glassmacs-r-graphics-list-devices
@@ -165,6 +179,19 @@ these same commands, so they cannot disagree about the queue."
     (define-key menu [disconnected]
       '(menu-item "Disconnected R Sessions…" glassmacs-r-list-disconnected-sessions
                   :help "Inspect disconnected remote ESS sessions and uncertain commands"))
+    (define-key menu [durable-separator] menu-bar-separator)
+    (define-key menu [durable-submit]
+      '(menu-item "Submit Durable Remote Rscript Job…" glassmacs-r-jobs-submit
+                  :help "Run an explicit R script independently of interactive ESS"))
+    (define-key menu [durable-list]
+      '(menu-item "Durable Remote R Jobs…" glassmacs-r-jobs-list
+                  :help "Inspect Rscript jobs submitted in this session"))
+    (define-key menu [durable-status]
+      '(menu-item "Inspect Remote Job ID…" glassmacs-r-jobs-status
+                  :help "Read a server-side job status after restarting Glassmacs"))
+    (define-key menu [durable-logs]
+      '(menu-item "Open Remote Job Log…" glassmacs-r-jobs-open-log
+                  :help "View server-side stdout/stderr using TRAMP"))
     (define-key menu [start]
       '(menu-item "Start Another R Session" glassmacs-r-start-session))
     (define-key menu [start-remote]
@@ -215,6 +242,19 @@ comint's Break, Stop and Kill without modifying comint's shared map.")
     (define-key menu [disconnected]
       '(menu-item "Disconnected R Sessions…" glassmacs-r-list-disconnected-sessions
                   :help "Inspect disconnected remote ESS sessions and uncertain commands"))
+    (define-key menu [durable-separator] menu-bar-separator)
+    (define-key menu [durable-submit]
+      '(menu-item "Submit Durable Remote Rscript Job…" glassmacs-r-jobs-submit
+                  :help "Run an explicit R script independently of interactive ESS"))
+    (define-key menu [durable-list]
+      '(menu-item "Durable Remote R Jobs…" glassmacs-r-jobs-list
+                  :help "Inspect Rscript jobs submitted in this session"))
+    (define-key menu [durable-status]
+      '(menu-item "Inspect Remote Job ID…" glassmacs-r-jobs-status
+                  :help "Read a server-side job status after restarting Glassmacs"))
+    (define-key menu [durable-logs]
+      '(menu-item "Open Remote Job Log…" glassmacs-r-jobs-open-log
+                  :help "View server-side stdout/stderr using TRAMP"))
     (define-key menu [new-console]
       '(menu-item "New R Console" glassmacs-r-new-console))
     (define-key menu [remote-console]
