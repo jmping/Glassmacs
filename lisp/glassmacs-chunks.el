@@ -389,6 +389,25 @@ as a local Shiny app instead, since it cannot be rendered to a file."
       '(menu-item "Run Interactive Document" glassmacs-run-interactive-document
                   :visible (glassmacs-shiny-interactive-document-p)
                   :help "Run this runtime: shiny document and open it in the browser"))
+    (define-key menu [build-cancel]
+      '(menu-item "Cancel Document Build" glassmacs-document-build-cancel
+                  :visible (bound-and-true-p glassmacs-document-use-job-adapter)
+                  :enable (let ((job (glassmacs-document-build-current-job)))
+                            (and job
+                                 (eq (glassmacs-document-job-status job) 'running)))))
+    (define-key menu [build-log]
+      '(menu-item "Show Last Build Log" glassmacs-document-build-show-last-log
+                  :visible (bound-and-true-p glassmacs-document-use-job-adapter)
+                  :enable (let ((job (glassmacs-document-build-current-job)))
+                            (and job (buffer-live-p
+                                      (glassmacs-document-job-log-buffer job))))))
+    (define-key menu [build-output]
+      '(menu-item "Open Last Build Output" glassmacs-document-build-open-last-output
+                  :visible (bound-and-true-p glassmacs-document-use-job-adapter)
+                  :enable (let ((job (glassmacs-document-build-current-job)))
+                            (and job
+                                 (eq (glassmacs-document-job-status job) 'succeeded)
+                                 (glassmacs-document-job-output-file job)))))
     (define-key menu [separator-render] menu-bar-separator)
     (define-key menu [insert]
       '(menu-item "Insert R Chunk" glassmacs-chunks-insert))
