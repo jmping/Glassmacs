@@ -38,13 +38,12 @@
   "#!/bin/sh\nset -eu\numask 077\ncd \"$(dirname \"$0\")\"\nprintf \"running\\n\" > status\nRscript --vanilla job.R > stdout.log 2> stderr.log &\nchild=$!\nprintf \"%s\\n\" \"$child\" > pid\nwait \"$child\" && result=0 || result=$?\nprintf \"exit:%s\\n\" \"$result\" > status\nexit \"$result\"\n")
 
 (defun glassmacs-r-jobs--run (remote &rest argv)
-  "Run the fixed command ARGV in TRAMP REMOTE.
-This launches the detached driver, not the long-running R process."
+  "Launch the fixed driver from TRAMP REMOTE, not via interactive ESS."
   (with-temp-buffer
     (setq default-directory remote)
     (let ((result (apply #'process-file (car argv) nil t nil (cdr argv))))
       (unless (and (integerp result) (zerop result))
-        (user-error "Remote job launch failed (exit %s)" result))
+        (user-error "Remote R job launch failed (exit %s)" result))
       result)))
 
 (defun glassmacs-r-jobs-submit (host directory source-file)
