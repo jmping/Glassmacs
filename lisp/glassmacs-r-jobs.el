@@ -73,19 +73,28 @@ A network failure can leave an uncertain submission: inspect its directory."
     (when (called-interactively-p 'interactive) (message "Submitted remote R job %s" id))
     id))
 
+(defun glassmacs-r-jobs--read-marker (path)
+  "Read status PATH without visiting a user buffer."
+  (when (file-regular-p path)
+    (with-temp-buffer
+      (insert-file-contents path)
+      (string-trim (buffer-string)))))
+
 (defun glassmacs-r-jobs-status (host directory id)
-  "Read the server-side status marker for ID independently of ESS."
-  (interactive (list (glassmacs-remote--read-host) (read-string "Remote working directory: " "/")
+  "Read server status of ID without depending on an ESS session."
+  (interactive (list (glassmacs-remote--read-host)
+                     (read-string "Remote job directory: " "/")
                      (read-string "Job ID: ")))
-  (glassmacs-remote-r-launch-context host directory)
-  (let* ((path (plist-get (glassmacs-r-jobs--paths host directory id) :status))
-         (marker (and (file-exists-p path)
-                      (string-trim (with-temp-buffer (insert-file-contents path) (buffer-string)))))
-         (state (cond ((equal marker "running") 'running)
-                      ((and marker (string-match "\\`exit:\\([0-9]+\\)\\'" marker))
-                       (if (= (string-to-number (match-string 1 marker)) 0) 'completed 'failed))
-                      (t 'unknown))))
-    (when (called-interactively-p 'interactive) (message "Remote job %s: %s" id state))
+  (let* ((file (plist-get (glassmacs-r-jobs--paths host directory id) :status))
+         (marker (glassmacs-r-jobs--read-marker file))
+         (state (cond
+                 ((equal marker "running") 'running)
+                 ((and marker (string-match "\\`exit:\\([0-9]+\\)\\'" marker))
+                  (if (= (string-to-number (match-string 1 marker)) 0)
+                      'completed 'failed))
+                 (t 'unknown))))
+    (when (called-interactively-p 'interactive)
+      (message "Remote R job %s: %s" id state))
     state))
 
 (defun glassmacs-r-jobs-open-log (host directory id &optional stderr)
