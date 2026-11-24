@@ -273,6 +273,8 @@ startup. Remote source and output paths are excluded; a missing, changed or
 unreadable file is not silently reconstructed. This is not persistent job or
 project-session restoration.
 
+**Integrated acceptance protocol:** The real two-document build, isolation and remembered-output tests are included in `./scripts/test` and exercised when dependencies are present in the Linux ESS/R integration job. For candidate-specific native macOS, Quarto, Sweave, Shiny and trusted-SSH acceptance, record PASS/FAIL/NOT RUN evidence using [the integrated document acceptance runbook](research-document-integration-acceptance.md) and [issue #122](https://github.com/jmping/Glassmacs/issues/122). Passing CI does not certify Cocoa windows, actual viewer integration or remote disconnection behavior.
+
 **Sweave experimental adapter:** When the local job adapter is enabled,
 `glassmacs-knit-sweave-pdf` also uses a distinct job/log and associates the
 PDF reported by `knitr::knit2pdf()` with its `.Rnw` source. The legacy
