@@ -258,6 +258,17 @@ restore builds after restarting Glassmacs or treat a renamed document as
 identical. Cancel affects only that local job's owned process and does not
 promise termination of child process trees.
 
+**Opt-in local build history:** Set `glassmacs-document-remember-build-outputs`
+to non-nil to retain the last successful local output association for up to
+100 source documents in a private mode-0600 JSON index inside the Glassmacs
+profile. The index contains source/output paths, renderer type and time, but
+no code, logs or credentials. **Document → Open Remembered Build Output**
+explicitly checks and opens a remembered file, including after reopening the
+source document. It never restarts a build or automatically opens an output on
+startup. Remote source and output paths are excluded; a missing, changed or
+unreadable file is not silently reconstructed. This is not persistent job or
+project-session restoration.
+
 ## Shiny
 
 From `app.R`, `ui.R`, or `server.R`, or a directory containing one of those
