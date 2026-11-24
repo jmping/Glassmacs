@@ -91,6 +91,9 @@ Never overwrite an existing local file or write to another TRAMP host."
     (user-error "Artifact destination must be local"))
   (when (file-exists-p destination)
     (user-error "Artifact destination exists; choose a new filename"))
+  (unless (file-directory-p (file-name-directory
+                             (expand-file-name destination)))
+    (user-error "Choose an existing local destination directory"))
   (let* ((context (glassmacs-r-artifacts--location host directory relative))
          (path (glassmacs-r-artifacts--bounded-file context)))
     (copy-file path destination nil)
@@ -111,11 +114,15 @@ Never overwrite an existing local file or write to another TRAMP host."
   (let* ((location (glassmacs-r-session-execution-identity session))
          (host (plist-get location :host))
          (remote-directory (glassmacs-sessions--console-directory session))
-         (local-directory (plist-get (glassmacs-remote-context remote-directory) :localname))
-         (context (glassmacs-r-artifacts--location host local-directory relative))
-         (path (glassmacs-r-artifacts--bounded-file context)))
-    (glassmacs-r-artifacts--record context (glassmacs-session-id session))
-    (find-file-read-only path)))
+         (actual-identity (glassmacs-remote-execution-identity remote-directory)))
+    (unless (equal actual-identity location)
+      (user-error "R console directory no longer matches its registered SSH host"))
+    (let* ((local-directory
+            (plist-get (glassmacs-remote-context remote-directory) :localname))
+           (context (glassmacs-r-artifacts--location host local-directory relative))
+           (path (glassmacs-r-artifacts--bounded-file context)))
+      (glassmacs-r-artifacts--record context (glassmacs-session-id session))
+      (find-file-read-only path))))
 
 (defun glassmacs-r-artifacts-list-history ()
   "Display recorded artifact paths and explicit R session associations."
