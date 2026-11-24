@@ -128,12 +128,18 @@ A descriptor is not proof of a connection or of an executable R."
 ESS owns the process, filter, prompts, process buffer and connection.
 This function does not interpret R output or create an independent queue."
   (glassmacs-remote-r--ensure-ess)
-  ;; ESS's R startup reads both the current buffer's directory and dynamic
-  ;; default-directory.  A temporary buffer makes the remote origin explicit
-  ;; without mutating the user's source document or visiting a remote file.
-  (with-temp-buffer
-    (setq default-directory directory)
-    (call-interactively #'R)))
+  ;; ESS needs the remote directory as the current buffer's directory.
+  ;; Keep any ESS-created console alive and return it to the caller.
+  (let ((launch-buffer (generate-new-buffer " *Glassmacs remote R launch*"))
+        (console nil))
+    (unwind-protect
+        (with-current-buffer launch-buffer
+          (setq default-directory directory)
+          (call-interactively #'R)
+          (setq console (current-buffer)))
+      (when (buffer-live-p launch-buffer)
+        (kill-buffer launch-buffer)))
+    console))
 
 (defun glassmacs-remote-r--verify-process (process directory)
   "Ensure PROCESS is live and associated with remote DIRECTORY.
