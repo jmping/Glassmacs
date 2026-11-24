@@ -31,11 +31,14 @@
   (let ((root (concat (glassmacs-remote-r-directory host directory) ".glassmacs-jobs/" id "/")))
     (list :root root :source (concat root "job.R") :launcher (concat root "launch.sh")
           :stdout (concat root "stdout.log") :stderr (concat root "stderr.log")
-          :pid (concat root "pid") :status (concat root "status"))))
+          :pid (concat root "pid") :status (concat root "status")
+          :working-directory (concat root "working-directory")
+          :cancel (concat root "cancel-request"))))
 
 (defun glassmacs-r-jobs--launcher ()
-  "Return a fixed POSIX driver with no user interpolation."
-  "#!/bin/sh\nset -eu\numask 077\ncd \"$(dirname \"$0\")\"\nprintf \"running\\n\" > status\nRscript --vanilla job.R > stdout.log 2> stderr.log &\nchild=$!\nprintf \"%s\\n\" \"$child\" > pid\nwait \"$child\" && result=0 || result=$?\nprintf \"exit:%s\\n\" \"$result\" > status\nexit \"$result\"\n")
+  "Return the fixed, server-side Rscript driver with cooperative cancellation.
+No host names, source paths or shell commands are interpolated into it."
+  "#!/bin/sh\nset -eu\numask 077\ncd \"$(dirname \"$0\")\"\njobdir=$(pwd -P)\nIFS= read -r workdir < working-directory\ncase \"$workdir\" in /*) ;; *) printf \"exit:74\\n\" > status; exit 74 ;; esac\nprintf \"starting\\n\" > status\nif ! command -v Rscript >/dev/null 2>&1; then\n  printf \"Rscript not found\\n\" > stderr.log\n  printf \"exit:127\\n\" > status\n  exit 127\nfi\nif ! cd \"$workdir\"; then\n  printf \"Cannot enter working directory\\n\" > \"$jobdir/stderr.log\"\n  printf \"exit:74\\n\" > \"$jobdir/status\"\n  exit 74\nfi\nRscript --vanilla \"$jobdir/job.R\" >\"$jobdir/stdout.log\" 2>\"$jobdir/stderr.log\" &\nchild=$!\nprintf \"%s\\n\" \"$child\" > \"$jobdir/pid\"\nprintf \"running\\n\" > \"$jobdir/status\"\nwhile kill -0 \"$child\" 2>/dev/null; do\n  if [ -f \"$jobdir/cancel-request\" ]; then\n    kill -TERM \"$child\" 2>/dev/null || :\n    wait \"$child\" 2>/dev/null || :\n    printf \"cancelled\\n\" > \"$jobdir/status\"\n    exit 0\n  fi\n  sleep 1\ndone\nif wait \"$child\"; then result=0; else result=$?; fi\nprintf \"exit:%s\\n\" \"$result\" > \"$jobdir/status\"\nexit \"$result\"\n")
 
 (defun glassmacs-r-jobs--run (remote &rest argv)
   "Launch the fixed driver from TRAMP REMOTE, not via interactive ESS."
@@ -64,7 +67,15 @@ A network failure can leave an uncertain submission: inspect its directory."
     (push job glassmacs-r-jobs--list)
     (when (file-exists-p root) (user-error "Job ID collision"))
     (make-directory root t)
+    (set-file-modes (file-name-directory (directory-file-name root)) #o700)
     (set-file-modes root #o700)
+    (let ((remote-working-directory
+           (plist-get (glassmacs-remote-context
+                       (glassmacs-remote-r-directory host directory)) :localname)))
+      (when (string-match-p "[\r\n]" remote-working-directory)
+        (user-error "Remote job working directory cannot contain newlines"))
+      (with-temp-file (plist-get paths :working-directory)
+        (insert remote-working-directory "\n")))
     (copy-file source-file (plist-get paths :source) nil)
     (with-temp-file (plist-get paths :launcher) (insert (glassmacs-r-jobs--launcher) "\n"))
     (set-file-modes (plist-get paths :launcher) #o700)
