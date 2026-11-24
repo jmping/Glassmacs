@@ -1,5 +1,13 @@
 # Integrated research-document acceptance
 
+> **Document ID:** DOC-RESEARCH-ACCEPT  
+> **Status:** Informational acceptance protocol (draft PR #123)  
+> **Owner:** Glassmacs maintainers  
+> **Effective date:** 2026-11-24  
+> **Last reviewed:** 2026-11-24  
+> **Coverage:** Real research-document CI and packaged macOS/SSH acceptance procedures  
+> **Supersedes:** None
+
 > **Scope:** The opt-in research-document campaign in draft PR #112, coordinated with [issue #122](https://github.com/jmping/Glassmacs/issues/122).  
 > **Evidence rule:** Linux ERT, macOS packaged-app static validation, and physical macOS GUI observations are **different gates**. Passing one never certifies another.  
 > **Status:** Native GUI and trusted-SSH acceptance remain **NOT RUN** until evidenced for the exact candidate.
