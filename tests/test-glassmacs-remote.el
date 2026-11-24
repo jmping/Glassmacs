@@ -273,5 +273,33 @@
                        " R[R-remote@ssh:host-a]"))
         (should-not (string-match-p "private" (glassmacs-r--target-lighter)))))))
 
+
+(ert-deftest glassmacs-remote-r-chunk-submission-checks-base-document ()
+  "A chunk submitted from an indirect buffer must not bypass host checks."
+  (require 'glassmacs-sessions)
+  (let* ((session (glassmacs-session--make
+                   :id "R-remote-chunk" :directory "/ssh:host-b:/work"))
+         (glassmacs-sessions--list (list session)))
+    (cl-letf (((symbol-function 'glassmacs-sessions-refresh)
+               (lambda () (list session))))
+      (with-temp-buffer
+        (setq buffer-file-name "/ssh:host-a:/work/project.Rmd")
+        (let ((base (current-buffer))
+              (chunk (make-indirect-buffer (current-buffer)
+                                           (generate-new-buffer-name
+                                            " *glassmacs remote route chunk*"))))
+          (unwind-protect
+              (with-current-buffer chunk
+                (let ((error-data
+                       (should-error
+                        (glassmacs-queue-submit
+                         "rnorm(10)" session (list :buffer (buffer-name base)
+                                                   :operation 'chunk))
+                        :type 'user-error)))
+                  (should (string-match-p "Remote source"
+                                          (error-message-string error-data))))
+                (should-not (glassmacs-session-entries session)))
+            (kill-buffer chunk)))))))
+
 (provide 'test-glassmacs-remote)
 ;;; test-glassmacs-remote.el ends here
