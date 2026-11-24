@@ -273,6 +273,18 @@ startup. Remote source and output paths are excluded; a missing, changed or
 unreadable file is not silently reconstructed. This is not persistent job or
 project-session restoration.
 
+**Recent output navigation (experimental):** With
+`glassmacs-document-remember-build-outputs` enabled, run
+`M-x glassmacs-document-build-browse-recent-outputs` to choose a previously
+successful local output from the bounded private index. The picker shows the
+full source path, renderer kind and recorded time, disambiguating reports with
+the same basename in different projects. Nothing is opened until you select
+an entry, and missing outputs report an error rather than triggering a rebuild.
+Run `M-x glassmacs-document-build-forget-remembered-output` in a source buffer
+to forget that source's record after confirmation. This removes metadata only;
+the generated file remains on disk. The opt-in index is local-only, contains
+no commands or logs, and never restores or executes work automatically.
+
 **Integrated acceptance protocol:** The real two-document build, isolation and remembered-output tests are included in `./scripts/test` and exercised when dependencies are present in the Linux ESS/R integration job. For candidate-specific native macOS, Quarto, Sweave, Shiny and trusted-SSH acceptance, record PASS/FAIL/NOT RUN evidence using [the integrated document acceptance runbook](research-document-integration-acceptance.md) and [issue #122](https://github.com/jmping/Glassmacs/issues/122). Passing CI does not certify Cocoa windows, actual viewer integration or remote disconnection behavior.
 
 **Sweave experimental adapter:** When the local job adapter is enabled,
