@@ -61,6 +61,41 @@ future integrations without coupling them to remote process management."
   (or (executable-find program)
       (user-error "Required local executable not found on PATH: %s" program)))
 
+
+(defun glassmacs-remote-execution-identity (&optional directory)
+  "Return a stable, path-free identity for DIRECTORY's execution context.
+This only parses a directory's TRAMP syntax.  It neither connects nor
+asserts that any remote R process has been successfully started."
+  (let ((context (and directory (file-remote-p directory)
+                      (glassmacs-remote-context directory))))
+    (if context
+        (list :kind 'remote
+              :method (plist-get context :method)
+              :host (plist-get context :host)
+              :user (plist-get context :user)
+              :port (plist-get context :port))
+      (list :kind 'local))))
+
+(defun glassmacs-remote-execution-label (identity)
+  "Return a concise location label for path-free IDENTITY."
+  (if (eq (plist-get identity :kind) 'local)
+      "local"
+    (format "%s:%s%s%s"
+            (or (plist-get identity :method) "remote")
+            (if-let* ((user (plist-get identity :user)))
+                (concat user "@") "")
+            (or (plist-get identity :host) "?")
+            (if-let* ((port (plist-get identity :port)))
+                (format "#%s" port) ""))))
+
+(defun glassmacs-remote-cross-location-p (source target)
+  "Whether remote SOURCE and TARGET identities conflict.
+A local source is intentionally permitted to target a remote process.
+A remote source requires a matching method, host, user and port unless
+the user explicitly approves a specific cross-location R target."
+  (and (eq (plist-get source :kind) 'remote)
+       (not (equal source target))))
+
 (defun glassmacs-remote-tool-status ()
   "Return local availability of SSH, Mosh, and tmux executables."
   (mapcar (lambda (program)
