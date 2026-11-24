@@ -87,7 +87,14 @@ enough scrollback to review earlier results without unbounded growth."
   "Return the modeline indicator for the current buffer's R target."
   (when glassmacs-r-target-session
     (let ((session (glassmacs-sessions-find glassmacs-r-target-session)))
-      (format " R[%s%s]" glassmacs-r-target-session
+      (format " R[%s%s%s]" glassmacs-r-target-session
+              (if (and session
+                       (eq (plist-get (glassmacs-r-session-execution-identity session)
+                                      :kind)
+                           'remote))
+                  (concat "@" (glassmacs-remote-execution-label
+                               (glassmacs-r-session-execution-identity session)))
+                "")
               (if (and session
                        (eq (glassmacs-session-state session) 'ready)
                        (glassmacs-sessions--process-live-p
