@@ -147,6 +147,35 @@ multiple-device lifecycle remain unverified until the acceptance test
 runs on the built app.
 
 
+### Execution location and cross-host routing
+
+A registered ESS console now records a **path-free execution-context identity**
+from its console directory at registration (local, or TRAMP method, host,
+user and port). The identity remains fixed if a buffer later changes its
+directory. This is a provenance hint, **not proof of a working remote R
+connection**: Glassmacs does not yet launch remote ESS sessions in this
+workstream. The R session health overview shows this location beside each
+session ID.
+
+For a remote source file, Glassmacs compares its TRAMP identity with the
+selected R console's recorded identity. If they differ, standard ESS source
+evaluation and editor-initiated queue submissions are blocked **before code
+is queued or sent**. No host is contacted to perform the comparison. Local
+source files may deliberately target either local or remote consoles.
+
+Cross-location evaluation can be useful when remote filesystems are mounted
+on several hosts, but it must be intentional: select the desired R console
+with **R > Link Console…**, then select **R > Approve Cross-Host R
+Target…**, and confirm the source and destination shown. The approval
+belongs only to that document, the specific R session ID and those two
+location identities. Linking another target or moving the source to
+another host invalidates it. Normal evaluation still uses ESS and the
+existing per-session command queue. Glassmacs does **not** map remote
+filesystem paths or transfer source files automatically in this slice.
+
+The location model does not change SSH configuration, weaken host-key
+checking, launch remote R, replay commands, or establish SSH connections.
+
 ### R session health overview
 
 Run `M-x glassmacs-diagnostics` for aggregate counts of live and paused R
