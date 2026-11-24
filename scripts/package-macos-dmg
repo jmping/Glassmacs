@@ -1,0 +1,133 @@
+#!/bin/bash
+# Package an already notarized app as a separately notarized disk image.
+set -euo pipefail
+
+if [ "$#" -ne 3 ]; then
+  echo "Usage: GLASSMACS_SIGN_IDENTITY=<Developer ID SHA-1> $0 APP OUTPUT.dmg NOTARY_PROFILE" >&2
+  exit 2
+fi
+
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+app=$(CDPATH='' cd -- "$1" && pwd)
+output=$2
+profile=$3
+identity=${GLASSMACS_SIGN_IDENTITY:?Set GLASSMACS_SIGN_IDENTITY to a Developer ID Application certificate SHA-1}
+[[ "$identity" =~ ^[[:xdigit:]]{40}$ ]] ||
+  { echo "Signing identity must be a full certificate SHA-1" >&2; exit 1; }
+case "$output" in /*) ;; *) output="$PWD/$output" ;; esac
+case "$output" in *.dmg) ;; *) echo "Output must end in .dmg" >&2; exit 2 ;; esac
+[ -n "$profile" ] || { echo "A notary Keychain profile is required" >&2; exit 2; }
+[ -f "$app/Contents/Info.plist" ] || { echo "Not an app bundle: $app" >&2; exit 1; }
+mkdir -p "$(dirname -- "$output")"
+outdir=$(CDPATH='' cd -- "$(dirname -- "$output")" && pwd)
+output="$outdir/$(basename -- "$output")"
+for path in "$output" "$output.sha256" "$output.notary-submit.json" "$output.notary-log.json"; do
+  [ ! -e "$path" ] || { echo "Refusing to overwrite: $path" >&2; exit 1; }
+done
+
+identities=$(security find-identity -v -p codesigning)
+identity_line=$(grep -F "$identity" <<<"$identities") || identity_line=
+grep -Fq 'Developer ID Application:' <<<"$identity_line" ||
+  { echo "Developer ID Application identity not found in Keychain" >&2; exit 1; }
+codesign --verify --deep --strict "$app"
+metadata=$(codesign -dv --verbose=4 "$app" 2>&1)
+grep -Fq 'Authority=Developer ID Application:' <<<"$metadata" ||
+  { echo "App is not signed with Developer ID" >&2; exit 1; }
+grep -Fq '(runtime)' <<<"$metadata" && grep -Fq 'Timestamp=' <<<"$metadata" ||
+  { echo "App must use hardened runtime and a secure timestamp" >&2; exit 1; }
+xcrun stapler validate "$app"
+spctl --assess --type execute -vv "$app"
+xcrun notarytool history --keychain-profile "$profile" >/dev/null
+
+tmp=$(mktemp -d "$outdir/.glassmacs-dmg.XXXXXX")
+mounted=
+cleanup() {
+  if [ -n "$mounted" ]; then hdiutil detach "$mounted" -quiet || true; fi
+  rm -rf -- "$tmp"
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+
+mkdir "$tmp/contents" "$tmp/mount"
+ditto --rsrc --extattr --acl "$app" "$tmp/contents/Glassmacs.app"
+ln -s /Applications "$tmp/contents/Applications"
+cp "$root/LICENSE" "$tmp/contents/Glassmacs-LICENSE.txt"
+cat > "$tmp/contents/SOURCE-AND-LICENSES.txt" <<'EOF'
+Glassmacs source: https://github.com/jmping/Glassmacs
+GNU Emacs source: https://ftp.gnu.org/gnu/emacs/
+ESS source: https://elpa.gnu.org/packages/ess.html
+See also the COPYING files inside Glassmacs.app/Contents/Resources.
+These references do not replace the distributor's obligation to provide the
+complete corresponding source for the specific binaries being distributed.
+EOF
+
+hdiutil create -quiet -fs HFS+ -volname Glassmacs \
+  -srcfolder "$tmp/contents" -format UDZO "$tmp/Glassmacs.dmg"
+codesign --force --sign "$identity" --timestamp "$tmp/Glassmacs.dmg"
+codesign --verify --strict "$tmp/Glassmacs.dmg"
+submitted_sha=$(shasum -a 256 "$tmp/Glassmacs.dmg" | awk '{print $1}')
+
+printf 'Submitting signed disk image to Apple; this can take several minutes.\n'
+set +e
+xcrun notarytool submit "$tmp/Glassmacs.dmg" --keychain-profile "$profile" \
+  --wait --output-format json > "$tmp/submit.json" 2> "$tmp/submit.stderr"
+submit_exit=$?
+set -e
+submission_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$tmp/submit.json") || {
+  cat "$tmp/submit.stderr" >&2; exit 1;
+}
+status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$tmp/submit.json")
+[ -n "$submission_id" ] || { echo "Notary response has no submission ID" >&2; exit 1; }
+if ! xcrun notarytool log "$submission_id" --keychain-profile "$profile" "$tmp/notary-log.json"; then
+  echo "Could not retrieve Apple's notarization log for $submission_id" >&2
+  exit 1
+fi
+cp "$tmp/submit.json" "$output.notary-submit.json"
+cp "$tmp/notary-log.json" "$output.notary-log.json"
+if [ "$submit_exit" -ne 0 ] || [ "$status" != Accepted ]; then
+  cat "$tmp/submit.stderr" >&2
+  echo "Apple rejected or did not accept submission $submission_id ($status); see $output.notary-log.json" >&2
+  exit 1
+fi
+python3 - "$tmp/notary-log.json" "$submission_id" "$submitted_sha" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    report = json.load(handle)
+if (report.get("status") != "Accepted" or report.get("jobId") != sys.argv[2]
+        or report.get("sha256") != sys.argv[3]):
+    sys.exit("Apple notarization log does not match the accepted submission")
+for issue in report.get("issues") or []:
+    print("Apple notarization issue:", issue, file=sys.stderr)
+    if issue.get("severity", "").lower() == "error":
+        sys.exit("Apple notarization log contains an error")
+PY
+
+xcrun stapler staple "$tmp/Glassmacs.dmg"
+xcrun stapler validate "$tmp/Glassmacs.dmg"
+codesign --verify --strict "$tmp/Glassmacs.dmg"
+spctl --assess --type open --context context:primary-signature -vv "$tmp/Glassmacs.dmg"
+hdiutil attach -quiet -nobrowse -readonly -mountpoint "$tmp/mount" "$tmp/Glassmacs.dmg"
+mounted="$tmp/mount"
+codesign --verify --deep --strict "$mounted/Glassmacs.app"
+xcrun stapler validate "$mounted/Glassmacs.app"
+spctl --assess --type execute -vv "$mounted/Glassmacs.app"
+diff -qr "$app" "$mounted/Glassmacs.app"
+mkdir "$tmp/validation-home"
+HOME="$tmp/validation-home" XDG_CONFIG_HOME="$tmp/validation-home/config" \
+  XDG_CACHE_HOME="$tmp/validation-home/cache" XDG_DATA_HOME="$tmp/validation-home/data" \
+  "$root/scripts/validate-macos-app" "$mounted/Glassmacs.app"
+hdiutil detach "$mounted" -quiet
+mounted=
+shasum -a 256 "$tmp/Glassmacs.dmg" | awk -v name="$(basename "$output")" '{print $1 "  " name}' > "$tmp/checksum"
+python3 - "$tmp/Glassmacs.dmg" "$tmp/checksum" "$output" <<'PY'
+import os, sys
+image, checksum, output = sys.argv[1:]
+os.link(image, output)
+try:
+    os.link(checksum, output + ".sha256")
+except OSError:
+    os.unlink(output)
+    raise
+PY
+printf 'Notarized DMG: %s\nSubmission: %s\n' "$output" "$submission_id"
+cat "$output.sha256"

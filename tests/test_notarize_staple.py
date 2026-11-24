@@ -14,11 +14,14 @@ case "$1 $2" in
   "notarytool submit")
     [ -f "$3" ] && echo "zip-present" >> "$FAKE_LOG"
     echo "$3" > "$FAKE_ZIP_PATH"
+    shasum -a 256 "$3" | awk '{print $1}' > "$FAKE_SHA_PATH"
     printf '{"id":"%s","status":"%s"}' "$FAKE_ID" "$FAKE_STATUS"
     [ "$FAKE_STATUS" = Accepted ] ;;
   "notarytool log")
+    [ "$FAKE_LOG_FAIL" = yes ] && exit 1
     out=""; for a in "$@"; do case "$a" in *.json) out=$a;; esac; done
-    printf '{"status":"%s","issues":[{"path":"x/y","message":"bad thing"}]}' "$FAKE_STATUS" > "$out" ;;
+    sha=$(cat "$FAKE_SHA_PATH"); [ "$FAKE_BAD_SHA" = yes ] && sha=wrong
+    printf '{"jobId":"%s","sha256":"%s","status":"%s","issues":[{"path":"x/y","message":"bad thing"}]}' "$FAKE_ID" "$sha" "$FAKE_STATUS" > "$out" ;;
   "stapler staple") [ "$FAKE_STAPLE" = fail ] && exit 65; exit 0 ;;
   "stapler validate") exit 0 ;;
 esac
@@ -38,7 +41,8 @@ echo "app: $FAKE_SPCTL_RESULT"
 
 
 class NotarizeStapleTests(unittest.TestCase):
-    def run_script(self, status="Accepted", staple="ok", spctl="accepted"):
+    def run_script(self, status="Accepted", staple="ok", spctl="accepted", log_fail="no",
+                   bad_sha="no"):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             bin_dir = base / "bin"
@@ -56,7 +60,8 @@ class NotarizeStapleTests(unittest.TestCase):
             env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", TMPDIR=str(tmp),
                        FAKE_LOG=str(base / "log"), FAKE_ID=UUID, FAKE_STATUS=status,
                        FAKE_STAPLE=staple, FAKE_SPCTL_RESULT=spctl,
-                       FAKE_ZIP_PATH=str(base / "zippath"))
+                       FAKE_ZIP_PATH=str(base / "zippath"), FAKE_LOG_FAIL=log_fail,
+                       FAKE_SHA_PATH=str(base / "sha"), FAKE_BAD_SHA=bad_sha)
             (base / "log").write_text("")
             result = subprocess.run(
                 ["bash", str(ROOT / "scripts/notarize-staple"), str(base / "Glassmacs.app"),
@@ -101,6 +106,16 @@ class NotarizeStapleTests(unittest.TestCase):
         result, _, files, *_ = self.run_script(spctl="rejected")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("SPCTL=rejected", files["run.notary.env"])
+
+    def test_missing_apple_log_prevents_stapling(self):
+        result, log, *_ = self.run_script(log_fail="yes")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("stapler staple", log)
+
+    def test_log_for_different_artifact_prevents_stapling(self):
+        result, log, *_ = self.run_script(bad_sha="yes")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("stapler staple", log)
 
     def test_orchestrator_notarizes_before_creating_final_zip(self):
         script = (ROOT / "scripts/update-build-sign").read_text()

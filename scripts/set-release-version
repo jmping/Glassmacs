@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Set Glassmacs distribution version metadata before signing.
+
+Usage: set-release-version Info.plist VERSION BUILD_NUMBER
+VERSION is X.Y.Z or X.Y.Z-alpha.N / beta.N / rc.N, without a leading v.
+BUILD_NUMBER is one to three numeric components (e.g. 2026.11.23).
+"""
+
+import plistlib
+import re
+import sys
+from pathlib import Path
+
+VERSION = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$"
+)
+BUILD = re.compile(r"^[1-9][0-9]{0,3}(?:\.[0-9]{1,2}){0,2}$")
+
+
+def set_version(path, version, build):
+    match = VERSION.fullmatch(version)
+    if not match or not BUILD.fullmatch(build):
+        raise ValueError("Invalid version or build number")
+    path = Path(path)
+    with path.open("rb") as handle:
+        info = plistlib.load(handle)
+    if info.get("CFBundleIdentifier") != "org.glassmacs.Glassmacs":
+        raise ValueError("Unexpected application bundle identifier")
+    info["CFBundleShortVersionString"] = ".".join(match.group(i) for i in (1, 2, 3))
+    info["CFBundleVersion"] = build
+    info["GlassmacsReleaseVersion"] = version
+    with path.open("wb") as handle:
+        plistlib.dump(info, handle, fmt=plistlib.FMT_XML, sort_keys=False)
+
+
+def main(argv):
+    if len(argv) != 4:
+        print(__doc__, file=sys.stderr)
+        return 2
+    try:
+        set_version(*argv[1:])
+    except (OSError, ValueError, plistlib.InvalidFileException) as error:
+        print(f"Release version: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -66,9 +66,13 @@ if [ -z "$submission_id" ]; then
   submission_id=$(grep -Eo '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}' "$tmp/stderr" "$submit_json" 2>/dev/null | head -n 1 | cut -d: -f2- || true)
 fi
 
+log_ok=0
 if [ -n "$submission_id" ]; then
-  xcrun notarytool log "$submission_id" --keychain-profile "$profile" "$log_json" >/dev/null 2>&1 ||
-    printf 'Warning: could not retrieve the notarization log for %s.\n' "$submission_id" >&2
+  if xcrun notarytool log "$submission_id" --keychain-profile "$profile" "$log_json" >/dev/null 2>&1; then
+    log_ok=1
+  else
+    printf 'Could not retrieve the notarization log for %s.\n' "$submission_id" >&2
+  fi
 fi
 printf 'SUBMISSION_ID=%s\nSTATUS=%s\n' "$submission_id" "${status:-unknown}" >"$env_file"
 
@@ -91,6 +95,20 @@ except Exception:
   exit 1
 fi
 [ -n "$submission_id" ] || { printf 'Accepted without a submission ID; refusing to staple.\n' >&2; exit 1; }
+[ "$log_ok" = 1 ] || { printf 'Notarization log is required; refusing to staple.\n' >&2; exit 1; }
+submitted_sha=$(shasum -a 256 "$tmp/notarize.zip" | awk '{print $1}')
+python3 - "$log_json" "$submission_id" "$submitted_sha" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    report = json.load(handle)
+if (report.get("status") != "Accepted" or report.get("jobId") != sys.argv[2]
+        or report.get("sha256") != sys.argv[3]):
+    sys.exit("Notarization log does not match the accepted submission")
+for issue in report.get("issues") or []:
+    print("Apple notarization issue:", issue, file=sys.stderr)
+    if issue.get("severity", "").lower() == "error":
+        sys.exit("Apple notarization log contains an error")
+PY
 printf 'Apple accepted notarization submission %s.\n' "$submission_id"
 
 xcrun stapler staple "$app"

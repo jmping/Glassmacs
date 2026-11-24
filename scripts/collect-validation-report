@@ -1,0 +1,62 @@
+#!/bin/bash
+# Write a local, editable acceptance report to standard output; never uploads it.
+set -euo pipefail
+
+if [ "${1:-}" = "--help" ] && [ "$#" -eq 1 ]; then
+  echo "Usage: $0 [PATH_TO_Glassmacs.app] > acceptance-report.md"
+  exit 0
+fi
+if [ "$#" -gt 1 ]; then
+  echo "Usage: $0 [PATH_TO_Glassmacs.app] > acceptance-report.md" >&2
+  exit 2
+fi
+app=${1:-/Applications/Glassmacs.app}
+plist="$app/Contents/Info.plist"
+if [ ! -f "$plist" ]; then
+  echo "Application Info.plist not found: $plist" >&2
+  exit 1
+fi
+short_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")
+build_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")
+if release_version=$(/usr/libexec/PlistBuddy -c 'Print :GlassmacsReleaseVersion' "$plist" 2>/dev/null); then
+  :
+else
+  release_version="not recorded in this bundle; enter the release tag below"
+fi
+if arm64=$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null); then
+  :
+else
+  arm64="not reported"
+fi
+cat <<EOF
+# Glassmacs validation report
+
+Release tag / DMG SHA-256 (from the release):
+Glassmacs release version: $release_version
+Bundle short version: $short_version
+Bundle build version: $build_version
+macOS: $(/usr/bin/sw_vers -productVersion)
+Shell architecture: $(/usr/bin/uname -m) (may be translated by Rosetta)
+Apple Silicon capability: $arm64 (1 = available, 0 = unavailable)
+Test date: $(/bin/date -u +%F)
+
+Mark each Pass / Fail / Not tested and add concise steps and observations.
+
+- Clean installation and first launch:
+- Finder and Dock integration:
+- Basic text editing:
+- Native menus and keyboard shortcuts:
+- Document windows, close/save/cancel:
+- ESS, multiple R sessions and source routing:
+- R help and native graphics:
+- Package installation and loading:
+- Native compilation and cache loading:
+- Session restoration and crash recovery:
+
+Other observations:
+
+No report is sent automatically. Review this file and any additional
+diagnostics for personal paths, document names, secrets and other private
+information before sharing. M-x glassmacs-diagnostics shows an optional local
+report; it includes your Glassmacs home path.
+EOF

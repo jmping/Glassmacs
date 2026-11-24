@@ -3,6 +3,12 @@ set -euo pipefail
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 source "$root/macos/upstream-emacs.env"
+if [ -n "${GLASSMACS_RELEASE_VERSION:-}" ] || [ -n "${GLASSMACS_RELEASE_BUILD_NUMBER:-}" ]; then
+  [ -n "${GLASSMACS_RELEASE_VERSION:-}" ] && [ -n "${GLASSMACS_RELEASE_BUILD_NUMBER:-}" ] || {
+    printf 'Set both GLASSMACS_RELEASE_VERSION and GLASSMACS_RELEASE_BUILD_NUMBER.\n' >&2
+    exit 1
+  }
+fi
 output=${1:-"$root/build/Glassmacs.app"}
 case "$output" in
   /*) ;;
@@ -105,6 +111,10 @@ cp "$root/scripts/bootstrap" "$glassmacs_resources/scripts/bootstrap"
 
 # Combine (not replace) document types so Finder keeps upstream associations.
 "$root/scripts/merge-info-plist" "$output/Contents/Info.plist" "$root/macos/Info.plist"
+if [ -n "${GLASSMACS_RELEASE_VERSION:-}" ]; then
+  python3 "$root/scripts/set-release-version" "$output/Contents/Info.plist" \
+    "$GLASSMACS_RELEASE_VERSION" "$GLASSMACS_RELEASE_BUILD_NUMBER"
+fi
 cp "$root/assets/icon/Glassmacs.icns" "$output/Contents/Resources/Glassmacs.icns"
 emacs_icon="$output/Contents/Resources/etc/images/icons/hicolor/128x128/apps/emacs.png"
 mkdir -p "$(dirname -- "$emacs_icon")"
