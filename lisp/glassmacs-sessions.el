@@ -535,7 +535,9 @@ registration-time target location; stale approvals never silently apply."
   (let ((source (glassmacs-r-source-execution-identity))
         (target (glassmacs-r-session-execution-identity session)))
     (when (and (glassmacs-remote-cross-location-p source target)
-               (not (equal glassmacs-r-cross-location-approval
+               (not (equal (with-current-buffer (or (buffer-base-buffer)
+                                                  (current-buffer))
+                             glassmacs-r-cross-location-approval)
                            (glassmacs-r--route-approval session))))
       (user-error
        "Remote source at %s targets R at %s; use M-x glassmacs-r-approve-cross-location-target to authorize this document"
@@ -644,8 +646,11 @@ stale explicit link.  Cancellation does not modify the document target."
       (user-error "No live R console; create one with New R Console first"))
      (t
       (let ((session (glassmacs-sessions--prompt live)))
+        ;; Validate before persisting the link: a rejected cross-host route
+        ;; must not change the document's existing target or approval.
+        (glassmacs-r--check-cross-location session)
         (glassmacs-r--set-document-target (glassmacs-session-id session))
-        (glassmacs-r--check-cross-location session))))))
+        session)))))
 
 (defun glassmacs-sessions--prompt (live)
   (when noninteractive
