@@ -3539,9 +3539,9 @@ example) can run first and delay the sentinel."
       (let ((rows (glassmacs-diagnostics-r-session-rows)))
         (should (equal (mapcar #'car rows) '("R-1" "R-2")))
         (should (equal (append (cadar rows) nil)
-                       '("R-1" "running" "paused" "1" "1")))
+                       '("R-1 @ local" "running" "paused" "1" "1")))
         (should (equal (append (cadadr rows) nil)
-                       '("R-2" "idle" "active" "1" "0")))
+                       '("R-2 @ local" "idle" "active" "1" "0")))
         (should-not (string-match-p "private\\|sensitive" (prin1-to-string rows)))))))
 
 (ert-deftest glassmacs-diagnostics-r-health-queue-navigation ()
