@@ -269,6 +269,13 @@ startup. Remote source and output paths are excluded; a missing, changed or
 unreadable file is not silently reconstructed. This is not persistent job or
 project-session restoration.
 
+**Sweave experimental adapter:** When the local job adapter is enabled,
+`glassmacs-knit-sweave-pdf` also uses a distinct job/log and associates the
+PDF reported by `knitr::knit2pdf()` with its `.Rnw` source. The legacy
+AUCTeX/Skim/Preview path remains the default. SyncTeX still points to the
+generated TeX source rather than reliably mapping inverse search into
+original Sweave chunks; that source-map problem remains a separate gate.
+
 ## Shiny
 
 From `app.R`, `ui.R`, or `server.R`, or a directory containing one of those
