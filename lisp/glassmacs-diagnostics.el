@@ -118,6 +118,60 @@ No command source, R output, filesystem path, or environment is shown."
       (glassmacs-diagnostics-r-session-refresh))
     (display-buffer buffer)))
 
+;; EP-01: report observed runtime capabilities, not release certification.
+(defun glassmacs-build-capabilities ()
+  "Return an alist of runtime observations without paths or environment data.
+No compiler, external program, network operation or GUI probe is run.
+An available API is not evidence of a successful end-to-end workflow."
+  (let ((features (split-string (or system-configuration-features "") " " t)))
+    (cl-labels ((probe (fn &rest args)
+                  (if (not (fboundp fn)) "unavailable"
+                    (condition-case nil
+                        (if (apply fn args) "available" "unavailable")
+                      (error "probe-error"))))
+                (flag (name)
+                  (if (member name features) "advertised" "not-advertised")))
+      (list
+       (cons 'emacs-version emacs-version)
+       (cons 'system-type (symbol-name system-type))
+       (cons 'architecture (car (split-string system-configuration "-")))
+       (cons 'window-system (if window-system (symbol-name window-system) "none"))
+       (cons 'build-features (sort (copy-sequence features) #'string-lessp))
+       (cons 'native-compilation (probe 'native-comp-available-p))
+       (cons 'native-jit (if (bound-and-true-p native-comp-jit-compilation) "enabled" "disabled"))
+       (cons 'native-trampolines (if (bound-and-true-p native-comp-enable-subr-trampolines) "enabled" "disabled"))
+       (cons 'tree-sitter (probe 'treesit-available-p))
+       (cons 'sqlite (probe 'sqlite-available-p))
+       (cons 'gnutls (probe 'gnutls-available-p))
+       (cons 'svg (flag "RSVG"))
+       (cons 'xml (flag "LIBXML2"))
+       (cons 'json (if (fboundp 'json-parse-string) "api-present" "unavailable"))
+       (cons 'dynamic-modules (if (fboundp 'module-load) "api-present" "unavailable"))
+       (cons 'xwidgets (flag "XWIDGETS"))
+       (cons 'system-appearance-hook (if (boundp 'ns-system-appearance-change-functions) "api-present" "unavailable"))
+       (cons 'color-management (flag "LCMS2"))))))
+
+(defun glassmacs-build-capabilities-json ()
+  "Return the runtime capability inventory as JSON, suitable for batch output."
+  (require 'json)
+  (let ((json-encoding-pretty-print t))
+    (json-encode (mapcar (lambda (entry)
+                           (if (eq (car entry) 'build-features)
+                               (cons (car entry) (vconcat (cdr entry)))
+                             entry))
+                         (glassmacs-build-capabilities)))))
+
+(defun glassmacs-show-build-capabilities ()
+  "Display a read-only runtime capability inventory."
+  (interactive)
+  (let ((buffer (get-buffer-create "*Glassmacs Build Capabilities*")))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (glassmacs-build-capabilities-json) "\n")
+        (special-mode)))
+    (display-buffer buffer)))
+
 (defun glassmacs-diagnostics ()
   "Display local startup and optional R/ESS availability information."
   (interactive)
@@ -142,6 +196,7 @@ No command source, R output, filesystem path, or environment is shown."
                  (if (locate-library "ess-site") "available" "not found")
                  (if (executable-find "R") "available" "not found")
                  (if (executable-find "Rscript") "available" "not found"))
+         "Build capabilities: M-x glassmacs-show-build-capabilities\n\n"
          (glassmacs-diagnostics-r-session-summary)
          "Open the per-session overview: M-x glassmacs-diagnostics-r-sessions\n"
          "\nGraphics guidance:\n"
