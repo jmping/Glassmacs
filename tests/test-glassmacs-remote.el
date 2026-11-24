@@ -564,5 +564,100 @@
                    "research" "/analysis/" "glassmacs-r-aabbccddeeff001122334455")
                   'failed)))))
 
+
+(ert-deftest glassmacs-r-jobs-registry-roundtrip-private-and-network-free ()
+  "Persist ID and remote context, but never copy R source into the index."
+  (require 'glassmacs-r-jobs)
+  (let* ((folder (make-temp-file "glassmacs-job-registry-" t))
+         (glassmacs-r-jobs-record-file (expand-file-name "jobs.json" folder))
+         (glassmacs-r-jobs--loaded t)
+         (glassmacs-r-jobs--list
+          (list (glassmacs-r-job--make
+                 :id "glassmacs-r-aabbccddeeff001122334455"
+                 :host "research" :directory "/work/with spaces/"
+                 :root "/ssh:research:/work/with spaces/.glassmacs-jobs/test/"
+                 :source "secret R source contents" :state 'submitted))))
+    (unwind-protect
+        (progn
+          (glassmacs-r-jobs--save)
+          (should (= (logand (file-modes glassmacs-r-jobs-record-file) #o777)
+                     #o600))
+          (with-temp-buffer
+            (insert-file-contents glassmacs-r-jobs-record-file)
+            (should-not (search-forward "secret R source contents" nil t)))
+          (setq glassmacs-r-jobs--loaded nil
+                glassmacs-r-jobs--list nil)
+          (glassmacs-r-jobs--load)
+          (should (= (length glassmacs-r-jobs--list) 1))
+          (let ((job (car glassmacs-r-jobs--list)))
+            (should (equal (glassmacs-r-job-host job) "research"))
+            (should (equal (glassmacs-r-job-directory job)
+                           "/work/with spaces/"))
+            (should-not (glassmacs-r-job-source job))))
+      (delete-directory folder t))))
+
+(ert-deftest glassmacs-r-jobs-cancel-request-is-not-remote-kill ()
+  "A confirmed cancel writes a marker without issuing kill to a PID."
+  (require 'glassmacs-r-jobs)
+  (let* ((folder (make-temp-file "glassmacs-job-cancel-" t))
+         (source (expand-file-name "job.R" folder))
+         (cancel (expand-file-name "cancel-request" folder))
+         (ssh-calls 0))
+    (unwind-protect
+        (progn
+          (with-temp-file source (insert "print(1)\n"))
+          (cl-letf (((symbol-function 'glassmacs-r-jobs--paths)
+                     (lambda (&rest _) (list :source source :cancel cancel)))
+                    ((symbol-function 'glassmacs-r-jobs-status)
+                     (lambda (&rest _) 'running))
+                    ((symbol-function 'glassmacs-r-jobs--run)
+                     (lambda (&rest _) (setq ssh-calls (1+ ssh-calls))))
+                    ((symbol-function 'yes-or-no-p) (lambda (_question) t)))
+            (should (eq (glassmacs-r-jobs-request-cancel
+                         "research" "/project/" "glassmacs-r-aabbccddeeff001122334455")
+                        'cancel-requested))
+            (should (file-exists-p cancel))
+            (should (= ssh-calls 0))))
+      (delete-directory folder t))))
+
+(ert-deftest glassmacs-r-jobs-launcher-runs-in-requested-directory ()
+  "Run the POSIX driver with a fake local Rscript; no SSH required."
+  (require 'glassmacs-r-jobs)
+  (let* ((root (make-temp-file "glassmacs-job-driver-" t))
+         (jobdir (expand-file-name "job" root))
+         (workdir (expand-file-name "working area" root))
+         (bin (expand-file-name "bin" root))
+         (driver (expand-file-name "launch.sh" jobdir))
+         (rscript (expand-file-name "Rscript" bin)))
+    (unwind-protect
+        (progn
+          (mapc (lambda (dir) (make-directory dir t))
+                (list jobdir workdir bin))
+          (with-temp-file (expand-file-name "working-directory" jobdir)
+            (insert workdir "\n"))
+          (with-temp-file (expand-file-name "job.R" jobdir)
+            (insert "print(42)\n"))
+          (with-temp-file driver (insert (glassmacs-r-jobs--launcher)))
+          (with-temp-file rscript (insert "#!/bin/sh\npwd\nexit 0\n"))
+          (set-file-modes rscript #o700)
+          (let ((default-directory (file-name-as-directory jobdir))
+                (process-environment
+                 (cons (concat "PATH=" bin path-separator (getenv "PATH"))
+                       process-environment)))
+            (should (= (process-file "sh" nil nil nil "launch.sh") 0)))
+          (should (eq (glassmacs-r-jobs-status
+                       "mock" "/" "glassmacs-r-aabbccddeeff001122334455")
+                      'unknown))
+          (should (equal (glassmacs-r-jobs--read-marker
+                          (expand-file-name "status" jobdir))
+                         "exit:0"))
+          (should (equal
+                   (string-trim
+                    (with-temp-buffer
+                      (insert-file-contents (expand-file-name "stdout.log" jobdir))
+                      (buffer-string)))
+                   workdir)))
+      (delete-directory root t))))
+
 (provide 'test-glassmacs-remote)
 ;;; test-glassmacs-remote.el ends here
