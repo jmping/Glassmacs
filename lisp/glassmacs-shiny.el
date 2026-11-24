@@ -9,6 +9,7 @@
 ;; restarts the last one.
 
 (require 'glassmacs-core)
+(require 'glassmacs-document-jobs)
 (require 'subr-x)
 
 (defgroup glassmacs-shiny nil
@@ -33,6 +34,9 @@ open on a page that is not listening yet.  The address is also kept for
 (defvar glassmacs-shiny-process nil
   "The process started by `glassmacs-shiny-start' or an interactive document.")
 
+(defvar glassmacs-shiny-job nil
+  "Optional document-job status record for the current local Shiny process.")
+
 (defvar glassmacs-shiny-url nil
   "The address the running app reported, or nil.")
 
@@ -48,6 +52,16 @@ open on a page that is not listening yet.  The address is also kept for
   "Report when PROCESS exits with EVENT."
   (when (and (memq (process-status process) '(exit signal))
              (eq process glassmacs-shiny-process))
+    (when (and (glassmacs-document-job-p glassmacs-shiny-job)
+               (eq (glassmacs-document-job-process glassmacs-shiny-job)
+                   process)
+               (eq (glassmacs-document-job-status glassmacs-shiny-job)
+                   'running))
+      (glassmacs-document-job-transition
+       glassmacs-shiny-job
+       (if (and (eq (process-status process) 'exit)
+                (zerop (process-exit-status process)))
+           'succeeded 'failed)))
     (setq glassmacs-shiny-process nil
           glassmacs-shiny-url nil)
     (unless (zerop (process-exit-status process))
@@ -105,6 +119,24 @@ starts the same app again, used by `glassmacs-shiny-reload'."
                           :noquery t
                           :filter #'glassmacs-shiny--filter
                           :sentinel #'glassmacs-shiny--sentinel)))
+    (setq glassmacs-shiny-job nil)
+    (when (and (bound-and-true-p glassmacs-document-use-job-adapter)
+               (not (file-remote-p directory)))
+      (let* ((source (or (and buffer-file-name
+                              (file-name-absolute-p buffer-file-name)
+                              (not (file-remote-p buffer-file-name))
+                              buffer-file-name)
+                         (expand-file-name
+                          (if (file-exists-p (expand-file-name "app.R" directory))
+                              "app.R" "ui.R")
+                          directory)))
+             (context (glassmacs-document-context-create source))
+             (job (glassmacs-document-job-new
+                   (format "shiny-%d" (process-id glassmacs-shiny-process))
+                   context 'shiny buffer)))
+        (setf (glassmacs-document-job-process job) glassmacs-shiny-process)
+        (glassmacs-document-job-transition job 'running)
+        (setq glassmacs-shiny-job job)))
     (message "Starting %s; see %s" description glassmacs-shiny-buffer-name)
     glassmacs-shiny-process))
 
@@ -199,6 +231,10 @@ Glassmacs opens it in the browser when it is ready."
   (interactive)
   (if (glassmacs-shiny--running-p)
       (progn
+        (when (and (glassmacs-document-job-p glassmacs-shiny-job)
+                   (eq (glassmacs-document-job-status glassmacs-shiny-job)
+                       'running))
+          (glassmacs-document-job-transition glassmacs-shiny-job 'cancelled))
         (delete-process glassmacs-shiny-process)
         (setq glassmacs-shiny-process nil
               glassmacs-shiny-url nil)
@@ -212,6 +248,10 @@ Glassmacs opens it in the browser when it is ready."
   (unless glassmacs-shiny--last-start
     (user-error "No Shiny app has been started yet"))
   (when (glassmacs-shiny--running-p)
+    (when (and (glassmacs-document-job-p glassmacs-shiny-job)
+               (eq (glassmacs-document-job-status glassmacs-shiny-job)
+                   'running))
+      (glassmacs-document-job-transition glassmacs-shiny-job 'cancelled))
     (delete-process glassmacs-shiny-process)
     (setq glassmacs-shiny-process nil
           glassmacs-shiny-url nil))
