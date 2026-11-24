@@ -117,6 +117,8 @@ Never overwrite an existing local file or write to another TRAMP host."
          (actual-identity (glassmacs-remote-execution-identity remote-directory)))
     (unless (equal actual-identity location)
       (user-error "R console directory no longer matches its registered SSH host"))
+    (unless (equal (plist-get location :method) "ssh")
+      (user-error "Remote R artifact preview requires an SSH console"))
     (let* ((local-directory
             (plist-get (glassmacs-remote-context remote-directory) :localname))
            (context (glassmacs-r-artifacts--location host local-directory relative))
