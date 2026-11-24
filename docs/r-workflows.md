@@ -298,6 +298,13 @@ address. **Open Shiny Preview** reopens it, **Reload Shiny App** restarts the
 last app after edits, and **Stop Shiny App** (`M-x glassmacs-shiny-stop`)
 terminates it. One app runs at a time.
 
+When the experimental document job adapter is enabled, a local Shiny process
+also receives a conservative job-status record (running, succeeded, failed,
+or cancelled). Its existing startup, localhost-only URL discovery, stop/reload
+and single-app ownership remain authoritative; this does not turn Shiny into
+a durable or remotely reattachable job. The source association is an in-memory
+status aid, not persistent project restoration.
+
 R, the Shiny R package, Quarto, and document packages are external
 dependencies; their presence is not guaranteed by installing Glassmacs.
 
