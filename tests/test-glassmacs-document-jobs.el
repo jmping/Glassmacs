@@ -23,7 +23,7 @@
                     "/ssh:research:/work/")))
       (should (eq (glassmacs-document-context-location context) 'remote))
       (should (equal (glassmacs-document-context-directory context)
-                     "/ssh:research:/work/"))))))
+                     "/ssh:research:/work/")))))
 
 (ert-deftest glassmacs-document-context-refuses-cross-location-root ()
   (cl-letf (((symbol-function 'file-remote-p)
