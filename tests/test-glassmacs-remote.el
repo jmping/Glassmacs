@@ -453,7 +453,10 @@
                        (setq seen default-directory)
                        (setq proc (make-pipe-process
                                    :name "mock remote ESS creation"
-                                   :buffer console :noquery t)))))
+                                   :buffer console :noquery t))
+                       (with-current-buffer console
+                         (setq-local ess-local-process-name
+                                     (process-name proc))))))
             (should (eq (glassmacs-remote-r--start-ess
                          "/ssh:research:/work/") console))
             (should (equal seen "/ssh:research:/work/"))))
