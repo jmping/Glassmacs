@@ -435,5 +435,34 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
               (should (eq cancelled job))))
         (kill-buffer log)))))
 
+
+(ert-deftest glassmacs-documents-opt-in-shiny-has-conservative-job-status ()
+  "An opt-in local Shiny process gets a job record without changing startup."
+  (let ((glassmacs-document-use-job-adapter t)
+        (glassmacs-shiny-process nil)
+        (glassmacs-shiny-job nil)
+        (glassmacs-shiny--last-start nil)
+        (glassmacs-shiny-launch-browser nil)
+        process)
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name
+                (expand-file-name "app.R" temporary-file-directory))
+          (setq process
+                (glassmacs-shiny--start
+                 "test application" '("sh" "-c" "exit 0")
+                 temporary-file-directory (lambda () nil)))
+          (should (glassmacs-document-job-p glassmacs-shiny-job))
+          (should (eq (glassmacs-document-job-kind glassmacs-shiny-job)
+                      'shiny))
+          (while (process-live-p process)
+            (accept-process-output process 0.05))
+          (accept-process-output process 0.01)
+          (should (eq (glassmacs-document-job-status glassmacs-shiny-job)
+                      'succeeded)))
+      (when (process-live-p process) (delete-process process))
+      (when (get-buffer glassmacs-shiny-buffer-name)
+        (kill-buffer glassmacs-shiny-buffer-name)))))
+
 (provide 'test-glassmacs-documents)
 ;;; test-glassmacs-documents.el ends here
