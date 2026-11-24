@@ -395,6 +395,10 @@ as a local Shiny app instead, since it cannot be rendered to a file."
                   :enable (let ((job (glassmacs-document-build-current-job)))
                             (and job
                                  (eq (glassmacs-document-job-status job) 'running)))))
+    (define-key menu [build-status]
+      '(menu-item "Show Build Status" glassmacs-document-build-show-status
+                  :visible (bound-and-true-p glassmacs-document-use-job-adapter)
+                  :enable (glassmacs-document-build-current-job)))
     (define-key menu [build-log]
       '(menu-item "Show Last Build Log" glassmacs-document-build-show-last-log
                   :visible (bound-and-true-p glassmacs-document-use-job-adapter)
