@@ -251,6 +251,8 @@ remote source document rather than pretending that local Rscript/Quarto can
 execute safely across SSH. Remote document rendering is deferred until the
 #102 remote campaign is accepted.
 
+**Failure-state hardening:** Missing local renderer executables mark the attempted build as failed rather than leaving a pending record. Extremely short-lived subprocesses are reconciled after their per-job metadata is installed, with duplicate completion callbacks suppressed. This remains a local, opt-in adapter; packaged-app acceptance is required before changing the default.
+
 The experimental **Document** menu also provides **Open Last Build Output**,
 **Show Last Build Log**, **Show Build Status**, and **Cancel Document Build** for the source's own
 last job. The status inspector is a read-only snapshot of job ID, renderer,
