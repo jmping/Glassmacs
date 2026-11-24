@@ -656,5 +656,94 @@
                    workdir)))
       (delete-directory root t))))
 
+
+(ert-deftest glassmacs-r-artifacts-validates-paths-without-ssh ()
+  "Reject traversal, TRAMP names, and unsupported artifact extensions."
+  (require 'glassmacs-r-artifacts)
+  (cl-letf (((symbol-function 'tramp-maybe-open-connection)
+             (lambda (&rest _) (ert-fail "Path validation contacted SSH"))))
+    (dolist (bad '("../private.png" "img/../private.svg"
+                   "/etc/passwd" "/ssh:other:/plot.pdf" "plot.R"
+                   "abc//plot.png" "~/plot.png" "plot\\evil.pdf"
+                   "other/./plot.pdf" "plot.pdf/"))
+      (should-error (glassmacs-r-artifacts--location "research" "/analysis/" bad)
+                    :type 'user-error))
+    (let ((context (glassmacs-r-artifacts--location
+                    "research" "/analysis/" "plots/result 1.pdf")))
+      (should (equal (plist-get context :remote-path)
+                     "/ssh:research:/analysis/plots/result 1.pdf")))))
+
+(ert-deftest glassmacs-r-artifacts-bounds-and-rejects-symlink-escape ()
+  "Size checks reject excessive remote artifacts before preview or transfer."
+  (require 'glassmacs-r-artifacts)
+  (let* ((root (make-temp-file "glassmacs-artifact-root-" t))
+         (outside (make-temp-file "glassmacs-artifact-outside-"))
+         (file (expand-file-name "plot.pdf" root))
+         (link (expand-file-name "external.pdf" root))
+         (glassmacs-r-artifacts-max-bytes 4))
+    (unwind-protect
+        (progn
+          (with-temp-file file (insert "12345"))
+          (make-symbolic-link outside link t)
+          (should-error
+           (glassmacs-r-artifacts--bounded-file
+            (list :root (file-name-as-directory root) :remote-path file))
+           :type 'user-error)
+          (should-error
+           (glassmacs-r-artifacts--bounded-file
+            (list :root (file-name-as-directory root) :remote-path link))
+           :type 'user-error)
+          (let ((glassmacs-r-artifacts-max-bytes 10))
+            (should (equal (glassmacs-r-artifacts--bounded-file
+                            (list :root (file-name-as-directory root)
+                                  :remote-path file))
+                           file))))
+      (delete-directory root t)
+      (delete-file outside))))
+
+(ert-deftest glassmacs-r-artifacts-remote-session-provenance-is-recorded ()
+  "Artifact identity follows the selected R session, never another host."
+  (require 'glassmacs-r-artifacts)
+  (require 'glassmacs-sessions)
+  (let* ((session (glassmacs-session--make
+                   :id "R-remote-plot" :directory "/ssh:research:/work/"
+                   :execution-identity
+                   (glassmacs-remote-execution-identity "/ssh:research:/work/")))
+         (glassmacs-r-artifacts--history nil)
+         (seen nil))
+    (cl-letf (((symbol-function 'glassmacs-r-artifacts--bounded-file)
+               (lambda (context)
+                 (setq seen context)
+                 "/ssh:research:/work/plots/graph.png"))
+              ((symbol-function 'find-file-read-only)
+               (lambda (_path) 'previewed)))
+      (should (eq (glassmacs-r-artifacts-preview-session
+                   session "plots/graph.png") 'previewed))
+      (should (equal (plist-get seen :host) "research"))
+      (should (equal (plist-get (car glassmacs-r-artifacts--history) :session)
+                     "R-remote-plot"))
+      (setf (glassmacs-session-directory session) "/ssh:other:/work/")
+      (should-error
+       (glassmacs-r-artifacts-preview-session session "plots/graph.png")
+       :type 'user-error))))
+
+(ert-deftest glassmacs-r-artifacts-download-never-overwrites ()
+  "Reject an existing destination without contacting the remote source."
+  (require 'glassmacs-r-artifacts)
+  (let* ((root (make-temp-file "glassmacs-artifact-dest-" t))
+         (dest (expand-file-name "already.pdf" root))
+         (reads 0))
+    (unwind-protect
+        (progn
+          (with-temp-file dest (insert "old"))
+          (cl-letf (((symbol-function 'glassmacs-r-artifacts--bounded-file)
+                     (lambda (&rest _) (setq reads (1+ reads)))))
+            (should-error
+             (glassmacs-r-artifacts-download "research" "/analysis/"
+                                             "plot.pdf" dest)
+             :type 'user-error)
+            (should (= reads 0))))
+      (delete-directory root t))))
+
 (provide 'test-glassmacs-remote)
 ;;; test-glassmacs-remote.el ends here
