@@ -471,3 +471,26 @@ provide the corresponding source and notices required by its licenses.
 ### Notarization
 
 `scripts/update-build-sign --notarize` runs `scripts/notarize-staple` after Developer ID signing: it submits a temporary ZIP with `xcrun notarytool submit --wait`, requires `Accepted`, preserves Apple's log in `build/artifacts/`, then runs `stapler staple`/`validate`, `codesign --verify --deep --strict` and `spctl --assess`. The distribution ZIP is created only afterwards, and its info file records the submission ID, status, signing authority, commit, ESS version and SHA-256. Without `--notarize` the ZIP is named `...-unnotarized.zip`. `--require-notarization` is the release mode (implies `--notarize`, refuses `--skip-tests`). Credentials live only in the Keychain: run `xcrun notarytool store-credentials glassmacs-notary` once (or pass `--notary-profile NAME` / set `GLASSMACS_NOTARY_PROFILE`). A rejected submission fails the build and produces no ZIP.
+
+## Runtime capability inventory (EP-01)
+
+Run `M-x glassmacs-show-build-capabilities` in Glassmacs to inspect the
+running Emacs build. For machine-readable evidence, evaluate
+`(glassmacs-build-capabilities-json)` in the same process, or run
+the packaged executable in batch mode with the Glassmacs init loaded:
+
+```sh
+APP=/Applications/Glassmacs.app
+GLASSMACS_HOME="$(mktemp -d)" "$APP/Contents/MacOS/Emacs" -Q --batch \
+  -l "$APP/Contents/Resources/Glassmacs/init.el" \
+  --eval '(princ (glassmacs-build-capabilities-json))'
+```
+
+The report distinguishes runtime availability probes from advertised build
+flags and API presence. It does not run native compilation, load external
+modules, test TLS connections, inspect user files, or establish GUI
+acceptance. Native JIT and trampoline policy remain unchanged. Record the
+report separately for each architecture and artifact; do not infer Intel
+results from an ARM64 run. Compare against the same Emacs Plus version
+before deciding whether an upstream capability is missing. This is an
+inventory, not a release certification.
