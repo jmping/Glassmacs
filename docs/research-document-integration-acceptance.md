@@ -33,10 +33,11 @@ First run the existing GUI smoke scenarios against the exact candidate applicati
 
 ```sh
 ./scripts/macos-gui-acceptance /Applications/Glassmacs.app build/phase2-gui \
-  --only finder-repeat-and-mixed-documents
+  --only finder-repeat-and-mixed-documents \
+  --only research-document-concurrent-real-render
 ```
 
-The harness launches the bundle through LaunchServices and checks document menus, shortcuts and duplicate-open behavior. It **does not** render HTML/PDF, open real R or Quarto processes, or establish native viewer behavior. Preserve `build/phase2-gui/results.json`, the summary and any diagnostic screenshots. Then perform the following on the packaged app itself; use an isolated macOS account/profile and real local R/ESS/document dependencies.
+The first scenario checks the bundle's Finder document menus, shortcuts and duplicate-open behavior. The second runs **two real concurrent R Markdown HTML builds** inside the packaged Cocoa application, with source-correct job/log/output/history assertions; it reports **NOT RUN** rather than PASS if Rscript, rmarkdown or Pandoc is unavailable in the app's actual environment. It deliberately disables automatic browser opening, so native focus, PDF/HTML viewer presentation, Quarto, cancellation, Shiny and long-run restoration still require the manual steps below. Preserve `build/phase2-gui/results.json`, the summary and any diagnostic screenshots. Then perform the following on the packaged app itself; use an isolated macOS account/profile and real local R/ESS/document dependencies.
 
 1. **Baseline behavior:** With `glassmacs-document-use-job-adapter` disabled, render a saved `.Rmd` using the Document menu. Confirm the legacy process buffer, browser output, original document window and ESS console still work. Never mark this passed from batch CI alone.
 2. **Opt-in parallelism:** Enable `glassmacs-document-use-job-adapter` (for example through `M-: (setq glassmacs-document-use-job-adapter t)`). Open two different saved `.Rmd` files, each containing an R chunk with `Sys.sleep(10)`, and start both builds before either finishes. Confirm both jobs are independently running; inspect **Document → Show Build Status** and **Show Last Build Log** from each source. Verify unique log/job identities and source-correct HTML outputs. Check window focus and browser behavior.
