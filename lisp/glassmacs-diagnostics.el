@@ -50,7 +50,9 @@ Do not include command text, process output, paths, or environment values."
                               ((glassmacs-sessions-ready-p session) "idle")
                               (t "waiting"))))
          (list (glassmacs-session-id session)
-               (vector (glassmacs-session-id session)
+               (vector (format "%s @ %s" (glassmacs-session-id session)
+                               (glassmacs-remote-execution-label
+                                (glassmacs-r-session-execution-identity session)))
                        activity
                        (if (glassmacs-session-paused session) "paused" "active")
                        (number-to-string (length pending))
@@ -103,7 +105,7 @@ Do not include command text, process output, paths, or environment values."
   "R-Health"
   "Read-only R session health. RET opens queue; c opens console; g refreshes."
   (setq tabulated-list-format
-        [("Session" 16 t) ("Activity" 10 t) ("Queue" 9 t)
+        [("Session / Location" 29 t) ("Activity" 10 t) ("Queue" 9 t)
          ("Pending" 8 t) ("Held" 6 t)])
   (setq tabulated-list-padding 2)
   (tabulated-list-init-header))
