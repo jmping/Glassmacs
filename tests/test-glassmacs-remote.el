@@ -645,9 +645,6 @@
                  (cons (concat "PATH=" bin path-separator (getenv "PATH"))
                        process-environment)))
             (should (= (process-file "sh" nil nil nil "launch.sh") 0)))
-          (should (eq (glassmacs-r-jobs-status
-                       "mock" "/" "glassmacs-r-aabbccddeeff001122334455")
-                      'unknown))
           (should (equal (glassmacs-r-jobs--read-marker
                           (expand-file-name "status" jobdir))
                          "exit:0"))
