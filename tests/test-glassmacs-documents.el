@@ -88,7 +88,7 @@ installation offers."
     (glassmacs-r--register-polymode-variables)
     (glassmacs-r--register-polymode-variables)
     (should (equal polymode-move-these-vars-from-base-buffer
-                   '(glassmacs-r-target-session buffer-file-name)))))
+                   '(glassmacs-r-cross-location-approval glassmacs-r-target-session buffer-file-name)))))
 
 ;;; Rendering and opening the result
 

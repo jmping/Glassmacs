@@ -17,6 +17,7 @@
 (require 'subr-x)
 (require 'glassmacs-presentation-model)
 (require 'glassmacs-dialogs)
+(require 'glassmacs-remote)
 
 (defgroup glassmacs-sessions nil
   "R session registry and command queue."
@@ -38,7 +39,11 @@
 
 (cl-defstruct (glassmacs-session (:constructor glassmacs-session--make)
                                  (:copier nil))
-  id process buffer name directory display-label
+  id process buffer name directory display-label execution-identity
+  ;; A lost remote transport is terminal for this ESS process incarnation.
+  ;; This is deliberately not a durable-job or remote-R reattach handle.
+  (disconnected nil)
+  (disconnect-reason nil)
   (state 'ready)                        ; ready, terminated
   (paused nil)
   ;; Why PAUSED is set, in words shown to the user; never nil while paused.
@@ -64,6 +69,8 @@
 (defvar glassmacs-sessions--timer nil)
 (defvar-local glassmacs-r-target-session nil
   "Session id explicitly selected for this buffer, or nil.")
+(defvar-local glassmacs-r-cross-location-approval nil
+  "Explicit approval (session id, source identity, target identity) or nil.")
 (defvar-local glassmacs-r--output-count 0)
 (defvar-local glassmacs-r--output-suppressed nil)
 (defvar-local glassmacs-r--output-marker-pending nil)
@@ -84,7 +91,14 @@ enough scrollback to review earlier results without unbounded growth."
   "Return the modeline indicator for the current buffer's R target."
   (when glassmacs-r-target-session
     (let ((session (glassmacs-sessions-find glassmacs-r-target-session)))
-      (format " R[%s%s]" glassmacs-r-target-session
+      (format " R[%s%s%s]" glassmacs-r-target-session
+              (if (and session
+                       (eq (plist-get (glassmacs-r-session-execution-identity session)
+                                      :kind)
+                           'remote))
+                  (concat "@" (glassmacs-remote-execution-label
+                               (glassmacs-r-session-execution-identity session)))
+                "")
               (if (and session
                        (eq (glassmacs-session-state session) 'ready)
                        (glassmacs-sessions--process-live-p
@@ -407,6 +421,10 @@ Queue records are preserved: see `glassmacs-sessions--terminate'."
                        :name (process-name process)
                        :directory (and (buffer-live-p buffer)
                                        (buffer-local-value 'default-directory buffer))
+                       :execution-identity
+                       (glassmacs-remote-execution-identity
+                        (and (buffer-live-p buffer)
+                             (buffer-local-value 'default-directory buffer)))
                        :started-at (current-time))))
         (setq glassmacs-sessions--list
               (append glassmacs-sessions--list (list session)))
@@ -456,6 +474,48 @@ Return the list of live sessions."
        (glassmacs-sessions--process-live-p (glassmacs-session-process session))
        (not (glassmacs-sessions--process-busy-p (glassmacs-session-process session)))))
 
+(defun glassmacs-r-session-remote-p (session)
+  "Whether SESSION is associated with a remote execution identity."
+  (eq (plist-get (glassmacs-r-session-execution-identity session) :kind)
+      'remote))
+
+(defun glassmacs-r-session-connection-state (session)
+  "Return SESSION's nonconnecting transport state.
+For a remote ESS session, a lost transport is classified 'disconnected',
+not 'reconnectable'.  Reconnection requires a new session incarnation."
+  (cond
+   ((glassmacs-session-disconnected session) 'disconnected)
+   ((not (glassmacs-sessions--process-live-p
+          (glassmacs-session-process session)))
+    (if (glassmacs-r-session-remote-p session) 'disconnected 'terminated))
+   ((glassmacs-r-session-remote-p session) 'remote-live)
+   (t 'local-live)))
+
+(defun glassmacs-r-list-disconnected-sessions ()
+  "Show remote ESS sessions with a lost transport and their queue status."
+  (interactive)
+  (glassmacs-sessions-refresh)
+  (let ((sessions (cl-remove-if-not
+                   (lambda (session)
+                     (glassmacs-session-disconnected session))
+                   glassmacs-sessions--list)))
+    (if (null sessions)
+        (message "No disconnected remote R sessions recorded")
+      (with-current-buffer (get-buffer-create "*Glassmacs Disconnected R*")
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert "Disconnected ESS sessions cannot be reattached automatically.\n"
+                  "Uncertain and orphaned commands are never replayed.\n"
+                  "Start a new remote R session explicitly when ready.\n\n")
+          (dolist (session sessions)
+            (insert (format "%s @ %s: %s\n"
+                            (glassmacs-session-id session)
+                            (glassmacs-remote-execution-label
+                             (glassmacs-r-session-execution-identity session))
+                            (glassmacs-sessions-status-text session))))
+          (special-mode))
+        (display-buffer (current-buffer))))))
+
 (defun glassmacs-sessions--terminate (session)
   "Mark SESSION terminated, preserving its queue as unsafe-to-run records.
 Running work becomes `uncertain'; pending work becomes `orphaned'.  Nothing is
@@ -465,24 +525,45 @@ deleted or replayed."
       (when (buffer-live-p buffer)
         (with-current-buffer buffer
           (glassmacs-r--reset-output-state))))
-    (setf (glassmacs-session-state session) 'terminated
-          (glassmacs-session-ended-at session) (current-time)
-          (glassmacs-session-paused session) t)
+    ;; Freeze the registration-time location before the console is lost.
+    ;; Legacy sessions may not yet have a snapshot in the struct.
+    (unless (glassmacs-session-execution-identity session)
+      (setf (glassmacs-session-execution-identity session)
+            (glassmacs-remote-execution-identity
+             (glassmacs-session-directory session))))
+    (let ((remote (glassmacs-r-session-remote-p session)))
+      (setf (glassmacs-session-state session) 'terminated
+            (glassmacs-session-ended-at session) (current-time)
+            (glassmacs-session-paused session) t
+            (glassmacs-session-disconnected session) remote
+            (glassmacs-session-disconnect-reason session)
+            (when remote "remote ESS process/transport is no longer live")
+            (glassmacs-session-pause-reason session)
+            (if remote "remote R transport disconnected; no commands replayed"
+              "R session terminated")))
     (dolist (e (glassmacs-session-entries session))
       (pcase (glassmacs-entry-state e)
         ('running
          (setf (glassmacs-entry-state e) 'uncertain
-               (glassmacs-entry-reason e) "R terminated while running"
+               (glassmacs-entry-reason e)
+               (if (glassmacs-session-disconnected session)
+                   "Remote ESS transport ended; execution outcome unknown"
+                 "R terminated while running")
                (glassmacs-entry-finished-at e) (current-time))
          (glassmacs-sessions--record :uncertain :entry (glassmacs-entry-id e)
                                      :session (glassmacs-session-id session)))
         ('pending
          (setf (glassmacs-entry-state e) 'orphaned
-               (glassmacs-entry-reason e) "R terminated before dispatch")
+               (glassmacs-entry-reason e)
+               (if (glassmacs-session-disconnected session)
+                   "Remote ESS transport ended before dispatch; not replayed"
+                 "R terminated before dispatch"))
          (glassmacs-sessions--record :orphaned :entry (glassmacs-entry-id e)
                                      :session (glassmacs-session-id session)))))
-    (glassmacs-sessions--record :session-terminated
-                                :session (glassmacs-session-id session))))
+    (glassmacs-sessions--record
+     (if (glassmacs-session-disconnected session)
+         :session-disconnected :session-terminated)
+     :session (glassmacs-session-id session))))
 
 (defun glassmacs-sessions--console-directory (session)
   "Return SESSION's current Emacs console directory, without querying R.
@@ -492,6 +573,73 @@ console buffer's `default-directory'.  It is not a claim about R's getwd()."
     (or (and (buffer-live-p buffer)
              (buffer-local-value 'default-directory buffer))
         (glassmacs-session-directory session))))
+
+(defun glassmacs-r-session-execution-identity (session)
+  "Return SESSION's registration-time identity, with a legacy fallback.
+No network access is performed.  The identity describes the console's
+directory at registration, not an independently verified remote process."
+  (or (glassmacs-session-execution-identity session)
+      (glassmacs-remote-execution-identity
+       (glassmacs-session-directory session))))
+
+(defun glassmacs-r-source-execution-identity ()
+  "Return the current document's location identity without connecting."
+  (let ((base (or (buffer-base-buffer) (current-buffer))))
+    (with-current-buffer base
+      (glassmacs-remote-execution-identity
+       (or buffer-file-name default-directory)))))
+
+(defun glassmacs-r--route-approval (session)
+  "Return the identity-specific approval token for SESSION."
+  (list (glassmacs-session-id session)
+        (glassmacs-r-source-execution-identity)
+        (glassmacs-r-session-execution-identity session)))
+
+(defun glassmacs-r--approval-for-document ()
+  "Return the current document's cross-location approval token."
+  (with-current-buffer (or (buffer-base-buffer) (current-buffer))
+    glassmacs-r-cross-location-approval))
+
+(defun glassmacs-r--check-cross-location (session)
+  "Refuse remote-source routing to a different execution context by default.
+The approval is tied to a source location, process session ID, and
+registration-time target location; stale approvals never silently apply."
+  (let ((source (glassmacs-r-source-execution-identity))
+        (target (glassmacs-r-session-execution-identity session)))
+    (when (and (glassmacs-remote-cross-location-p source target)
+               (not (equal (glassmacs-r--approval-for-document)
+                           (glassmacs-r--route-approval session))))
+      (user-error
+       "Remote source at %s targets R at %s; use M-x glassmacs-r-approve-cross-location-target to authorize this document"
+       (glassmacs-remote-execution-label source)
+       (glassmacs-remote-execution-label target))))
+  session)
+
+(defun glassmacs-r-approve-cross-location-target ()
+  "Explicitly authorize the current remote document's selected R target.
+Permission is scoped to this document, session ID and both locations.
+It does not change TRAMP connections, launch R, or transmit code."
+  (interactive)
+  (let* ((base (or (buffer-base-buffer) (current-buffer)))
+         (id (with-current-buffer base glassmacs-r-target-session))
+         (session (and id (glassmacs-sessions-find id))))
+    (unless (and session (memq session (glassmacs-sessions-live)))
+      (user-error "Select a live R target for this document first"))
+    (let* ((source (glassmacs-r-source-execution-identity))
+           (target (glassmacs-r-session-execution-identity session)))
+      (unless (glassmacs-remote-cross-location-p source target)
+        (user-error "This source and R target do not require cross-location approval"))
+      (unless (yes-or-no-p
+               (format "Allow this document at %s to send code to R at %s? "
+                       (glassmacs-remote-execution-label source)
+                       (glassmacs-remote-execution-label target)))
+        (user-error "Cross-location R routing was not approved"))
+      (let ((approval (glassmacs-r--route-approval session)))
+        (dolist (buffer (glassmacs-r--document-buffers))
+          (with-current-buffer buffer
+            (setq glassmacs-r-cross-location-approval approval))))
+      (message "Approved cross-location routing to %s for this document"
+               (glassmacs-session-id session)))))
 
 (defun glassmacs-sessions--describe (session)
   "Describe SESSION by identity and console directory, not just its number."
@@ -563,11 +711,13 @@ stale explicit link.  Cancellation does not modify the document target."
       (let ((session (glassmacs-sessions-find id)))
         (unless (and session (memq session live))
           (user-error "Linked R session %s is no longer live; link another console explicitly" id))
-        session))
+        (glassmacs-r--check-cross-location session)))
      ((null live)
       (user-error "No live R console; create one with New R Console first"))
      (t
       (let ((session (glassmacs-sessions--prompt live)))
+        ;; Keep the target unchanged when cross-location validation fails.
+        (glassmacs-r--check-cross-location session)
         (glassmacs-r--set-document-target (glassmacs-session-id session))
         session)))))
 
@@ -598,6 +748,7 @@ ID nil clears the target."
   (dolist (buffer (glassmacs-r--document-buffers))
     (with-current-buffer buffer
       (setq glassmacs-r-target-session id)
+      (setq glassmacs-r-cross-location-approval nil)
       (glassmacs-r-target-indicator-mode (if id 1 -1)))))
 
 (defvar polymode-move-these-vars-from-base-buffer)
@@ -605,7 +756,9 @@ ID nil clears the target."
 (defun glassmacs-r--register-polymode-variables ()
   "Have polymode copy the R target into chunk buffers it creates."
   (add-to-list 'polymode-move-these-vars-from-base-buffer
-               'glassmacs-r-target-session))
+               'glassmacs-r-target-session)
+  (add-to-list 'polymode-move-these-vars-from-base-buffer
+               'glassmacs-r-cross-location-approval))
 
 (with-eval-after-load 'polymode-core
   (glassmacs-r--register-polymode-variables))
@@ -919,6 +1072,69 @@ buffer; existing splits and other windows are never deleted."
              origin-window (window-prev-buffers origin-window))))
         id))))
 
+
+(defun glassmacs-r-start-remote-session (host directory)
+  "Start an independent ESS R console on SSH HOST in remote DIRECTORY.
+Only explicitly requested SSH/TRAMP contexts are eligible.  Register the
+result in the existing ESS session registry and preserve source windows.
+A failed launch never changes source targets or creates a queue entry."
+  (interactive
+   (list (glassmacs-remote--read-host)
+         (read-string "Remote R working directory (absolute): " "/")))
+  (let* ((context (glassmacs-remote-r-launch-context host directory))
+         (remote-directory (plist-get context :directory))
+         (origin-window (selected-window))
+         (origin-buffer (window-buffer origin-window))
+         (origin-frame (selected-frame)))
+    (glassmacs-remote--require-executable "ssh")
+    (let* ((console
+            (condition-case error-data
+                (glassmacs-remote-r--start-ess remote-directory)
+              (file-error
+               (user-error "Could not start ESS R on %s: %s"
+                           host (error-message-string error-data)))))
+           (proc (and (buffer-live-p console)
+                      (with-current-buffer console
+                        (and (boundp 'ess-local-process-name)
+                             ess-local-process-name
+                             (get-process ess-local-process-name))))))
+      (glassmacs-remote-r--verify-process proc remote-directory)
+      (let ((session (glassmacs-sessions-register proc)))
+        ;; Refresh the authoritative location from the verified ESS process.
+        (setf (glassmacs-session-directory session)
+              (buffer-local-value 'default-directory console)
+              (glassmacs-session-execution-identity session)
+              (plist-get context :identity))
+        (when (or (eq glassmacs-r-console-placement 'new-tab)
+                  (and (display-graphic-p)
+                       (eq glassmacs-r-console-placement 'separate-window)))
+          (glassmacs-r--present-started-console
+           console origin-window origin-buffer)
+          (when (and (frame-live-p origin-frame)
+                     (window-live-p origin-window))
+            (set-window-prev-buffers
+             origin-window (window-prev-buffers origin-window))))
+        (message "Started remote R session %s on %s"
+                 (glassmacs-session-id session)
+                 (glassmacs-remote-execution-label
+                  (glassmacs-session-execution-identity session)))
+        (glassmacs-session-id session)))))
+
+(defun glassmacs-r-start-remote-and-target (host directory)
+  "Start an independent remote R console and link this source document.
+Linking a source on another host still requires explicit route approval
+before evaluation; the new session itself is never implicitly authorized."
+  (interactive
+   (list (glassmacs-remote--read-host)
+         (read-string "Remote R working directory (absolute): " "/")))
+  (let* ((source (current-buffer))
+         (id (glassmacs-r-start-remote-session host directory)))
+    (when (buffer-live-p source)
+      (with-current-buffer source
+        (when (derived-mode-p 'ess-r-mode 'R-mode)
+          (glassmacs-r-select-session id))))
+    id))
+
 (defun glassmacs-r-new-console ()
   "Start a new independent R console, even when one already exists."
   (interactive)
@@ -1053,6 +1269,17 @@ when no live target exists or SOURCE is blank."
     (unless (eq (glassmacs-session-state session) 'ready)
       (user-error "R session %s has terminated; command not queued"
                   (glassmacs-session-id session)))
+    ;; Origin metadata is optional for internal queue actions, but any
+    ;; editor submission must resolve its source buffer before queue mutation.
+    ;; An indirect polymode chunk may name its base document here.
+    (when (plist-member origin :buffer)
+      (let* ((source-name (plist-get origin :buffer))
+             (source-buffer (and (stringp source-name)
+                                 (get-buffer source-name))))
+        (unless (buffer-live-p source-buffer)
+          (user-error "R source buffer is no longer live; command not queued"))
+        (with-current-buffer source-buffer
+          (glassmacs-r--check-cross-location session))))
     (let ((entry (glassmacs-entry--make
                   :id (format "cmd-%d" (cl-incf glassmacs-sessions--entry-counter))
                   :session-id (glassmacs-session-id session)

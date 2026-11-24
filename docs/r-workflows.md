@@ -147,6 +147,156 @@ multiple-device lifecycle remain unverified until the acceptance test
 runs on the built app.
 
 
+### Starting an SSH-hosted ESS R session (experimental)
+
+The **R > New Remote R Console…** action (or
+`M-x glassmacs-r-start-remote-session`) explicitly prompts for a configured
+OpenSSH host alias and an **absolute directory on that host**. It delegates
+process creation to ESS from a TRAMP SSH directory and then registers the
+result in the normal R session registry and FIFO queue. A source-buffer
+variant links the new console to the originating R document.
+
+The launch is opt-in: opening local R is unchanged. Source documents on a
+different remote host still need explicit cross-location approval before
+submitting code. Glassmacs does not synthesize remote shell commands, disable
+SSH host verification, automatically replay commands, or claim that an R
+process survives disconnection. Failed SSH/ESS launches report an error and
+do not modify source targets.
+
+**Verification limits:** automated tests mock the startup boundary and check
+TRAMP identity and failure handling. A genuine SSH host with R and compatible
+ESS/TRAMP startup behavior is required to establish real interactive remote R
+functionality; no such integration result has yet been obtained. The
+verification of console context alone cannot prove which binary is executing
+until the host's R prompt and execution are exercised end-to-end.
+
+### Remote R graphics artifacts and local retrieval (experimental)
+
+The remote artifact viewer is opt-in, uses TRAMP/OpenSSH and **does not**
+require X11 forwarding. Choose **R > Preview Remote Artifact…**, enter the
+configured SSH alias, project root and a project-relative PNG/JPEG/SVG/PDF
+(or HTML/text/CSV) path. Glassmacs verifies that the path remains within
+the remote project root even after resolving symlinks, that it is a regular
+file, and that it does not exceed the configured `glassmacs-r-artifacts-max-bytes`
+(default: 64 MiB). The Emacs viewer opens the selected remote file read-only.
+**R > Download Remote Artifact…** copies the same bounded artifact to an
+explicit **local** destination without replacing an existing file.
+
+**R > Preview Artifact from R Session…** resolves the currently selected
+remote ESS console, verifies that its current TRAMP location still matches
+its registered remote identity, and associates the preview with that
+session ID. **R > R Artifact History…** shows explicitly accessed artifacts
+and their recorded locations. It is in-memory navigation/provenance only,
+not automatic plot-device capture. Base graphics and ggplot2 may write
+files using standard R calls such as `png("plots/result.png")` or
+`pdf("plots/result.pdf")` followed by `dev.off()`; Glassmacs does not
+silently change the R graphics device. The user is responsible for selecting
+a relative path to an existing result.
+
+A durable `Rscript` job may produce files in its designated working
+directory and the same viewer can retrieve them. Transfers are explicit
+and bounded. Automated tests cover unsafe paths, oversized files, symlink
+escape, host/session identity and accidental overwrites; **no real remote
+R plot or Cocoa image/PDF preview has yet been verified**.
+
+### Durable remote Rscript jobs (experimental)
+
+A durable job is **not** an ESS R console. Choose **R > Submit Durable Remote
+Rscript Job…**, specify an SSH alias, a remote working directory, and a
+source `.R` file. Glassmacs copies the script into a private per-job
+directory under `.glassmacs-jobs/<job-id>/` and explicitly launches
+`Rscript --vanilla` through a detached remote driver. The driver writes
+`stdout.log`, `stderr.log`, `pid`, and a textual `status` marker.
+This is an opt-in server-side process and never uses the interactive R
+queue or automatically replays any source command.
+
+The remote launcher runs the copied script with its working directory set to
+the remote project directory supplied during submission, rather than the
+private metadata folder. Source files are not executed through ESS.
+
+Glassmacs stores a private local metadata index at
+`user-emacs-directory/r-jobs.json`, with mode 0600. It records job IDs,
+SSH aliases, remote working directories, and last observed states, but not
+R source, credentials, or output. **R > Durable Remote R Jobs…** can
+therefore list jobs from prior Glassmacs launches. Choose **R > Refresh
+Durable Job Status…** to query server-side markers explicitly; status is
+not polled continuously, and a stale `running` marker cannot prove the
+server process remains alive. **R > Inspect Remote Job ID…** works even
+when a job is absent from the local index. **R > Open Remote Job Log…**
+opens the stdout or stderr log through TRAMP.
+
+**R > Request Remote Job Cancellation…** creates a server-side
+`cancel-request` marker after confirmation. The detached driver polls for
+this marker and signals its own child Rscript process. Glassmacs never
+runs a guessed remote `kill <PID>` against an independently reused PID.
+Cancellation is best effort and must be verified via the final status;
+it does not guarantee termination of child processes spawned by R itself.
+
+**Limits and safety:** A lost connection during submission can leave the
+outcome uncertain. Do not blindly resubmit; inspect the remote job directory
+first. A missing status marker is unknown, not proof that a computation
+failed. No scheduler integration, guaranteed process survival across server
+reboots, reliable cancellation of subprocess trees, or GUI-tested macOS
+lifecycle is claimed.
+An opt-in real SSH/Rscript integration test is required before beta release.
+
+### Remote ESS disconnection and manual recovery (experimental)
+
+The R session registry distinguishes a remote ESS transport loss from an
+ordinary local R termination. A dead remote ESS process is marked
+**disconnected**, and its associated location remains visible. A command
+in flight is **uncertain** because it may have executed on the remote host;
+unsent queue entries become **orphaned**. Neither is automatically replayed.
+This does not assume that remote R itself exited: the server process may
+still exist, but the prior ESS connection is not safely attachable.
+
+Use **R > Disconnected R Sessions…** or
+`M-x glassmacs-r-list-disconnected-sessions` to inspect the retained records.
+Starting another remote console creates a **new session incarnation**;
+Glassmacs never associates it with the previous command queue or silently
+resumes source targets. The user must explicitly evaluate which computations
+completed and relink the appropriate source documents.
+
+**This is loss detection and safe manual recovery, not reattachment.**
+Durable remote jobs are a separate workstream with server-side ownership.
+
+### Remote execution development status
+
+The session identity and route-approval checks in PR #102 are purely local
+metadata and do not connect to SSH. The next stacked workstream (PR #103)
+will launch remote ESS explicitly. Until that implementation is independently
+validated, **a TRAMP-marked console directory is not evidence that R is
+executing remotely**. Existing local ESS behavior remains the default.
+
+### Execution location and cross-host routing
+
+A registered ESS console now records a **path-free execution-context identity**
+from its console directory at registration (local, or TRAMP method, host,
+user and port). The identity remains fixed if a buffer later changes its
+directory. This is a provenance hint, **not proof of a working remote R
+connection**: Glassmacs does not yet launch remote ESS sessions in this
+workstream. The R session health overview shows this location beside each
+session ID.
+
+For a remote source file, Glassmacs compares its TRAMP identity with the
+selected R console's recorded identity. If they differ, standard ESS source
+evaluation and editor-initiated queue submissions are blocked **before code
+is queued or sent**. No host is contacted to perform the comparison. Local
+source files may deliberately target either local or remote consoles.
+
+Cross-location evaluation can be useful when remote filesystems are mounted
+on several hosts, but it must be intentional: select the desired R console
+with **R > Link Console…**, then select **R > Approve Cross-Host R
+Target…**, and confirm the source and destination shown. The approval
+belongs only to that document, the specific R session ID and those two
+location identities. Linking another target or moving the source to
+another host invalidates it. Normal evaluation still uses ESS and the
+existing per-session command queue. Glassmacs does **not** map remote
+filesystem paths or transfer source files automatically in this slice.
+
+The location model does not change SSH configuration, weaken host-key
+checking, launch remote R, replay commands, or establish SSH connections.
+
 ### R session health overview
 
 Run `M-x glassmacs-diagnostics` for aggregate counts of live and paused R

@@ -5,6 +5,8 @@
 (require 'cl-lib)
 (require 'tool-bar)
 (require 'glassmacs-sessions)
+(require 'glassmacs-r-jobs)
+(require 'glassmacs-r-artifacts)
 (require 'glassmacs-r-graphics)
 
 (defgroup glassmacs-r-ui nil
@@ -71,6 +73,9 @@ these same commands, so they cannot disagree about the queue."
       '(menu-item "Start R and Target This Buffer" glassmacs-r-start-and-target-session))
     (define-key menu [start-unbound]
       '(menu-item "New R Console" glassmacs-r-new-console))
+    (define-key menu [start-remote]
+      '(menu-item "New Remote R Console…" glassmacs-r-start-remote-and-target
+                  :help "Start an independent ESS R process on an SSH host"))
     (define-key menu [switch-console]
       '(menu-item "Switch R Console…" glassmacs-r-switch-console
                   :enable (glassmacs-r-ui--menu-has-session-p)))
@@ -85,11 +90,53 @@ these same commands, so they cannot disagree about the queue."
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [show-target]
       '(menu-item "Show Current R Target" glassmacs-r-show-target-session))
+    (define-key menu [approve-cross-location]
+      '(menu-item "Approve Cross-Host R Target…" glassmacs-r-approve-cross-location-target
+                  :help "Explicitly authorize an R target on a different host for this document"
+                  :enable glassmacs-r-target-session))
     (define-key menu [clear-target]
       '(menu-item "Clear R Target" glassmacs-r-clear-session-target
                   :enable glassmacs-r-target-session))
     (define-key menu [list-sessions]
       '(menu-item "List R Sessions" glassmacs-r-list-sessions))
+    (define-key menu [health]
+      '(menu-item "R Session Health…" glassmacs-diagnostics-r-sessions
+                  :help "Inspect all live R sessions and open their queues or consoles"))
+    (define-key menu [disconnected]
+      '(menu-item "Disconnected R Sessions…" glassmacs-r-list-disconnected-sessions
+                  :help "Inspect disconnected remote ESS sessions and uncertain commands"))
+    (define-key menu [durable-separator] menu-bar-separator)
+    (define-key menu [durable-submit]
+      '(menu-item "Submit Durable Remote Rscript Job…" glassmacs-r-jobs-submit
+                  :help "Run an explicit R script independently of interactive ESS"))
+    (define-key menu [durable-list]
+      '(menu-item "Durable Remote R Jobs…" glassmacs-r-jobs-list
+                  :help "Inspect saved remote Rscript jobs, including across restarts"))
+    (define-key menu [durable-status]
+      '(menu-item "Inspect Remote Job ID…" glassmacs-r-jobs-status
+                  :help "Read a server-side job status after restarting Glassmacs"))
+    (define-key menu [durable-refresh]
+      '(menu-item "Refresh Durable Job Status…" glassmacs-r-jobs-refresh
+                  :help "Query server-side job markers explicitly without retrying commands"))
+    (define-key menu [durable-cancel]
+      '(menu-item "Request Remote Job Cancellation…" glassmacs-r-jobs-request-cancel
+                  :help "Request cooperative server-side cancellation, without signalling a PID over SSH"))
+    (define-key menu [durable-logs]
+      '(menu-item "Open Remote Job Log…" glassmacs-r-jobs-open-log
+                  :help "View server-side stdout/stderr using TRAMP"))
+    (define-key menu [remote-artifacts-divider] menu-bar-separator)
+    (define-key menu [remote-artifacts-preview]
+      '(menu-item "Preview Remote Artifact…" glassmacs-r-artifacts-preview
+                  :help "Preview a bounded PNG/SVG/PDF or other supported research output"))
+    (define-key menu [remote-artifacts-from-session]
+      '(menu-item "Preview Artifact from R Session…" glassmacs-r-artifacts-preview-session
+                  :help "Use the selected remote ESS host and remember the R session"))
+    (define-key menu [remote-artifacts-download]
+      '(menu-item "Download Remote Artifact…" glassmacs-r-artifacts-download
+                  :help "Explicit, size-bounded transfer to a local filename"))
+    (define-key menu [remote-artifacts-history]
+      '(menu-item "R Artifact History…" glassmacs-r-artifacts-list-history
+                  :help "List previews and their associated R session identities"))
     (define-key menu [graphics-separator] menu-bar-separator)
     (define-key menu [graphics-list]
       '(menu-item "List Graphics Devices" glassmacs-r-graphics-list-devices
@@ -146,8 +193,49 @@ these same commands, so they cannot disagree about the queue."
                   :enable (glassmacs-r-ui--menu-has-session-p)))
     (define-key menu [list-sessions]
       '(menu-item "List R Sessions" glassmacs-r-list-sessions))
+    (define-key menu [health]
+      '(menu-item "R Session Health…" glassmacs-diagnostics-r-sessions
+                  :help "Inspect all live R sessions and open their queues or consoles"))
+    (define-key menu [disconnected]
+      '(menu-item "Disconnected R Sessions…" glassmacs-r-list-disconnected-sessions
+                  :help "Inspect disconnected remote ESS sessions and uncertain commands"))
+    (define-key menu [durable-separator] menu-bar-separator)
+    (define-key menu [durable-submit]
+      '(menu-item "Submit Durable Remote Rscript Job…" glassmacs-r-jobs-submit
+                  :help "Run an explicit R script independently of interactive ESS"))
+    (define-key menu [durable-list]
+      '(menu-item "Durable Remote R Jobs…" glassmacs-r-jobs-list
+                  :help "Inspect saved remote Rscript jobs, including across restarts"))
+    (define-key menu [durable-status]
+      '(menu-item "Inspect Remote Job ID…" glassmacs-r-jobs-status
+                  :help "Read a server-side job status after restarting Glassmacs"))
+    (define-key menu [durable-refresh]
+      '(menu-item "Refresh Durable Job Status…" glassmacs-r-jobs-refresh
+                  :help "Query server-side job markers explicitly without retrying commands"))
+    (define-key menu [durable-cancel]
+      '(menu-item "Request Remote Job Cancellation…" glassmacs-r-jobs-request-cancel
+                  :help "Request cooperative server-side cancellation, without signalling a PID over SSH"))
+    (define-key menu [durable-logs]
+      '(menu-item "Open Remote Job Log…" glassmacs-r-jobs-open-log
+                  :help "View server-side stdout/stderr using TRAMP"))
+    (define-key menu [remote-artifacts-divider] menu-bar-separator)
+    (define-key menu [remote-artifacts-preview]
+      '(menu-item "Preview Remote Artifact…" glassmacs-r-artifacts-preview
+                  :help "Preview a bounded PNG/SVG/PDF or other supported research output"))
+    (define-key menu [remote-artifacts-from-session]
+      '(menu-item "Preview Artifact from R Session…" glassmacs-r-artifacts-preview-session
+                  :help "Use the selected remote ESS host and remember the R session"))
+    (define-key menu [remote-artifacts-download]
+      '(menu-item "Download Remote Artifact…" glassmacs-r-artifacts-download
+                  :help "Explicit, size-bounded transfer to a local filename"))
+    (define-key menu [remote-artifacts-history]
+      '(menu-item "R Artifact History…" glassmacs-r-artifacts-list-history
+                  :help "List previews and their associated R session identities"))
     (define-key menu [start]
       '(menu-item "Start Another R Session" glassmacs-r-start-session))
+    (define-key menu [start-remote]
+      '(menu-item "New Remote R Console…" glassmacs-r-start-remote-session
+                  :help "Start independent ESS R on an SSH host"))
     (define-key menu [history]
       '(menu-item "Previous Command" comint-previous-input))
     (define-key menu [graphics-separator] menu-bar-separator)
@@ -187,8 +275,49 @@ comint's Break, Stop and Kill without modifying comint's shared map.")
   (let ((menu (make-sparse-keymap "R")))
     (define-key menu [list-sessions]
       '(menu-item "List R Sessions" glassmacs-r-list-sessions))
+    (define-key menu [health]
+      '(menu-item "R Session Health…" glassmacs-diagnostics-r-sessions
+                  :help "Inspect all live R sessions and open their queues or consoles"))
+    (define-key menu [disconnected]
+      '(menu-item "Disconnected R Sessions…" glassmacs-r-list-disconnected-sessions
+                  :help "Inspect disconnected remote ESS sessions and uncertain commands"))
+    (define-key menu [durable-separator] menu-bar-separator)
+    (define-key menu [durable-submit]
+      '(menu-item "Submit Durable Remote Rscript Job…" glassmacs-r-jobs-submit
+                  :help "Run an explicit R script independently of interactive ESS"))
+    (define-key menu [durable-list]
+      '(menu-item "Durable Remote R Jobs…" glassmacs-r-jobs-list
+                  :help "Inspect saved remote Rscript jobs, including across restarts"))
+    (define-key menu [durable-status]
+      '(menu-item "Inspect Remote Job ID…" glassmacs-r-jobs-status
+                  :help "Read a server-side job status after restarting Glassmacs"))
+    (define-key menu [durable-refresh]
+      '(menu-item "Refresh Durable Job Status…" glassmacs-r-jobs-refresh
+                  :help "Query server-side job markers explicitly without retrying commands"))
+    (define-key menu [durable-cancel]
+      '(menu-item "Request Remote Job Cancellation…" glassmacs-r-jobs-request-cancel
+                  :help "Request cooperative server-side cancellation, without signalling a PID over SSH"))
+    (define-key menu [durable-logs]
+      '(menu-item "Open Remote Job Log…" glassmacs-r-jobs-open-log
+                  :help "View server-side stdout/stderr using TRAMP"))
+    (define-key menu [remote-artifacts-divider] menu-bar-separator)
+    (define-key menu [remote-artifacts-preview]
+      '(menu-item "Preview Remote Artifact…" glassmacs-r-artifacts-preview
+                  :help "Preview a bounded PNG/SVG/PDF or other supported research output"))
+    (define-key menu [remote-artifacts-from-session]
+      '(menu-item "Preview Artifact from R Session…" glassmacs-r-artifacts-preview-session
+                  :help "Use the selected remote ESS host and remember the R session"))
+    (define-key menu [remote-artifacts-download]
+      '(menu-item "Download Remote Artifact…" glassmacs-r-artifacts-download
+                  :help "Explicit, size-bounded transfer to a local filename"))
+    (define-key menu [remote-artifacts-history]
+      '(menu-item "R Artifact History…" glassmacs-r-artifacts-list-history
+                  :help "List previews and their associated R session identities"))
     (define-key menu [new-console]
       '(menu-item "New R Console" glassmacs-r-new-console))
+    (define-key menu [remote-console]
+      '(menu-item "New Remote R Console…" glassmacs-r-start-remote-session
+                  :help "Start an independent ESS R session over SSH"))
     (define-key menu [switch-console]
       '(menu-item "Show R Console…" glassmacs-r-switch-console
                   :enable (glassmacs-r-ui--menu-has-session-p)))
