@@ -40,6 +40,10 @@
 (cl-defstruct (glassmacs-session (:constructor glassmacs-session--make)
                                  (:copier nil))
   id process buffer name directory display-label execution-identity
+  ;; A lost remote transport is terminal for this ESS process incarnation.
+  ;; This is deliberately not a durable-job or remote-R reattach handle.
+  (disconnected nil)
+  (disconnect-reason nil)
   (state 'ready)                        ; ready, terminated
   (paused nil)
   ;; Why PAUSED is set, in words shown to the user; never nil while paused.
@@ -470,6 +474,48 @@ Return the list of live sessions."
        (glassmacs-sessions--process-live-p (glassmacs-session-process session))
        (not (glassmacs-sessions--process-busy-p (glassmacs-session-process session)))))
 
+(defun glassmacs-r-session-remote-p (session)
+  "Whether SESSION is associated with a remote execution identity."
+  (eq (plist-get (glassmacs-r-session-execution-identity session) :kind)
+      'remote))
+
+(defun glassmacs-r-session-connection-state (session)
+  "Return SESSION's nonconnecting transport state.
+For a remote ESS session, a lost transport is classified 'disconnected',
+not 'reconnectable'.  Reconnection requires a new session incarnation."
+  (cond
+   ((glassmacs-session-disconnected session) 'disconnected)
+   ((not (glassmacs-sessions--process-live-p
+          (glassmacs-session-process session)))
+    (if (glassmacs-r-session-remote-p session) 'disconnected 'terminated))
+   ((glassmacs-r-session-remote-p session) 'remote-live)
+   (t 'local-live)))
+
+(defun glassmacs-r-list-disconnected-sessions ()
+  "Show remote ESS sessions with a lost transport and their queue status."
+  (interactive)
+  (glassmacs-sessions-refresh)
+  (let ((sessions (cl-remove-if-not
+                   (lambda (session)
+                     (glassmacs-session-disconnected session))
+                   glassmacs-sessions--list)))
+    (if (null sessions)
+        (message "No disconnected remote R sessions recorded")
+      (with-current-buffer (get-buffer-create "*Glassmacs Disconnected R*")
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert "Disconnected ESS sessions cannot be reattached automatically.\n"
+                  "Uncertain and orphaned commands are never replayed.\n"
+                  "Start a new remote R session explicitly when ready.\n\n")
+          (dolist (session sessions)
+            (insert (format "%s @ %s: %s\n"
+                            (glassmacs-session-id session)
+                            (glassmacs-remote-execution-label
+                             (glassmacs-r-session-execution-identity session))
+                            (glassmacs-sessions-status-text session))))
+          (special-mode))
+        (display-buffer (current-buffer))))))
+
 (defun glassmacs-sessions--terminate (session)
   "Mark SESSION terminated, preserving its queue as unsafe-to-run records.
 Running work becomes `uncertain'; pending work becomes `orphaned'.  Nothing is
@@ -479,24 +525,39 @@ deleted or replayed."
       (when (buffer-live-p buffer)
         (with-current-buffer buffer
           (glassmacs-r--reset-output-state))))
-    (setf (glassmacs-session-state session) 'terminated
-          (glassmacs-session-ended-at session) (current-time)
-          (glassmacs-session-paused session) t)
+    (let ((remote (glassmacs-r-session-remote-p session)))
+      (setf (glassmacs-session-state session) 'terminated
+            (glassmacs-session-ended-at session) (current-time)
+            (glassmacs-session-paused session) t
+            (glassmacs-session-disconnected session) remote
+            (glassmacs-session-disconnect-reason session)
+            (when remote "remote ESS process/transport is no longer live")
+            (glassmacs-session-pause-reason session)
+            (if remote "remote R transport disconnected; no commands replayed"
+              "R session terminated")))
     (dolist (e (glassmacs-session-entries session))
       (pcase (glassmacs-entry-state e)
         ('running
          (setf (glassmacs-entry-state e) 'uncertain
-               (glassmacs-entry-reason e) "R terminated while running"
+               (glassmacs-entry-reason e)
+               (if (glassmacs-session-disconnected session)
+                   "Remote ESS transport ended; execution outcome unknown"
+                 "R terminated while running")
                (glassmacs-entry-finished-at e) (current-time))
          (glassmacs-sessions--record :uncertain :entry (glassmacs-entry-id e)
                                      :session (glassmacs-session-id session)))
         ('pending
          (setf (glassmacs-entry-state e) 'orphaned
-               (glassmacs-entry-reason e) "R terminated before dispatch")
+               (glassmacs-entry-reason e)
+               (if (glassmacs-session-disconnected session)
+                   "Remote ESS transport ended before dispatch; not replayed"
+                 "R terminated before dispatch"))
          (glassmacs-sessions--record :orphaned :entry (glassmacs-entry-id e)
                                      :session (glassmacs-session-id session)))))
-    (glassmacs-sessions--record :session-terminated
-                                :session (glassmacs-session-id session))))
+    (glassmacs-sessions--record
+     (if (glassmacs-session-disconnected session)
+         :session-disconnected :session-terminated)
+     :session (glassmacs-session-id session))))
 
 (defun glassmacs-sessions--console-directory (session)
   "Return SESSION's current Emacs console directory, without querying R.
