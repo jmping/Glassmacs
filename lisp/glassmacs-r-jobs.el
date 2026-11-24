@@ -27,6 +27,7 @@
 (defun glassmacs-r-jobs--paths (host directory id)
   "Derive an SSH/TRAMP job directory without any network calls."
   (glassmacs-r-jobs--validate-id id)
+  (glassmacs-remote-r-launch-context host directory)
   (let ((root (concat (glassmacs-remote-r-directory host directory) ".glassmacs-jobs/" id "/")))
     (list :root root :source (concat root "job.R") :launcher (concat root "launch.sh")
           :stdout (concat root "stdout.log") :stderr (concat root "stderr.log")
@@ -82,6 +83,7 @@ A network failure can leave an uncertain submission: inspect its directory."
   "Read the server-side status marker for ID independently of ESS."
   (interactive (list (glassmacs-remote--read-host) (read-string "Remote working directory: " "/")
                      (read-string "Job ID: ")))
+  (glassmacs-remote-r-launch-context host directory)
   (let* ((path (plist-get (glassmacs-r-jobs--paths host directory id) :status))
          (marker (and (file-exists-p path)
                       (string-trim (with-temp-buffer (insert-file-contents path) (buffer-string)))))
@@ -96,6 +98,7 @@ A network failure can leave an uncertain submission: inspect its directory."
   "Open the stdout or STDERR log for ID via TRAMP."
   (interactive (list (glassmacs-remote--read-host) (read-string "Remote working directory: " "/")
                      (read-string "Job ID: ") current-prefix-arg))
+  (glassmacs-remote-r-launch-context host directory)
   (let* ((paths (glassmacs-r-jobs--paths host directory id))
          (file (plist-get paths (if stderr :stderr :stdout))))
     (unless (file-regular-p file) (user-error "Remote job log unavailable"))
