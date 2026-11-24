@@ -251,6 +251,13 @@ remote source document rather than pretending that local Rscript/Quarto can
 execute safely across SSH. Remote document rendering is deferred until the
 #102 remote campaign is accepted.
 
+The experimental **Document** menu also provides **Open Last Build Output**,
+**Show Last Build Log**, and **Cancel Document Build** for the source's own
+last job. Output association is in-memory and source-specific; it does not
+restore builds after restarting Glassmacs or treat a renamed document as
+identical. Cancel affects only that local job's owned process and does not
+promise termination of child process trees.
+
 ## Shiny
 
 From `app.R`, `ui.R`, or `server.R`, or a directory containing one of those
