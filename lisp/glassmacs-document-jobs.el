@@ -6,6 +6,7 @@
 ;; without sharing process ownership or changing upstream Emacs/ESS behavior.
 
 (require 'cl-lib)
+(require 'subr-x)
 
 (defgroup glassmacs-document-jobs nil
   "Document build context and lifecycle records."
@@ -26,7 +27,7 @@ This is a path-only operation: it does not connect over TRAMP, inspect an R
 process or infer an execution target.  Reject relative paths and a project
 root in a different local/remote location."
   (unless (and (stringp source) (file-name-absolute-p source)
-               (not (directory-name-p source)))
+               (not (string-suffix-p "/" source)))
     (user-error "A document context requires an absolute source file"))
   (when (and project-root
              (not (and (stringp project-root)
