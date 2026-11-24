@@ -253,5 +253,20 @@
                       :type 'user-error)
         (should-not glassmacs-r-cross-location-approval)))))
 
+
+(ert-deftest glassmacs-remote-r-modeline-identifies-remote-target ()
+  "Linked remote R sessions advertise their location without paths."
+  (require 'glassmacs-sessions)
+  (let* ((session (glassmacs-session--make
+                   :id "R-remote" :directory "/ssh:host-a:/private/location"))
+         (glassmacs-sessions--list (list session)))
+    (cl-letf (((symbol-function 'glassmacs-sessions--process-live-p)
+               (lambda (_process) t)))
+      (with-temp-buffer
+        (setq glassmacs-r-target-session "R-remote")
+        (should (equal (glassmacs-r--target-lighter)
+                       " R[R-remote@ssh:host-a]"))
+        (should-not (string-match-p "private" (glassmacs-r--target-lighter)))))))
+
 (provide 'test-glassmacs-remote)
 ;;; test-glassmacs-remote.el ends here
