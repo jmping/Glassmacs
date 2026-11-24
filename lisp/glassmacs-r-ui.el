@@ -100,6 +100,9 @@ these same commands, so they cannot disagree about the queue."
     (define-key menu [health]
       '(menu-item "R Session Health…" glassmacs-diagnostics-r-sessions
                   :help "Inspect all live R sessions and open their queues or consoles"))
+    (define-key menu [disconnected]
+      '(menu-item "Disconnected R Sessions…" glassmacs-r-list-disconnected-sessions
+                  :help "Inspect disconnected remote ESS sessions and uncertain commands"))
     (define-key menu [graphics-separator] menu-bar-separator)
     (define-key menu [graphics-list]
       '(menu-item "List Graphics Devices" glassmacs-r-graphics-list-devices
@@ -159,6 +162,9 @@ these same commands, so they cannot disagree about the queue."
     (define-key menu [health]
       '(menu-item "R Session Health…" glassmacs-diagnostics-r-sessions
                   :help "Inspect all live R sessions and open their queues or consoles"))
+    (define-key menu [disconnected]
+      '(menu-item "Disconnected R Sessions…" glassmacs-r-list-disconnected-sessions
+                  :help "Inspect disconnected remote ESS sessions and uncertain commands"))
     (define-key menu [start]
       '(menu-item "Start Another R Session" glassmacs-r-start-session))
     (define-key menu [start-remote]
@@ -206,6 +212,9 @@ comint's Break, Stop and Kill without modifying comint's shared map.")
     (define-key menu [health]
       '(menu-item "R Session Health…" glassmacs-diagnostics-r-sessions
                   :help "Inspect all live R sessions and open their queues or consoles"))
+    (define-key menu [disconnected]
+      '(menu-item "Disconnected R Sessions…" glassmacs-r-list-disconnected-sessions
+                  :help "Inspect disconnected remote ESS sessions and uncertain commands"))
     (define-key menu [new-console]
       '(menu-item "New R Console" glassmacs-r-new-console))
     (define-key menu [remote-console]
