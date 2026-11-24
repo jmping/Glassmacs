@@ -110,10 +110,16 @@ these same commands, so they cannot disagree about the queue."
                   :help "Run an explicit R script independently of interactive ESS"))
     (define-key menu [durable-list]
       '(menu-item "Durable Remote R Jobs…" glassmacs-r-jobs-list
-                  :help "Inspect Rscript jobs submitted in this session"))
+                  :help "Inspect saved remote Rscript jobs, including across restarts"))
     (define-key menu [durable-status]
       '(menu-item "Inspect Remote Job ID…" glassmacs-r-jobs-status
                   :help "Read a server-side job status after restarting Glassmacs"))
+    (define-key menu [durable-refresh]
+      '(menu-item "Refresh Durable Job Status…" glassmacs-r-jobs-refresh
+                  :help "Query server-side job markers explicitly without retrying commands"))
+    (define-key menu [durable-cancel]
+      '(menu-item "Request Remote Job Cancellation…" glassmacs-r-jobs-request-cancel
+                  :help "Request cooperative server-side cancellation, without signalling a PID over SSH"))
     (define-key menu [durable-logs]
       '(menu-item "Open Remote Job Log…" glassmacs-r-jobs-open-log
                   :help "View server-side stdout/stderr using TRAMP"))
@@ -185,10 +191,16 @@ these same commands, so they cannot disagree about the queue."
                   :help "Run an explicit R script independently of interactive ESS"))
     (define-key menu [durable-list]
       '(menu-item "Durable Remote R Jobs…" glassmacs-r-jobs-list
-                  :help "Inspect Rscript jobs submitted in this session"))
+                  :help "Inspect saved remote Rscript jobs, including across restarts"))
     (define-key menu [durable-status]
       '(menu-item "Inspect Remote Job ID…" glassmacs-r-jobs-status
                   :help "Read a server-side job status after restarting Glassmacs"))
+    (define-key menu [durable-refresh]
+      '(menu-item "Refresh Durable Job Status…" glassmacs-r-jobs-refresh
+                  :help "Query server-side job markers explicitly without retrying commands"))
+    (define-key menu [durable-cancel]
+      '(menu-item "Request Remote Job Cancellation…" glassmacs-r-jobs-request-cancel
+                  :help "Request cooperative server-side cancellation, without signalling a PID over SSH"))
     (define-key menu [durable-logs]
       '(menu-item "Open Remote Job Log…" glassmacs-r-jobs-open-log
                   :help "View server-side stdout/stderr using TRAMP"))
@@ -248,10 +260,16 @@ comint's Break, Stop and Kill without modifying comint's shared map.")
                   :help "Run an explicit R script independently of interactive ESS"))
     (define-key menu [durable-list]
       '(menu-item "Durable Remote R Jobs…" glassmacs-r-jobs-list
-                  :help "Inspect Rscript jobs submitted in this session"))
+                  :help "Inspect saved remote Rscript jobs, including across restarts"))
     (define-key menu [durable-status]
       '(menu-item "Inspect Remote Job ID…" glassmacs-r-jobs-status
                   :help "Read a server-side job status after restarting Glassmacs"))
+    (define-key menu [durable-refresh]
+      '(menu-item "Refresh Durable Job Status…" glassmacs-r-jobs-refresh
+                  :help "Query server-side job markers explicitly without retrying commands"))
+    (define-key menu [durable-cancel]
+      '(menu-item "Request Remote Job Cancellation…" glassmacs-r-jobs-request-cancel
+                  :help "Request cooperative server-side cancellation, without signalling a PID over SSH"))
     (define-key menu [durable-logs]
       '(menu-item "Open Remote Job Log…" glassmacs-r-jobs-open-log
                   :help "View server-side stdout/stderr using TRAMP"))
