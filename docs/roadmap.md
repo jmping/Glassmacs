@@ -4,7 +4,7 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-11-06  
+> **Last reviewed:** 2026-11-23  
 > **Coverage:** Delivery milestones, priorities, dependencies and acceptance criteria  
 > **Supersedes:** None
 
@@ -12,6 +12,33 @@
 
 
 This roadmap translates the [architecture](architecture.md) into staged, testable delivery. It is a planning document, not a statement that planned features are implemented. Keep the README's project vision and Aquamacs-inspired macOS/R emphasis intact. Update milestone status as pull requests merge; do not claim GUI, SSH, performance or language integration was tested unless it actually was.
+
+## Public release progression and evidence
+
+The [public release catalog](https://glassmacs.joshpasek.com/releases/) is the user-facing index of published versions; [GitHub Releases](https://github.com/jmping/Glassmacs/releases) is the authoritative source for release availability and binary assets. The website catalog is a reviewed snapshot, not an automatically live feed.
+
+| Version or target | Stability | Evidence / exit criteria |
+|---|---|---|
+| [v0.1.0-alpha.1](https://github.com/jmping/Glassmacs/releases/tag/v0.1.0-alpha.1) | Published alpha | Signed/notarized ZIP per release notes; automated checks; interactive acceptance incomplete |
+| [v0.1.0-alpha.2](https://github.com/jmping/Glassmacs/releases/tag/v0.1.0-alpha.2) | Published alpha | R console and window improvements; experimental single-user build |
+| [b7f1996](https://github.com/jmping/Glassmacs/commit/b7f19966e447ad94c5d894211a2dfe15a86c184e) | Unpublished validation candidate | Maintainer reports signed/notarized DMG, Gatekeeper and mounted-app validation, 489 ERT passes / 18 skips, 49 Python and 7 Swift passes; arm64 native compilation produced an .eln file. Corresponding-source, clean-machine, Intel and interactive GUI checks outstanding |
+| Validation prerelease | Planned | Corresponding-source compliance and provenance resolved; signed artifact and checksum published; unverified platforms disclosed |
+| Beta | Planned | Clean-machine and core editing, window, recovery and research workflows accepted on advertised platforms |
+| Release candidate | Planned | Frozen release scope; release-blocking regressions resolved; final acceptance in progress |
+| Stable | Planned | All declared release gates met, documented support policy and repeatable distribution |
+
+Release labels are not inferred from signing, CI, commit count or the most recent tag. Do not assign dates or version numbers to future milestones until agreed. Record evidence against the exact shipped artifact; an unverified capability is not a passed acceptance gate.
+
+## Modern Emacs distribution compatibility track
+
+- EP-01: Generate build capability evidence (TLS, tree-sitter, SQLite, SVG, XML, modules and native compilation).
+- EP-02: Validate native compilation, generated code loading, cache persistence, upgrades and signed runtime constraints on advertised architectures.
+- EP-03: Establish installed CLI, blocking editing, server/client isolation and optional daemon behavior.
+- EP-04: Verify automatic macOS appearance changes while respecting user themes.
+- EP-05: Compare current Emacs Plus patches with the pinned upstream, especially scrolling and event processing; prefer upstream fixes.
+- EP-06: Complete public release delivery, then evaluate Homebrew Cask and Sparkle.
+
+These are planned work packages, not claims of implementation or prerequisites for all validation prereleases. See the [acceptance matrix](acceptance-matrix.md) for verification status.
 
 ## Principles and cross-cutting acceptance criteria
 

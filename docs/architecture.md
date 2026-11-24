@@ -17,6 +17,10 @@ Glassmacs is an R-first, modern macOS GNU Emacs distribution inspired by Aquamac
 
 **Execution placement is independent from editing placement.** A source buffer may live locally or on a remote server, and computation may occur locally, in a persistent terminal session, or remotely over SSH. Avoid assuming that the Mac running the GUI runs R, Quarto, Shiny, or compute-intensive jobs.
 
+## Upstream maintenance boundary
+
+Use pinned upstream GNU Emacs distributions, without a private Emacs core fork. Prefer inherited upstream fixes, then Lisp configuration, packaging changes and narrowly scoped native modules, in that order. Where core changes are necessary, pursue upstream contributions rather than a permanent downstream patch set. Evaluate Emacs Plus patches against the exact pinned upstream before adopting any. Retain reproducible provenance, corresponding source and license materials for redistributed binaries; seek missing materials from the existing upstream distributor first. A different auditable upstream binary distribution is a fallback, not a reason to fork Emacs. Signing and distribution are Glassmacs responsibilities.
+
 ## Existing implementation (Milestone 1)
 
 - `init.el`: isolated entry point into the `lisp/` configuration.
