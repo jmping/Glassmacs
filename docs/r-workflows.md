@@ -252,8 +252,10 @@ execute safely across SSH. Remote document rendering is deferred until the
 #102 remote campaign is accepted.
 
 The experimental **Document** menu also provides **Open Last Build Output**,
-**Show Last Build Log**, and **Cancel Document Build** for the source's own
-last job. Output association is in-memory and source-specific; it does not
+**Show Last Build Log**, **Show Build Status**, and **Cancel Document Build** for the source's own
+last job. The status inspector is a read-only snapshot of job ID, renderer,
+status, reported output, retained log and any recorded error; it does not
+poll, restart or open anything. Output association is in-memory and source-specific; it does not
 restore builds after restarting Glassmacs or treat a renamed document as
 identical. Cancel affects only that local job's owned process and does not
 promise termination of child process trees.
