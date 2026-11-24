@@ -301,5 +301,62 @@
                 (should-not (glassmacs-session-entries session)))
             (kill-buffer chunk)))))))
 
+
+(ert-deftest glassmacs-remote-r-rejected-choice-keeps-document-unlinked ()
+  "Rejected cross-location selection must not write a target."
+  (require 'glassmacs-sessions)
+  (let ((session (glassmacs-session--make :id "R-wrong-host"
+                                         :directory "/ssh:host-b:/work")))
+    (cl-letf (((symbol-function 'glassmacs-sessions-refresh)
+               (lambda () (list session)))
+              ((symbol-function 'glassmacs-sessions-live)
+               (lambda () (list session)))
+              ((symbol-function 'glassmacs-sessions--prompt)
+               (lambda (_live) session)))
+      (with-temp-buffer
+        (setq buffer-file-name "/ssh:host-a:/work/script.R")
+        (should-error (glassmacs-r-resolve-source-target) :type 'user-error)
+        (should-not glassmacs-r-target-session)
+        (should-not glassmacs-r-cross-location-approval)))))
+
+(ert-deftest glassmacs-remote-r-approval-from-chunk-is-valid-in-base ()
+  "Approval granted from an indirect chunk is recognized from the base."
+  (require 'glassmacs-sessions)
+  (let* ((session (glassmacs-session--make :id "R-approved"
+                                         :directory "/ssh:host-b:/work"))
+         (glassmacs-sessions--list (list session)))
+    (cl-letf (((symbol-function 'glassmacs-sessions-live)
+               (lambda () (list session)))
+              ((symbol-function 'yes-or-no-p)
+               (lambda (_question) t)))
+      (with-temp-buffer
+        (setq buffer-file-name "/ssh:host-a:/work/document.Rmd"
+              glassmacs-r-target-session "R-approved")
+        (let ((base (current-buffer))
+              (chunk (make-indirect-buffer (current-buffer)
+                                           (generate-new-buffer-name " *remote R chunk approval*"))))
+          (unwind-protect
+              (progn
+                (with-current-buffer chunk
+                  (glassmacs-r-approve-cross-location-target)
+                  (should (eq (glassmacs-r--check-cross-location session) session)))
+                (with-current-buffer base
+                  (should (eq (glassmacs-r--check-cross-location session) session))))
+            (kill-buffer chunk)))))))
+
+(ert-deftest glassmacs-remote-r-origin-invalid-fails-before-queue-mutation ()
+  "A stale document origin is not treated as authorization."
+  (require 'glassmacs-sessions)
+  (let* ((session (glassmacs-session--make :id "R-origin" :directory "/"))
+         (glassmacs-sessions--list (list session))
+         (glassmacs-sessions--entry-counter 0))
+    (cl-letf (((symbol-function 'glassmacs-sessions-refresh)
+               (lambda () (list session))))
+      (should-error (glassmacs-queue-submit "2+2" session
+                                          '(:buffer " *missing remote source*"))
+                    :type 'user-error)
+      (should-not (glassmacs-session-entries session))
+      (should (= glassmacs-sessions--entry-counter 0)))))
+
 (provide 'test-glassmacs-remote)
 ;;; test-glassmacs-remote.el ends here
