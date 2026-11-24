@@ -94,9 +94,9 @@
           (cl-letf (((symbol-function 'completing-read)
                      (lambda (_prompt candidates &rest _)
                        (setq choices candidates)
-                       (car (cl-find-if
-                             (lambda (choice) (string-match-p "project-a" choice))
-                             candidates))))
+                       (cl-find-if
+                        (lambda (choice) (string-match-p "project-a" choice))
+                        candidates)))
                     ((symbol-function 'glassmacs-open-rendered-output)
                      (lambda (file) (setq opened file))))
             (glassmacs-document-build-browse-recent-outputs))
