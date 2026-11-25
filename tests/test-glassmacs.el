@@ -1619,6 +1619,54 @@ otherwise never build."
             (should (eq (window-buffer destination) source)))
         (kill-buffer source)))))
 
+
+(ert-deftest glassmacs-presentation-terminal-frame-policy-degrades-safely ()
+  "Native-window preferences must not attempt to create terminal frames."
+  (require 'glassmacs-presentation-model)
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) nil)))
+    (should (eq (glassmacs-presentation-effective-placement 'new-frame)
+                'reuse-current))
+    (should (eq (glassmacs-presentation-effective-placement 'new-tab)
+                'new-tab))))
+
+(ert-deftest glassmacs-presentation-role-defaults-are-read-only ()
+  (require 'glassmacs-presentation-model)
+  (let ((glassmacs-document-opening-policy 'new-tab)
+        (glassmacs-r-console-placement 'separate-window)
+        (glassmacs-r-help-placement 'side-bottom)
+        (glassmacs-preferences-opening-policy 'new-frame))
+    (should (eq (glassmacs-presentation-role-default-placement 'document) 'new-tab))
+    (should (eq (glassmacs-presentation-role-default-placement 'r-console) 'new-frame))
+    (should (eq (glassmacs-presentation-role-default-placement 'r-help) 'split-below))
+    (should (eq (glassmacs-presentation-role-default-placement 'preferences) 'new-frame))
+    (should-not (glassmacs-presentation-role-default-placement 'utility))))
+
+(ert-deftest glassmacs-presentation-bootstrap-respects-new-frame-policy ()
+  "Even a bootstrap callback must not replace a document on new-frame open."
+  (let* ((buffer (generate-new-buffer " *presentation-bootstrap-target*"))
+         (original (current-buffer))
+         (glassmacs-document-opening-policy 'new-frame)
+         (requested nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
+                  ((symbol-function 'glassmacs-presentation-find-suitable-view)
+                   (lambda (&rest _) nil))
+                  ((symbol-function 'glassmacs--ensure-visible-frame)
+                   (lambda () t))
+                  ((symbol-function 'glassmacs--document-opening-action)
+                   (lambda (_) 'new-frame))
+                  ((symbol-function 'glassmacs-present-buffer)
+                   ;; Capture only the recursive new-view call.
+                   (let ((actual (symbol-function 'glassmacs-present-buffer)))
+                     (lambda (target intent placement &optional dest)
+                       (if (eq intent 'new-view)
+                           (setq requested (list target intent placement dest))
+                         (funcall actual target intent placement dest)))))
+          (glassmacs-present-buffer buffer 'open)
+          (should (equal (cl-subseq requested 1 3) '(new-view new-frame)))
+          (should (eq (current-buffer) original)))
+      (kill-buffer buffer))))
+
 (provide 'test-glassmacs)
 ;;; test-glassmacs.el ends here
 
