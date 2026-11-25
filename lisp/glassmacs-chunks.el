@@ -405,6 +405,23 @@ as a local Shiny app instead, since it cannot be rendered to a file."
                   :enable (let ((job (glassmacs-document-build-current-job)))
                             (and job (buffer-live-p
                                       (glassmacs-document-job-log-buffer job))))))
+    (define-key menu [jobs]
+      '(menu-item "Show Research Jobs..." glassmacs-document-jobs-show
+                  :visible (bound-and-true-p glassmacs-document-use-job-adapter)))
+    (define-key menu [build-recent]
+      '(menu-item "Browse Recent Build Outputs..."
+                  glassmacs-document-build-browse-recent-outputs
+                  :visible (bound-and-true-p
+                            glassmacs-document-remember-build-outputs)))
+    (define-key menu [build-forget]
+      '(menu-item "Forget Remembered Output..."
+                  glassmacs-document-build-forget-remembered-output
+                  :visible (bound-and-true-p
+                            glassmacs-document-remember-build-outputs)
+                  :enable (let ((source
+                                 (buffer-file-name
+                                  (or (buffer-base-buffer) (current-buffer)))))
+                            (and source (not (file-remote-p source))))))
     (define-key menu [build-remembered]
       '(menu-item "Open Remembered Build Output"
                   glassmacs-document-build-open-remembered-output
