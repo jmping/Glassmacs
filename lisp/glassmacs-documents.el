@@ -121,25 +121,31 @@ Remote documents are not implicitly executed through this adapter."
                              (glassmacs-document-job-context job))))))))
 
 (defun glassmacs-document-render--local (kind file program arguments pattern)
-  "Run a local KIND build of FILE through a distinct job with output PATTERN."
+  "Run a local KIND build of FILE with an independently tracked job.
+Register identity before launch so missing executables and early exits
+are visible in the source buffer and the read-only jobs dashboard."
   (let* ((context (glassmacs-document-context-for-file file))
          (job (glassmacs-document-job-new
                (format "%s-%d" kind (cl-incf glassmacs-document-render--serial))
-               context kind))
-         (process
-          (glassmacs-document-local-start
-           job program arguments
-           (lambda (finished)
-             (when-let* ((output (glassmacs-document-render--reported-output
-                                  finished pattern)))
-               (setf (glassmacs-document-job-output-file finished) output)
-               (when glassmacs-render-open-output
-                 (glassmacs-open-rendered-output output))
-               (glassmacs-document-history-record finished))))))
+               context kind)))
+    (unless (eq (glassmacs-document-context-location context) 'local)
+      (user-error "Experimental document jobs require a local source file"))
+    (glassmacs-document-jobs-register job)
     (setq glassmacs-document-last-job job)
-    (display-buffer (glassmacs-document-job-log-buffer job))
-    process))
-
+    (let ((process
+           (glassmacs-document-local-start
+            job program arguments
+            (lambda (finished)
+              (when-let* ((output (glassmacs-document-render--reported-output
+                                   finished pattern)))
+                (setf (glassmacs-document-job-output-file finished) output)
+                ;; Preserve a successful result even when its external
+                ;; browser/PDF viewer cannot open the generated document.
+                (glassmacs-document-history-record finished)
+                (when glassmacs-render-open-output
+                  (glassmacs-open-rendered-output output)))))))
+      (display-buffer (glassmacs-document-job-log-buffer job))
+      process)))
 
 (defun glassmacs-document-build-current-job ()
   "Return this document's last job if its source identity still matches.
