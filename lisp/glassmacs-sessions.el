@@ -924,13 +924,58 @@ buffer; existing splits and other windows are never deleted."
   (interactive)
   (glassmacs-r-start-and-target-session))
 
+(defun glassmacs-r--live-console-choices ()
+  "Return stable, unambiguous labels for registered live R consoles.
+The list is derived from the registry, not from currently displayed
+windows, and retains exact session identities even for same-named R
+processes.  Calling this helper never changes ESS's selected process."
+  (mapcar
+   (lambda (session)
+     (cons (format "%s — %s"
+                   (glassmacs-session-id session)
+                   (glassmacs-sessions--describe session))
+           session))
+   (glassmacs-sessions-live)))
+
+(defun glassmacs-r--read-console-for-navigation ()
+  "Choose a registered live console for navigation without retargeting R.
+This operation never starts or terminates ESS processes or modifies the
+origin document's explicit execution target."
+  (glassmacs-sessions-refresh)
+  (let ((choices (glassmacs-r--live-console-choices)))
+    (unless choices
+      (user-error "No live R console"))
+    (or (cdr (assoc (completing-read "Show R console: " choices nil t)
+                    choices))
+        (user-error "No R console selected"))))
+
 (defun glassmacs-r-switch-console ()
-  "Choose a live R console and focus its existing native window."
+  "Focus a chosen live R console without changing source execution routing.
+Selection is based on the exact registered session ID, independent of
+buffer names or other live consoles.  It never retargets the invoking
+source document."
   (interactive)
-  (let ((live (glassmacs-sessions-refresh)))
-    (unless live (user-error "No live R console"))
-    (glassmacs-r-display-console
-     (glassmacs-session-buffer (glassmacs-sessions--prompt live)))))
+  (let ((session (glassmacs-r--read-console-for-navigation)))
+    (glassmacs-r-display-console (glassmacs-session-buffer session))))
+
+(defun glassmacs-r-show-target-console ()
+  "Focus the current source document's explicitly selected R console.
+Unlike choosing a console by name, this command refuses a stale target
+and does not fall through to a different live R session.  It does not
+change any document-to-session association."
+  (interactive)
+  (let* ((id (or (and (buffer-base-buffer)
+                      (buffer-local-value
+                       'glassmacs-r-target-session (buffer-base-buffer)))
+                 glassmacs-r-target-session)))
+    (unless id
+      (user-error "This document has no explicitly linked R console"))
+    (glassmacs-sessions-refresh)
+    (let ((session (glassmacs-sessions-find id)))
+      (unless (and session (memq session (glassmacs-sessions-live)))
+        (user-error "Linked R console %s is no longer live" id))
+      (glassmacs-r-display-console (glassmacs-session-buffer session)))))
+
 
 (defun glassmacs-r-start-and-target-session ()
   "Start R and target the new session from the current source buffer.
