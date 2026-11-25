@@ -676,7 +676,6 @@ Distinct topics receive distinct native windows by default on graphical
 macOS; explicit side-window preferences retain upstream side placement."
   (let* ((side (glassmacs-r--help-placement-side))
          (native (and (display-graphic-p)
-                      (eq system-type 'darwin)
                       (null side)))
          (existing (if side
                        (glassmacs-r--help-existing-side-view buffer side)
