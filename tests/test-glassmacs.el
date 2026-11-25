@@ -3616,3 +3616,30 @@ example) can run first and delay the sentinel."
         (glassmacs-diagnostics-r-session-open-queue)
         (should (eq selected session))))))
 
+
+(ert-deftest glassmacs-preferences-group-frame-requires-exact-identity ()
+  "A different or repurposed Customize frame must not be reused."
+  (save-window-excursion
+    (let* ((frame (selected-frame))
+           (custom (generate-new-buffer " *glassmacs-customize-identity*"))
+           (ordinary (generate-new-buffer " *glassmacs-other-identity*")))
+      (unwind-protect
+          (progn
+            (with-current-buffer custom (setq major-mode 'custom-mode))
+            (delete-other-windows)
+            (switch-to-buffer custom)
+            (cl-letf (((symbol-function 'frame-list) (lambda () (list frame)))
+                      ((symbol-function 'frame-visible-p) (lambda (_) t))
+                      ((symbol-function 'frame-parameter)
+                       (lambda (_ name)
+                         (when (eq name 'glassmacs-customize-group)
+                           'glassmacs-frames))))
+              (should (eq (glassmacs--preferences-group-frame
+                           'glassmacs-frames) frame))
+              (should-not (glassmacs--preferences-group-frame
+                           'glassmacs-sessions))
+              (switch-to-buffer ordinary)
+              (should-not (glassmacs--preferences-group-frame
+                           'glassmacs-frames))))
+        (kill-buffer custom)
+        (kill-buffer ordinary)))))
