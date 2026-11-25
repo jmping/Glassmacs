@@ -210,5 +210,63 @@
         (glassmacs-document-jobs-open-output)
         (should (equal opened "/tmp/another/report.html"))))))
 
+(ert-deftest glassmacs-document-jobs-auxiliary-terminal-uses-upstream-display ()
+  "Headless jobs inspection never allocates a native frame."
+  (let ((buffer (generate-new-buffer " *jobs-terminal-display*"))
+        (displayed nil)
+        (glassmacs-document-jobs-display-placement 'follow-preference))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p)
+                   (lambda (&optional _) nil))
+                  ((symbol-function 'display-buffer)
+                   (lambda (candidate &rest _)
+                     (setq displayed candidate)
+                     (selected-window)))
+                  ((symbol-function 'display-buffer-pop-up-frame)
+                   (lambda (&rest _) (ert-fail "No native frame in terminal"))))
+          (glassmacs-document-jobs--display-auxiliary buffer)
+          (should (eq displayed buffer)))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-document-jobs-auxiliary-native-does-not-replace-source ()
+  "Explicit dashboard and log presentation share one safe window adapter."
+  (let ((buffer (generate-new-buffer " *jobs-native-display*"))
+        (source (current-buffer))
+        (glassmacs-document-jobs-display-placement 'follow-preference)
+        (created nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p)
+                   (lambda (&optional _) t))
+                  ((symbol-function 'glassmacs-presentation-find-suitable-view)
+                   (lambda (&rest _) nil))
+                  ((symbol-function 'display-buffer-pop-up-frame)
+                   (lambda (candidate &rest _)
+                     (setq created candidate)
+                     (selected-window))))
+          (let ((system-type 'darwin))
+            (glassmacs-document-jobs--display-auxiliary buffer))
+          (should (eq created buffer))
+          (should (eq (current-buffer) source)))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-document-jobs-auxiliary-reuses-existing-native-view ()
+  "Repeated dashboard invocation does not multiply dedicated frames."
+  (let ((buffer (generate-new-buffer " *jobs-native-reuse*"))
+        (glassmacs-document-jobs-display-placement 'follow-preference)
+        (view (selected-window))
+        (requested nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p)
+                   (lambda (&optional _) t))
+                  ((symbol-function 'glassmacs-presentation-find-suitable-view)
+                   (lambda (&rest _) view))
+                  ((symbol-function 'display-buffer-pop-up-frame)
+                   (lambda (&rest _) (setq requested t))))
+          (let ((system-type 'darwin))
+            (should (eq (glassmacs-document-jobs--display-auxiliary buffer)
+                        view)))
+          (should-not requested))
+      (kill-buffer buffer))))
+
 (provide 'test-glassmacs-document-jobs)
 ;;; test-glassmacs-document-jobs.el ends here
