@@ -75,19 +75,22 @@ Customize can switch buffers directly, bypassing display-buffer rules;
 selecting a dedicated frame first protects the source document."
   (let* ((separate (and (display-graphic-p)
                         (eq glassmacs-preferences-opening-policy 'new-frame)))
+         ;; Reuse only a frame explicitly associated with this group.  A
+         ;; different Customize frame may contain unsaved edits and must
+         ;; not be commandeered by an unrelated Preferences command.
          (existing (and separate
                         (cl-find-if
                          (lambda (frame)
-                           (let ((window (frame-selected-window frame)))
-                             (and (window-live-p window)
-                                  (with-current-buffer (window-buffer window)
-                                    (derived-mode-p 'custom-mode)))))
+                           (eq (frame-parameter frame 'glassmacs-customize-group)
+                               group))
                          (frame-list))))
          (target (or existing (and separate (make-frame)))))
     (if target
         (progn
           (select-frame-set-input-focus target)
-          (with-selected-frame target (customize-group group)))
+          (with-selected-frame target
+            (customize-group group)
+            (set-frame-parameter target 'glassmacs-customize-group group)))
       (customize-group group))))
 
 (defun glassmacs-open-document-preferences ()
