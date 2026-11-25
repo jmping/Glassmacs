@@ -203,11 +203,14 @@ Emacs primitives."
       (or (glassmacs--focus-buffer-in-existing-tab buffer destination)
           (glassmacs-present-buffer buffer 'new-view placement destination)))
      ((and (memq intent '(open focus))
-           (not (eq placement 'new-frame))
+           (fboundp 'glassmacs--no-visible-graphical-frame-p)
+           (glassmacs--no-visible-graphical-frame-p)
            (fboundp 'glassmacs--ensure-visible-frame)
            (glassmacs--ensure-visible-frame))
-      ;; Only an in-frame policy may reuse the application bootstrap view.
-      ;; Never invoke the bootstrap side effect before a native frame open.
+      ;; An existing hidden last Cocoa frame is the sole safe bootstrap
+      ;; destination.  Never create a second frame when no native window is
+      ;; visible; the original document protection applies once a visible
+      ;; frame exists.
       (switch-to-buffer buffer)
       (selected-window))
      ((or (eq intent 'move) (eq intent 'split)
