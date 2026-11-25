@@ -285,6 +285,31 @@ to forget that source's record after confirmation. This removes metadata only;
 the generated file remains on disk. The opt-in index is local-only, contains
 no commands or logs, and never restores or executes work automatically.
 
+**Research jobs dashboard (experimental):** With
+`glassmacs-document-use-job-adapter` enabled, choose
+**Document → Show Research Jobs…** or run
+`M-x glassmacs-document-jobs-show`. The read-only table lists up to
+100 jobs **from the current Emacs process only**, with status, renderer,
+stable job ID, full source path and reported output. Jobs are registered
+before local renderer startup so missing-executable failures remain visible;
+completed and cancelled jobs stay inspectable until the bounded index evicts
+them or Glassmacs exits. Refresh explicitly with **g**; **RET**/**l** displays
+a retained log, **o** explicitly opens a successful local output, and **c**
+asks before cancelling the selected running, owned local document or Shiny
+process. A remote/unknown process cannot be cancelled through this view.
+No command in the dashboard runs code, reconnects SSH, replays jobs, restores
+processes, or automatically opens files. Remote durable R jobs in draft
+#102 are **not** included; integration will require separate trusted-host
+acceptance. Shiny launch/reload use the same status view only when the adapter
+is enabled. Output history remains a separate, opt-in on-disk index.
+
+The **Document** menu also exposes **Browse Recent Build Outputs…** and
+**Forget Remembered Output…** when local output history is enabled.
+Forgetting asks confirmation and never removes the generated file.
+When opening an output after a successful build fails in the external
+viewer, the job retains its output path and opt-in history record; presentation
+failure does not change a successful render into a failed process.
+
 **Integrated acceptance protocol:** The real two-document build, isolation and remembered-output tests are included in `./scripts/test` and exercised when dependencies are present in the Linux ESS/R integration job. For candidate-specific native macOS, Quarto, Sweave, Shiny and trusted-SSH acceptance, record PASS/FAIL/NOT RUN evidence using [the integrated document acceptance runbook](research-document-integration-acceptance.md) and [issue #122](https://github.com/jmping/Glassmacs/issues/122). Passing CI does not certify Cocoa windows, actual viewer integration or remote disconnection behavior.
 
 **Sweave experimental adapter:** When the local job adapter is enabled,
