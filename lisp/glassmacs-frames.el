@@ -187,10 +187,11 @@ Emacs primitives."
   (unless (buffer-live-p buffer)
     (user-error "Cannot present a dead buffer"))
   (let* ((intent (or intent 'open))
-         (placement (or placement
-                        (and (eq intent 'open)
-                             (glassmacs--document-opening-action buffer))
-                        'reuse-current))
+         (placement (glassmacs-presentation-effective-placement
+                     (or placement
+                         (and (memq intent '(open focus))
+                              (glassmacs--document-opening-action buffer))
+                         'reuse-current)))
          (existing (glassmacs-presentation-find-suitable-view
                     buffer intent placement destination)))
     (cond
@@ -204,8 +205,12 @@ Emacs primitives."
      ((and (memq intent '(open focus))
            (fboundp 'glassmacs--ensure-visible-frame)
            (glassmacs--ensure-visible-frame))
-      (switch-to-buffer buffer)
-      (selected-window))
+      ;; An application bootstrap frame is reusable only for in-frame
+      ;; presentation.  A new-frame policy must not replace a document.
+      (if (eq placement 'new-frame)
+          (glassmacs-present-buffer buffer 'new-view 'new-frame destination)
+        (switch-to-buffer buffer)
+        (selected-window)))
      ((or (eq intent 'move) (eq intent 'split)
           (eq intent 'tab) (eq intent 'replace))
       (unless (fboundp 'glassmacs-buffer-placement--display)
