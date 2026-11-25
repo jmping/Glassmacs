@@ -1357,5 +1357,73 @@
            (should (equal (gs-test--filter-output process "ok" ) "ok")))
        (kill-buffer buffer)))))
 
+
+(ert-deftest glassmacs-console-navigation-choices-preserve-session-identity ()
+  "Same-name consoles remain distinguishable without changing R targets."
+  (gs-test--with-env
+   (let* ((first (glassmacs-sessions-register (gs-test--proc "R-console-1")))
+          (second (glassmacs-sessions-register (gs-test--proc "R-console-2")))
+          (source (generate-new-buffer " *console-navigation-source*")))
+     (unwind-protect
+         (with-current-buffer source
+           (setq-local glassmacs-r-target-session (glassmacs-session-id first))
+           (let ((choices (glassmacs-r--live-console-choices)))
+             (should (= (length choices) 2))
+             (should (eq (cdar choices) first))
+             (should (eq (cdadr choices) second))
+             (should-not (equal (caar choices) (caadr choices))))
+           (should (equal glassmacs-r-target-session
+                          (glassmacs-session-id first))))
+       (kill-buffer source)))))
+
+(ert-deftest glassmacs-console-switch-does-not-retarget-source ()
+  "Navigating to another session's console never changes execution routing."
+  (gs-test--with-env
+   (let* ((first (glassmacs-sessions-register (gs-test--proc "R-nav-first")))
+          (second (glassmacs-sessions-register (gs-test--proc "R-nav-second")))
+          (source (generate-new-buffer " *console-switch-source*"))
+          (shown nil))
+     (unwind-protect
+         (with-current-buffer source
+           (setq-local glassmacs-r-target-session (glassmacs-session-id first))
+           (cl-letf (((symbol-function 'glassmacs-r--read-console-for-navigation)
+                      (lambda () second))
+                     ((symbol-function 'glassmacs-r-display-console)
+                      (lambda (buffer) (setq shown buffer))))
+             (glassmacs-r-switch-console))
+           (should (eq shown (glassmacs-session-buffer second)))
+           (should (equal glassmacs-r-target-session
+                          (glassmacs-session-id first))))
+       (kill-buffer source)))))
+
+(ert-deftest glassmacs-console-focus-linked-target-refuses-stale-id ()
+  "A stale explicit association never falls back to another live console."
+  (gs-test--with-env
+   (let ((other (glassmacs-sessions-register (gs-test--proc "R-nav-other")))
+         (shown nil))
+     (with-temp-buffer
+       (setq-local glassmacs-r-target-session "R-no-longer-live")
+       (cl-letf (((symbol-function 'glassmacs-r-display-console)
+                  (lambda (buffer) (setq shown buffer))))
+         (should-error (glassmacs-r-show-target-console) :type 'user-error))
+       (should-not shown)
+       (should (equal glassmacs-r-target-session "R-no-longer-live")))
+     (should (memq other (glassmacs-sessions-live))))))
+
+(ert-deftest glassmacs-console-focus-linked-target-uses-exact-session ()
+  "Focus targets the linked process, never whichever console was last used."
+  (gs-test--with-env
+   (let* ((first (glassmacs-sessions-register (gs-test--proc "R-nav-linked")))
+          (_other (glassmacs-sessions-register (gs-test--proc "R-nav-unrelated")))
+          (shown nil))
+     (with-temp-buffer
+       (setq-local glassmacs-r-target-session (glassmacs-session-id first))
+       (cl-letf (((symbol-function 'glassmacs-r-display-console)
+                  (lambda (buffer) (setq shown buffer))))
+         (glassmacs-r-show-target-console))
+       (should (eq shown (glassmacs-session-buffer first)))
+       (should (equal glassmacs-r-target-session
+                      (glassmacs-session-id first)))))))
+
 (provide 'test-glassmacs-sessions)
 ;;; test-glassmacs-sessions.el ends here
