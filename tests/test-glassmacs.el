@@ -1642,11 +1642,11 @@ otherwise never build."
     (should-not (glassmacs-presentation-role-default-placement 'utility))))
 
 (ert-deftest glassmacs-presentation-bootstrap-respects-new-frame-policy ()
-  "Even a bootstrap callback must not replace a document on new-frame open."
-  (let* ((buffer (generate-new-buffer " *presentation-bootstrap-target*"))
-         (original (current-buffer))
-         (glassmacs-document-opening-policy 'new-frame)
-         (requested nil))
+  "A bootstrap callback cannot replace the source document for a new frame."
+  (let ((buffer (generate-new-buffer " *presentation-bootstrap-target*"))
+        (source (current-buffer))
+        (glassmacs-document-opening-policy 'new-frame)
+        (requested nil))
     (unwind-protect
         (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
                   ((symbol-function 'glassmacs-presentation-find-suitable-view)
@@ -1655,16 +1655,13 @@ otherwise never build."
                    (lambda () t))
                   ((symbol-function 'glassmacs--document-opening-action)
                    (lambda (_) 'new-frame))
-                  ((symbol-function 'glassmacs-present-buffer)
-                   ;; Capture only the recursive new-view call.
-                   (let ((actual (symbol-function 'glassmacs-present-buffer)))
-                     (lambda (target intent placement &optional dest)
-                       (if (eq intent 'new-view)
-                           (setq requested (list target intent placement dest))
-                         (funcall actual target intent placement dest)))))
-          (glassmacs-present-buffer buffer 'open)
-          (should (equal (cl-subseq requested 1 3) '(new-view new-frame)))
-          (should (eq (current-buffer) original)))
+                  ((symbol-function 'make-frame)
+                   (lambda (&rest _)
+                     (setq requested 'new-frame)
+                     (error "Frame creation intercepted safely"))))
+          (should-error (glassmacs-present-buffer buffer 'open))
+          (should (eq requested 'new-frame))
+          (should (eq (current-buffer) source)))
       (kill-buffer buffer))))
 
 (provide 'test-glassmacs)
