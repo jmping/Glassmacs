@@ -592,5 +592,43 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
       "/ssh:host:/tmp/project/" #'ignore)
      :type 'user-error)))
 
+
+(ert-deftest glassmacs-documents-viewer-failure-keeps-successful-output-history ()
+  "A missing external viewer must not prevent remembering a successful build."
+  (let* ((glassmacs-home (make-temp-file "glassmacs-viewer-history-" t))
+         (glassmacs-document-jobs--registry nil)
+         (glassmacs-document-use-job-adapter t)
+         (glassmacs-document-remember-build-outputs t)
+         (glassmacs-render-open-output t)
+         (source "/tmp/research/report.qmd")
+         (output "/tmp/research/report.html")
+         log)
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name source)
+          (cl-letf (((symbol-function 'glassmacs-document-local-start)
+                     (lambda (job _program _arguments on-success)
+                       (setq log (generate-new-buffer " *Glassmacs Failed Viewer*"))
+                       (setf (glassmacs-document-job-log-buffer job) log)
+                       (with-current-buffer log
+                         (insert "Output created: report.html\n"))
+                       (glassmacs-document-job-transition job 'running)
+                       (glassmacs-document-job-transition job 'succeeded)
+                       (should-error (funcall on-success job)
+                                     :type 'user-error)
+                       'synthetic-process))
+                    ((symbol-function 'glassmacs-open-rendered-output)
+                     (lambda (_output) (user-error "Viewer unavailable")))
+                    ((symbol-function 'display-buffer) (lambda (&rest _) nil)))
+            (should (eq (glassmacs-render-quarto) 'synthetic-process))
+            (should (equal (glassmacs-document-history-find source) output))
+            (should (equal
+                     (glassmacs-document-job-output-file glassmacs-document-last-job)
+                     output))
+            (should (eq (glassmacs-document-job-status glassmacs-document-last-job)
+                        'succeeded))))
+      (when (buffer-live-p log) (kill-buffer log))
+      (delete-directory glassmacs-home t))))
+
 (provide 'test-glassmacs-documents)
 ;;; test-glassmacs-documents.el ends here
