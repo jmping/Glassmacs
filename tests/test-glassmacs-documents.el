@@ -190,6 +190,7 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
 (defmacro glassmacs-documents-test--fresh-shiny (&rest body)
   "Run BODY with no Glassmacs Shiny app running, and stop any it starts."
   `(let ((glassmacs-shiny-process nil)
+         (glassmacs-shiny-job nil)
          (glassmacs-shiny-url nil)
          (glassmacs-shiny--last-start nil))
      (unwind-protect (progn ,@body)
@@ -255,8 +256,8 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
         (setq buffer-file-name (car case))
         (cl-letf (((symbol-function 'executable-find) (lambda (p) (concat "/bin/" p)))
                   ((symbol-function 'glassmacs-shiny--start)
-                   (lambda (_description command directory _restart)
-                     (setq started (list command directory)))))
+                   (lambda (_description command directory _restart &optional source)
+                     (setq started (list command directory source)))))
           (glassmacs-run-interactive-document))
         (setq buffer-file-name nil))
       (let ((command (car started)))
@@ -265,7 +266,8 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
         ;; The app listens only locally, and Glassmacs opens the browser.
         (should (cl-some (lambda (arg) (string-match-p "127\\.0\\.0\\.1\\|--no-browser" arg))
                          command))
-        (should (equal (nth 1 started) "/tmp/app/"))))))
+        (should (equal (nth 1 started) "/tmp/app/"))
+        (should (equal (nth 2 started) (car case)))))))
 
 (ert-deftest glassmacs-documents-render-runs-interactive-documents ()
   (glassmacs-chunks-test--in-document "app.Rmd" "---\nruntime: shiny\n---\n"
@@ -495,6 +497,100 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
       (when (process-live-p process) (delete-process process))
       (when (get-buffer glassmacs-shiny-buffer-name)
         (kill-buffer glassmacs-shiny-buffer-name)))))
+
+
+(ert-deftest glassmacs-documents-shiny-uses-app-entry-not-selected-source ()
+  "Job identity must not change with the currently selected unrelated buffer."
+  (let* ((directory (make-temp-file "glassmacs-shiny-identity-" t))
+         (app (expand-file-name "app.R" directory))
+         (glassmacs-document-use-job-adapter t))
+    (unwind-protect
+        (glassmacs-documents-test--fresh-shiny
+         (write-region "shiny::shinyApp(ui = NULL, server = NULL)"
+                       nil app)
+         (with-temp-buffer
+           (setq buffer-file-name "/tmp/unrelated/draft.R")
+           (glassmacs-shiny--start
+            "synthetic app" '("sh" "-c" "sleep 30")
+            directory #'ignore)
+           (should (glassmacs-document-job-p glassmacs-shiny-job))
+           (should (equal
+                    (glassmacs-document-context-source
+                     (glassmacs-document-job-context glassmacs-shiny-job))
+                    app))
+           (should (eq (glassmacs-document-job-status glassmacs-shiny-job)
+                       'running))
+           (glassmacs-shiny-stop)
+           (should (eq (glassmacs-document-job-status glassmacs-shiny-job)
+                       'cancelled))))
+      (delete-directory directory t))))
+
+(ert-deftest glassmacs-documents-shiny-interactive-reload-captures-source ()
+  "Reload uses the original document even when its buffer is no longer current."
+  (let (called)
+    (with-temp-buffer
+      (insert "---\nruntime: shiny\n---\n")
+      (set-buffer-modified-p nil)
+      (setq buffer-file-name "/tmp/one/report.Rmd")
+      (cl-letf (((symbol-function 'executable-find)
+                 (lambda (program) (concat "/bin/" program)))
+                ((symbol-function 'glassmacs-shiny--start)
+                 (lambda (description command directory restart &optional source)
+                   (push (list description command directory source) called)
+                   (when (= (length called) 1)
+                     ;; An explicit reload after the document buffer is gone
+                     ;; must not consult the new current source buffer.
+                     (with-temp-buffer
+                       (setq buffer-file-name "/tmp/two/other.Rmd")
+                       (funcall restart))))))
+        (glassmacs-run-interactive-document)))
+    (should (= (length called) 2))
+    (should (equal (nth 3 (car called)) "/tmp/one/report.Rmd"))
+    (should (equal (car called) (cadr called)))))
+
+(ert-deftest glassmacs-documents-shiny-launch-failure-records-failed-job ()
+  "A failed start must not leave a pending or running phantom record."
+  (let* ((glassmacs-document-use-job-adapter t)
+         (glassmacs-shiny-job nil)
+         (glassmacs-shiny-process nil)
+         (glassmacs-shiny--last-start nil))
+    (cl-letf (((symbol-function 'make-process)
+               (lambda (&rest _) (signal 'file-error '("cannot launch")))))
+      (should-error
+       (glassmacs-shiny--start
+        "bad app" '("no-such-program") temporary-file-directory #'ignore)
+       :type 'file-error))
+    (should (glassmacs-document-job-p glassmacs-shiny-job))
+    (should (eq (glassmacs-document-job-status glassmacs-shiny-job)
+                'failed))
+    (should (string-match-p "cannot launch"
+                            (glassmacs-document-job-error glassmacs-shiny-job)))
+    (should-not glassmacs-shiny-process)
+    (should-not glassmacs-shiny--last-start)))
+
+(ert-deftest glassmacs-documents-shiny-early-process-exit-is-terminal ()
+  "A short-lived failed child must be reconciled even if it exits at start."
+  (let ((glassmacs-document-use-job-adapter t))
+    (glassmacs-documents-test--fresh-shiny
+     (let* ((process
+             (glassmacs-shiny--start
+              "short app" '("sh" "-c" "exit 7")
+              temporary-file-directory #'ignore))
+            (job glassmacs-shiny-job))
+       (glassmacs-documents-test--wait-for
+        (lambda () (not (process-live-p process))))
+       (accept-process-output nil 0.01)
+       (should (eq (glassmacs-document-job-status job) 'failed))
+       (should (string-match-p "exit 7" (glassmacs-document-job-error job)))
+       (should-not glassmacs-shiny-process)))))
+
+(ert-deftest glassmacs-documents-shiny-refuses-remote-app-directory ()
+  (let ((glassmacs-document-use-job-adapter t))
+    (should-error
+     (glassmacs-shiny--start
+      "remote app" '("sh" "-c" "true")
+      "/ssh:host:/tmp/project/" #'ignore)
+     :type 'user-error)))
 
 (provide 'test-glassmacs-documents)
 ;;; test-glassmacs-documents.el ends here
