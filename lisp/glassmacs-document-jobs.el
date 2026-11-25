@@ -179,6 +179,34 @@ This is a shallow copy of the list, not a durable process registry."
   (setq tabulated-list-entries #'glassmacs-document-jobs--entries)
   (tabulated-list-init-header))
 
+(defcustom glassmacs-document-jobs-display-placement
+  'follow-preference
+  "Where to present the research jobs dashboard and its retained logs.
+On graphical macOS, 'follow-preference gives each utility an independent
+native window.  'current-window uses ordinary Emacs display rules.
+This option never changes process ownership or restarts a job."
+  :type '(choice (const :tag "Native window on graphical macOS" follow-preference)
+                 (const :tag "Standard Emacs display" current-window))
+  :group 'glassmacs-document-jobs)
+
+(defun glassmacs-document-jobs--display-auxiliary (buffer)
+  "Present local utility BUFFER without replacing an active source document.
+Only explicitly invoked commands reach this function.  Reuse an existing
+suitable view; fall back to Emacs display in terminal sessions.  No job
+state is changed, and no process or external viewer is started."
+  (unless (buffer-live-p buffer)
+    (user-error "Research utility buffer no longer exists"))
+  (if (and (eq system-type 'darwin)
+           (display-graphic-p)
+           (eq glassmacs-document-jobs-display-placement 'follow-preference))
+      (progn
+        (require 'glassmacs-presentation-model)
+        (or (glassmacs-presentation-find-suitable-view
+             buffer 'open 'new-frame)
+            (display-buffer-pop-up-frame
+             buffer '((inhibit-same-window . t) (reusable-frames . nil)))))
+    (display-buffer buffer)))
+
 (defun glassmacs-document-jobs-show ()
   "Display opt-in local research jobs without starting or resuming any work.
 The dashboard is a snapshot refreshed explicitly with g; it does not poll.
@@ -189,7 +217,7 @@ Separate remote ESS and durable R jobs are not represented until accepted."
     (with-current-buffer buffer
       (glassmacs-document-jobs-mode)
       (tabulated-list-print t))
-    (display-buffer buffer)
+    (glassmacs-document-jobs--display-auxiliary buffer)
     buffer))
 
 (defun glassmacs-document-jobs-refresh ()
@@ -214,7 +242,7 @@ Separate remote ESS and durable R jobs are not represented until accepted."
                  (glassmacs-document-jobs--selected))))
     (unless (buffer-live-p buffer)
       (user-error "This job has no retained log"))
-    (display-buffer buffer)))
+    (glassmacs-document-jobs--display-auxiliary buffer)))
 
 (declare-function glassmacs-open-rendered-output "glassmacs-documents" (output))
 
