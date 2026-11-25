@@ -201,10 +201,15 @@ state is changed, and no process or external viewer is started."
            (eq glassmacs-document-jobs-display-placement 'follow-preference))
       (progn
         (require 'glassmacs-presentation-model)
-        (or (glassmacs-presentation-find-suitable-view
-             buffer 'open 'new-frame)
+        (let ((existing (glassmacs-presentation-find-suitable-view
+                         buffer 'open 'new-frame)))
+          (if existing
+              (progn
+                (select-frame-set-input-focus (window-frame existing))
+                (select-window existing)
+                existing)
             (display-buffer-pop-up-frame
-             buffer '((inhibit-same-window . t) (reusable-frames . nil)))))
+             buffer '((inhibit-same-window . t) (reusable-frames . nil))))))
     (display-buffer buffer)))
 
 (defun glassmacs-document-jobs-show ()
