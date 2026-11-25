@@ -318,9 +318,13 @@ terminates it. One app runs at a time.
 
 When the experimental document job adapter is enabled, a local Shiny process
 also receives a conservative job-status record (running, succeeded, failed,
-or cancelled). Its existing startup, localhost-only URL discovery, stop/reload
-and single-app ownership remain authoritative; this does not turn Shiny into
-a durable or remotely reattachable job. The source association is an in-memory
+or cancelled). The recorded source is the captured app entry point (app.R or
+ui.R) or the exact interactive .Rmd/.qmd source, **never** whichever file is
+selected after launch. Explicit reload retains this source even when its
+buffer is closed. A process creation failure records a failed job; a very
+short-lived child is reconciled after registration. The existing localhost-only
+URL discovery, stop/reload and single-app ownership remain authoritative;
+this does not turn Shiny into a durable or remotely reattachable job. The source association is an in-memory
 status aid, not persistent project restoration.
 
 **Optional project context:** Setting `glassmacs-document-detect-project-root`
