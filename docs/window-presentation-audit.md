@@ -73,3 +73,13 @@ adapter never opens completed output, connects to SSH or starts/replays a job.
 - Keep all physical GUI, trusted SSH, Intel, clean-machine and
   corresponding-source checks explicitly NOT RUN until separately evidenced.
   No DMG publication is authorized by these slices.
+
+## November 25 follow-up: exact console and R Help identity
+
+Window cycles 3 and 4 extend the presentation stack with explicit identity-preserving navigation:
+
+- R console navigation lists registered live sessions by immutable session ID; switching a console view does not change an R source document's execution target. A separate *Focus Linked R Console* source action refuses a stale explicit target rather than silently switching sessions. Starting another console remains an explicit operation.
+- R Help navigation reuses the view showing the exact requested Help buffer, focuses that frame when graphical, and creates distinct views for different topics rather than replacing an unrelated document. Side-pane overrides remain opt-in, and terminal presentation falls back to Emacs display.
+- CI tests include same-name session ambiguity, stale targets, preserving source targets when switching console views, repeated Help topics, distinct Help topics, and terminal fallback. A preexisting console-chooser test was updated to use the new exact-selection interface.
+
+These slices remain stacked on #128 and draft #112. Full exact-head CI validation of the descendant stack is necessary before consolidation. Packaged Cocoa GUI (including Finder, closing only a console frame, and multiple simultaneous Help topics) is NOT RUN; no automatic process restart, remote SSH operation, main merge, or DMG publication is authorized.

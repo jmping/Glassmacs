@@ -422,6 +422,70 @@
                  (user-error (error-message-string err)))
                "No live R console")))))
 
+
+(ert-deftest glassmacs-r-help-native-reuse-focuses-exact-topic ()
+  "Repeated R Help requests focus the same view without allocating a frame."
+  (let ((glassmacs-r-help-placement 'separate-window)
+        (buffer (generate-new-buffer "*help[R] lm"))
+        (view (selected-window))
+        (focus nil)
+        (created nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p)
+                   (lambda (&optional _) t))
+                  ((symbol-function 'glassmacs-presentation-find-suitable-view)
+                   (lambda (target &rest _)
+                     (when (eq target buffer) view)))
+                  ((symbol-function 'select-frame-set-input-focus)
+                   (lambda (frame) (setq focus frame)))
+                  ((symbol-function 'select-window) (lambda (&rest _) view))
+                  ((symbol-function 'display-buffer-pop-up-frame)
+                   (lambda (&rest _) (setq created t))))
+          (should (eq (glassmacs-r--display-help buffer nil) view))
+          (should (eq focus (window-frame view)))
+          (should-not created))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-r-help-separate-topics-allocate-distinct-views ()
+  "No unrelated R Help topic may satisfy exact-topic view reuse."
+  (let ((glassmacs-r-help-placement 'separate-window)
+        (first (generate-new-buffer "*help[R] lm"))
+        (second (generate-new-buffer "*help[R] predict"))
+        (created nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p)
+                   (lambda (&optional _) t))
+                  ((symbol-function 'glassmacs-presentation-find-suitable-view)
+                   (lambda (target &rest _)
+                     (and (eq target first) (selected-window))))
+                  ((symbol-function 'display-buffer-pop-up-frame)
+                   (lambda (target &rest _)
+                     (setq created target)
+                     (selected-window))))
+          (glassmacs-r--display-help second nil)
+          (should (eq created second)))
+      (kill-buffer first)
+      (kill-buffer second))))
+
+(ert-deftest glassmacs-r-help-headless-prefers-normal-display ()
+  "Terminal Help never tries a graphical frame when side placement is off."
+  (let ((glassmacs-r-help-placement 'separate-window)
+        (buffer (generate-new-buffer "*help[R] terminal"))
+        (displayed nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'display-graphic-p)
+                   (lambda (&optional _) nil))
+                  ((symbol-function 'glassmacs-presentation-find-suitable-view)
+                   (lambda (&rest _) nil))
+                  ((symbol-function 'display-buffer)
+                   (lambda (target &rest _)
+                     (setq displayed target) (selected-window)))
+                  ((symbol-function 'display-buffer-pop-up-frame)
+                   (lambda (&rest _) (ert-fail "Headless Help opened a frame"))))
+          (glassmacs-r--display-help buffer nil)
+          (should (eq displayed buffer)))
+      (kill-buffer buffer))))
+
 (provide 'test-glassmacs-r-ui)
 ;;; test-glassmacs-r-ui.el ends here
 
