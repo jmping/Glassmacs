@@ -137,7 +137,8 @@ during classification."
           (pcase glassmacs-r-console-placement
             ('separate-window 'new-frame)
             ('current-window 'reuse-current)
-            (other other))))
+            ((or 'split-right 'split-below) glassmacs-r-console-placement)
+            (_ 'reuse-current))))
     ('r-help
      (and (boundp 'glassmacs-r-help-placement)
           (pcase glassmacs-r-help-placement
