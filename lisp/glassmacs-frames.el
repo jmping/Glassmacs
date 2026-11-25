@@ -69,21 +69,28 @@ On macOS, preserve the source document by opening a new frame."
              '(glassmacs--preferences-buffer-p
                glassmacs--display-preferences))
 
+(defun glassmacs--preferences-group-frame (group)
+  "Find a dedicated visible Customize frame for exactly GROUP.
+A frame that was repurposed to another buffer is not a suitable view."
+  (cl-find-if
+   (lambda (frame)
+     (and (eq (frame-parameter frame 'glassmacs-customize-group) group)
+          (frame-visible-p frame)
+          (let ((window (frame-selected-window frame)))
+            (and (window-live-p window)
+                 (with-current-buffer (window-buffer window)
+                   (derived-mode-p 'custom-mode))))))
+   (frame-list)))
+
 (defun glassmacs-open-preferences-group (group)
   "Open Customize GROUP in its own frame on graphical macOS.
 Customize can switch buffers directly, bypassing display-buffer rules;
 selecting a dedicated frame first protects the source document."
   (let* ((separate (and (display-graphic-p)
                         (eq glassmacs-preferences-opening-policy 'new-frame)))
-         ;; Reuse only a frame explicitly associated with this group.  A
-         ;; different Customize frame may contain unsaved edits and must
-         ;; not be commandeered by an unrelated Preferences command.
-         (existing (and separate
-                        (cl-find-if
-                         (lambda (frame)
-                           (eq (frame-parameter frame 'glassmacs-customize-group)
-                               group))
-                         (frame-list))))
+         ;; A different group may have unsaved Customize edits.  Never
+         ;; commandeer that frame as a convenient presentation target.
+         (existing (and separate (glassmacs--preferences-group-frame group)))
          (target (or existing (and separate (make-frame)))))
     (if target
         (progn
