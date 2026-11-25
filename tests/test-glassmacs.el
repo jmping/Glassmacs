@@ -1652,6 +1652,8 @@ otherwise never build."
         (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
                   ((symbol-function 'glassmacs-presentation-find-suitable-view)
                    (lambda (&rest _) nil))
+                  ((symbol-function 'glassmacs--no-visible-graphical-frame-p)
+                   (lambda () nil))
                   ((symbol-function 'glassmacs--ensure-visible-frame)
                    (lambda () (setq bootstrap-called t) t))
                   ((symbol-function 'glassmacs--document-opening-action)
