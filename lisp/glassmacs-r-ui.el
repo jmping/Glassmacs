@@ -83,6 +83,9 @@ these same commands, so they cannot disagree about the queue."
     (define-key menu [rename-console]
       '(menu-item "Rename R Console…" glassmacs-r-rename-console
                   :enable (glassmacs-r-ui--menu-has-session-p)))
+    (define-key menu [focus-target-console]
+      '(menu-item "Focus Linked R Console" glassmacs-r-show-target-console
+                  :enable glassmacs-r-target-session))
     (define-key menu [show-target]
       '(menu-item "Show Current R Target" glassmacs-r-show-target-session))
     (define-key menu [clear-target]
