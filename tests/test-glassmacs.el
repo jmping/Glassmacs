@@ -1642,25 +1642,27 @@ otherwise never build."
     (should-not (glassmacs-presentation-role-default-placement 'utility))))
 
 (ert-deftest glassmacs-presentation-bootstrap-respects-new-frame-policy ()
-  "A bootstrap callback cannot replace the source document for a new frame."
+  "A native document open must not invoke the bootstrap replacement path."
   (let ((buffer (generate-new-buffer " *presentation-bootstrap-target*"))
         (source (current-buffer))
         (glassmacs-document-opening-policy 'new-frame)
+        (bootstrap-called nil)
         (requested nil))
     (unwind-protect
         (cl-letf (((symbol-function 'display-graphic-p) (lambda (&optional _) t))
                   ((symbol-function 'glassmacs-presentation-find-suitable-view)
                    (lambda (&rest _) nil))
                   ((symbol-function 'glassmacs--ensure-visible-frame)
-                   (lambda () t))
+                   (lambda () (setq bootstrap-called t) t))
                   ((symbol-function 'glassmacs--document-opening-action)
                    (lambda (_) 'new-frame))
                   ((symbol-function 'make-frame)
                    (lambda (&rest _)
                      (setq requested 'new-frame)
-                     (error "Frame creation intercepted safely"))))
+                     (error "Native frame creation intercepted"))))
           (should-error (glassmacs-present-buffer buffer 'open))
           (should (eq requested 'new-frame))
+          (should-not bootstrap-called)
           (should (eq (current-buffer) source)))
       (kill-buffer buffer))))
 
