@@ -8,6 +8,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'project)
+(require 'tabulated-list)
 
 (defgroup glassmacs-document-jobs nil
   "Document build context and lifecycle records."
@@ -112,6 +113,155 @@ transition back to `running' or `pending', preventing silent replay."
     (when error
       (setf (glassmacs-document-job-error job) error)))
   job)
+
+
+;;; In-memory activity index and explicit, capability-scoped actions
+
+(defconst glassmacs-document-jobs-limit 100
+  "Maximum number of in-memory research job records retained per session.")
+
+(defvar glassmacs-document-jobs--registry nil
+  "Newest-first transient job records.  Never written to disk.")
+
+(defun glassmacs-document-jobs-register (job)
+  "Retain JOB for the session dashboard without changing its lifecycle.
+Callers register only work they explicitly started.  No polling, file I/O,
+process launch, remote connection or automatic job restoration occurs."
+  (unless (glassmacs-document-job-p job)
+    (user-error "Only a research job may be registered"))
+  (when (cl-find (glassmacs-document-job-id job)
+                 glassmacs-document-jobs--registry
+                 :key #'glassmacs-document-job-id :test #'equal)
+    (user-error "Research job ID already registered"))
+  (push job glassmacs-document-jobs--registry)
+  (when (> (length glassmacs-document-jobs--registry)
+           glassmacs-document-jobs-limit)
+    (setcdr (nthcdr (1- glassmacs-document-jobs-limit)
+                    glassmacs-document-jobs--registry) nil))
+  job)
+
+(defun glassmacs-document-jobs-list ()
+  "Return a fresh list of the current session's job records, newest first.
+This is a shallow copy of the list, not a durable process registry."
+  (copy-sequence glassmacs-document-jobs--registry))
+
+(defun glassmacs-document-jobs--entries ()
+  "Render immutable identifiers and current status for the dashboard."
+  (mapcar
+   (lambda (job)
+     (list (glassmacs-document-job-id job)
+           (vector
+            (symbol-name (glassmacs-document-job-status job))
+            (symbol-name (glassmacs-document-job-kind job))
+            (glassmacs-document-job-id job)
+            (glassmacs-document-context-source
+             (glassmacs-document-job-context job))
+            (or (glassmacs-document-job-output-file job) ""))))
+   (glassmacs-document-jobs-list)))
+
+(defvar glassmacs-document-jobs-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map tabulated-list-mode-map)
+    (define-key map (kbd "g") #'glassmacs-document-jobs-refresh)
+    (define-key map (kbd "RET") #'glassmacs-document-jobs-show-log)
+    (define-key map (kbd "l") #'glassmacs-document-jobs-show-log)
+    (define-key map (kbd "o") #'glassmacs-document-jobs-open-output)
+    (define-key map (kbd "c") #'glassmacs-document-jobs-cancel)
+    map)
+  "Keys for the read-only research jobs dashboard.")
+
+(define-derived-mode glassmacs-document-jobs-mode tabulated-list-mode "Glassmacs-Jobs"
+  "Read-only in-session research activity, with explicitly requested actions."
+  (setq tabulated-list-format
+        [("Status" 12 t) ("Kind" 12 t) ("Job" 22 t)
+         ("Source" 52 t) ("Output" 52 t)])
+  (setq tabulated-list-padding 2)
+  (setq tabulated-list-entries #'glassmacs-document-jobs--entries)
+  (tabulated-list-init-header))
+
+(defun glassmacs-document-jobs-show ()
+  "Display opt-in local research jobs without starting or resuming any work.
+The dashboard is a snapshot refreshed explicitly with g; it does not poll.
+Only registered local document renders and Shiny apps are included.
+Separate remote ESS and durable R jobs are not represented until accepted."
+  (interactive)
+  (let ((buffer (get-buffer-create "*Glassmacs Research Jobs*")))
+    (with-current-buffer buffer
+      (glassmacs-document-jobs-mode)
+      (tabulated-list-print t))
+    (display-buffer buffer)
+    buffer))
+
+(defun glassmacs-document-jobs-refresh ()
+  "Refresh the read-only view; do not contact remote processes or filesystem."
+  (interactive)
+  (unless (derived-mode-p 'glassmacs-document-jobs-mode)
+    (user-error "Not in the research jobs dashboard"))
+  (tabulated-list-print t))
+
+(defun glassmacs-document-jobs--selected ()
+  "Return the exact row's live in-memory job record."
+  (let ((id (tabulated-list-get-id)))
+    (or (and id
+             (cl-find id glassmacs-document-jobs--registry
+                      :key #'glassmacs-document-job-id :test #'equal))
+        (user-error "No registered research job selected"))))
+
+(defun glassmacs-document-jobs-show-log ()
+  "Explicitly show the selected job's retained log, if available."
+  (interactive)
+  (let ((buffer (glassmacs-document-job-log-buffer
+                 (glassmacs-document-jobs--selected))))
+    (unless (buffer-live-p buffer)
+      (user-error "This job has no retained log"))
+    (display-buffer buffer)))
+
+(declare-function glassmacs-open-rendered-output "glassmacs-documents" (output))
+
+(defun glassmacs-document-jobs-open-output ()
+  "Explicitly open the selected completed local document output."
+  (interactive)
+  (let* ((job (glassmacs-document-jobs--selected))
+         (output (glassmacs-document-job-output-file job)))
+    (unless (and (eq (glassmacs-document-job-status job) 'succeeded)
+                 (eq (glassmacs-document-context-location
+                      (glassmacs-document-job-context job)) 'local)
+                 (stringp output) (not (file-remote-p output)))
+      (user-error "No completed local output available for this job"))
+    (glassmacs-open-rendered-output output)))
+
+(declare-function glassmacs-document-local-cancel "glassmacs-document-local" (job))
+(declare-function glassmacs-shiny-stop "glassmacs-shiny" ())
+
+(defun glassmacs-document-jobs-cancel ()
+  "Confirm and cancel only the selected owned, running local process.
+The dashboard never cancels an ESS process, an unverified remote job, or a
+process it does not own.  Shiny continues to use its single-app owner."
+  (interactive)
+  (let* ((job (glassmacs-document-jobs--selected))
+         (kind (glassmacs-document-job-kind job))
+         (process (glassmacs-document-job-process job))
+         (local (eq (glassmacs-document-context-location
+                     (glassmacs-document-job-context job)) 'local)))
+    (unless (and local (eq (glassmacs-document-job-status job) 'running)
+                 (process-live-p process))
+      (user-error "No safely cancellable local process for this job"))
+    (cond
+     ((and (eq kind 'shiny)
+           (boundp 'glassmacs-shiny-job)
+           (eq job glassmacs-shiny-job)
+           (boundp 'glassmacs-shiny-process)
+           (eq process glassmacs-shiny-process))
+      (when (y-or-n-p "Stop the selected Shiny application? ")
+        (glassmacs-shiny-stop)))
+     ((and (memq kind '(rmarkdown quarto sweave))
+           (fboundp 'glassmacs-document-local-cancel))
+      (when (y-or-n-p "Cancel the selected local document build? ")
+        (glassmacs-document-local-cancel job)))
+     (t
+      (user-error "No approved cancellation adapter for this job")))
+    (when (derived-mode-p 'glassmacs-document-jobs-mode)
+      (tabulated-list-print t))))
 
 (provide 'glassmacs-document-jobs)
 ;;; glassmacs-document-jobs.el ends here
