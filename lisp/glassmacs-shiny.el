@@ -146,6 +146,8 @@ explicit user-requested reload function; no process is replayed on startup."
     (setq glassmacs-shiny-url nil
           glassmacs-shiny-job job
           glassmacs-shiny-process nil)
+    (when job
+      (glassmacs-document-jobs-register job))
     (condition-case err
         (setq process
               (let ((default-directory dir))
