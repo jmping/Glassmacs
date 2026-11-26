@@ -124,7 +124,8 @@ selecting a dedicated frame first protects the source document."
 (defun glassmacs--focus-buffer-in-existing-tab (buffer &optional destination)
   "Focus BUFFER in an existing tab without replacing any window contents.
 This is an explicit navigation operation, not a presentation-policy
-lookup.  Restore each frame's selected tab when BUFFER is absent."
+lookup.  Restore each frame's selected tab when BUFFER is absent, even
+when a tab switch fails; do not silently create a replacement view."
   (require 'tab-bar)
   (let ((frames (if destination (list destination)
                   (cons (selected-frame)
@@ -136,21 +137,25 @@ lookup.  Restore each frame's selected tab when BUFFER is absent."
           (with-selected-frame frame
             (let ((original (1+ (tab-bar--current-tab-index)))
                   (count (length (funcall tab-bar-tabs-function frame)))
-                  (matched nil))
+                  matched)
               (unwind-protect
-                  (dotimes (index count)
-                    (tab-bar-select-tab (1+ index))
-                    (let ((window (get-buffer-window buffer frame)))
-                      (when (and (window-live-p window)
-                                 (eq (window-buffer window) buffer))
-                        (setq matched window)
-                        (throw 'found
-                               (progn
-                                 (select-frame-set-input-focus frame)
-                                 (select-window window)
-                                 window)))))
+                  (condition-case nil
+                      (dotimes (index count)
+                        (tab-bar-select-tab (1+ index))
+                        (let ((window (get-buffer-window buffer frame)))
+                          (when (and (window-live-p window)
+                                     (eq (window-buffer window) buffer))
+                            (setq matched window)
+                            (select-frame-set-input-focus frame)
+                            (select-window window)
+                            (throw 'found window))))
+                    ;; A stale or deleted tab can invalidate the snapshot;
+                    ;; recover the prior selection and try other frames.
+                    (error nil))
                 (unless matched
-                  (tab-bar-select-tab original)))))))
+                  (condition-case nil
+                      (tab-bar-select-tab original)
+                    (error nil)))))))
       nil)))
 
 (defun glassmacs--read-open-document ()
