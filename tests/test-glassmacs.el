@@ -3643,3 +3643,43 @@ example) can run first and delay the sentinel."
                            'glassmacs-frames))))
         (kill-buffer custom)
         (kill-buffer ordinary)))))
+
+(ert-deftest glassmacs-focus-hidden-tab-restores-selection-after-switch-error ()
+  "An inactive-tab navigation failure must not strand the user in another tab."
+  (let ((tab-bar-mode t)
+        (tab-bar-tabs-function (lambda (_frame) '(one two three)))
+        (current 2)
+        (buffer (generate-new-buffer " *glassmacs-failing-tab*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'tab-bar--current-tab-index)
+                   (lambda () (1- current)))
+                  ((symbol-function 'tab-bar-select-tab)
+                   (lambda (index)
+                     (if (= index 3)
+                         (error "Stale tab snapshot")
+                       (setq current index))))
+                  ((symbol-function 'get-buffer-window)
+                   (lambda (&rest _) nil)))
+          (should-not (glassmacs--focus-buffer-in-existing-tab
+                       buffer (selected-frame)))
+          (should (= current 2)))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-focus-hidden-tab-does-not-mask-real-match ()
+  "Successful tab navigation must retain the selected destination."
+  (let ((tab-bar-mode t)
+        (tab-bar-tabs-function (lambda (_frame) '(one two)))
+        (current 1)
+        (buffer (window-buffer (selected-window))))
+    (cl-letf (((symbol-function 'tab-bar--current-tab-index)
+               (lambda () (1- current)))
+              ((symbol-function 'tab-bar-select-tab)
+               (lambda (index) (setq current index)))
+              ((symbol-function 'get-buffer-window)
+               (lambda (_buffer _frame)
+                 (and (= current 2) (selected-window))))
+              ((symbol-function 'select-frame-set-input-focus) #'ignore))
+      (should (eq (glassmacs--focus-buffer-in-existing-tab
+                   buffer (selected-frame))
+                  (selected-window)))
+      (should (= current 2)))))
