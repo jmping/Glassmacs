@@ -83,3 +83,9 @@ id = "DOC-PRE-CANDIDATE-AUDIT"
 path = "docs/pre-candidate-double-audit.md"
 category = "development"
 status = "informational"
+
+[[document]]
+id = "DOC-VALIDATION-2026-11-26"
+path = "docs/validation-candidate-2026-11-26.md"
+category = "development"
+status = "informational"
