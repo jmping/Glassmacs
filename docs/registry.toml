@@ -77,3 +77,9 @@ id = "DOC-RESEARCH-ACCEPT"
 path = "docs/research-document-integration-acceptance.md"
 category = "development"
 status = "informational"
+
+[[document]]
+id = "DOC-PRE-CANDIDATE-AUDIT"
+path = "docs/pre-candidate-double-audit.md"
+category = "development"
+status = "informational"
