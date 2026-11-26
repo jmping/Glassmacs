@@ -156,7 +156,7 @@ when a tab switch fails; do not silently create a replacement view."
                   (condition-case nil
                       (tab-bar-select-tab original)
                     (error nil)))))))
-      nil)))
+      nil))))
 
 (defun glassmacs--read-open-document ()
   "Prompt for an open ordinary document and return its buffer.
