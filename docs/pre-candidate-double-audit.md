@@ -1,7 +1,7 @@
 # Glassmacs pre-candidate double audit and hardening ledger
 
 > **Document ID:** DOC-PRE-CANDIDATE-AUDIT  
-> **Status:** Informational, in progress (draft #137)  
+> **Status:** Informational; source/automated hardening audit complete, physical release gates NOT RUN  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-11-26  
 > **Last reviewed:** 2026-11-26  
@@ -10,7 +10,7 @@
 
 ## Scope and evidence boundary
 
-This audit is anchored to draft integration PR [#112](https://github.com/jmping/Glassmacs/pull/112), baseline `b0b0e7446239d0122dfccddeb3d12aa80eec044d`. PR #137 is a stacked hardening slice, not a publication candidate. The audit deliberately separates *inspected code and automated checks* from *observed physical Cocoa/SSH behavior*. No physical Mac, clean user account, trusted SSH host, Intel test, notarization or distribution test has been performed as part of this pass.
+This audit began at draft integration PR [#112](https://github.com/jmping/Glassmacs/pull/112), baseline `b0b0e7446239d0122dfccddeb3d12aa80eec044d`. The hardening from former stacked PR #137 has been fast-forward consolidated into the validated source snapshot `9d14aeebf16a84cd143e52911f5a503c53731303` ([CI run 45755474378](https://github.com/jmping/Glassmacs/actions/runs/45755474378), all four substantive jobs successful). PR #112 remains draft and is not a publication candidate. The audit deliberately separates *inspected code and automated checks* from *observed physical Cocoa/SSH behavior*. No physical Mac, clean user account, trusted SSH host, Intel test, notarization or distribution test has been performed as part of this pass.
 
 The two independent passes are (A) behavior/data-integrity/lifecycle and (B) packaging/security/release operations. Every risk below is a finding or an explicit verification gap, not a claim of broad certification.
 
@@ -57,4 +57,4 @@ The two independent passes are (A) behavior/data-integrity/lifecycle and (B) pac
 
 ## Tracking and next actions
 
-The #137 code fixes are pending exact-head CI and should only fast-forward to #112 after green checks and review of the resulting diff. The audit remains in progress, not a certification. Next: verify required CI jobs on the final combined head; run the physical packaged macOS acceptance harness and the manual R/Quarto/close matrix; separately triage #102 for trusted SSH; inspect signing/licenses; record defects and repeat affected gates before selecting a release candidate.
+**Verified at frozen source SHA `9d14aee`:** PR #137's hardening changes are incorporated into #112 via protected fast-forward. [Exact-head run 45755474378](https://github.com/jmping/Glassmacs/actions/runs/45755474378) reports `changes`, `emacs-batch`, **real `ess-r-integration`**, and `macos-launcher` success. No GUI, Intel, clean-machine, trusted SSH or Gatekeeper pass is inferred. Next: build the frozen private validation candidate on a physical Mac using [the Copilot handoff](validation-candidate-2026-11-26.md); run packaged GUI and R/Quarto/close acceptance; separately triage #102 for trusted SSH; inspect signing/licenses; record defects and repeat affected gates before authorizing any public release.
