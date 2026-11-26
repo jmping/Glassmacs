@@ -135,12 +135,42 @@
                     :type 'user-error))
     (let ((glassmacs-document-jobs-limit 3))
       (dotimes (n 5)
-        (glassmacs-document-jobs-register
-         (glassmacs-document-jobs-test--job
-          (format "new-%d" n) (format "/tmp/report-%d.qmd" n) 'quarto)))
+        (let ((job (glassmacs-document-jobs-test--job
+                    (format "new-%d" n) (format "/tmp/report-%d.qmd" n)
+                    'quarto)))
+          (glassmacs-document-job-transition job 'running)
+          (glassmacs-document-job-transition job 'succeeded)
+          (glassmacs-document-jobs-register job)))
       (should (equal (mapcar #'glassmacs-document-job-id
                              (glassmacs-document-jobs-list))
                      '("new-4" "new-3" "new-2"))))))
+
+(ert-deftest glassmacs-document-jobs-retains-active-ownership-at-limit ()
+  "Full history cannot hide running, pending or uncertain job ownership."
+  (let ((glassmacs-document-jobs--registry nil)
+        (glassmacs-document-jobs-limit 2))
+    (let ((running (glassmacs-document-jobs-test--job
+                    "running" "/tmp/running.Rmd" 'rmarkdown))
+          (uncertain (glassmacs-document-jobs-test--job
+                      "uncertain" "/tmp/uncertain.qmd" 'quarto))
+          (pending (glassmacs-document-jobs-test--job
+                    "pending" "/tmp/pending.Rmd" 'rmarkdown)))
+      (glassmacs-document-job-transition running 'running)
+      (glassmacs-document-job-transition uncertain 'running)
+      (glassmacs-document-job-transition uncertain 'uncertain)
+      (dolist (job (list running uncertain pending))
+        (glassmacs-document-jobs-register job))
+      (should (= (length (glassmacs-document-jobs-list)) 3))
+      (should (memq running (glassmacs-document-jobs-list)))
+      (should (memq uncertain (glassmacs-document-jobs-list)))
+      (should (memq pending (glassmacs-document-jobs-list)))
+      (let ((completed (glassmacs-document-jobs-test--job
+                        "completed" "/tmp/done.qmd" 'quarto)))
+        (glassmacs-document-job-transition completed 'running)
+        (glassmacs-document-job-transition completed 'succeeded)
+        (glassmacs-document-jobs-register completed)
+        (should-not (memq completed (glassmacs-document-jobs-list)))
+        (should (= (length (glassmacs-document-jobs-list)) 3))))))
 
 (ert-deftest glassmacs-document-jobs-dashboard-is-read-only-and-inert ()
   "Opening the dashboard never opens outputs or launches any processes."
