@@ -364,26 +364,23 @@ selected tab even when a tab-switch hook raises an error."
 (defun glassmacs--buffer-shown-elsewhere-p (buffer windows)
   "Return non-nil when BUFFER has a view outside WINDOWS.
 Include inactive tab views, which ordinary window enumeration omits.
-This avoids killing a document or prompting to hide a live R session
-while another tab still owns a view of that buffer."
+A failed inventory must never be interpreted as permission to discard
+an unsaved document or terminate a live R console.  For inactive tabs,
+use the conservative ownership scanner, which protects the buffer if
+a tab switch fails."
   (or (cl-some (lambda (window) (not (memq window windows)))
                (get-buffer-window-list buffer nil t))
       (cl-some
        (lambda (frame)
          (and (frame-live-p frame)
               (glassmacs--frame-has-hidden-tabs-p frame)
-              (memq buffer (glassmacs--frame-tab-buffers frame))
-              ;; If BUFFER occupies a view in this frame that is not one of
-              ;; the closing windows, keep the buffer alive.  A selected-tab
-              ;; view outside WINDOWS is handled by the first clause.
-              (or (not (memq buffer
-                             (mapcar #'window-buffer
-                                     (cl-remove-if-not
-                                      (lambda (window)
-                                        (eq (window-frame window) frame))
-                                      windows))))
-                  (glassmacs--buffer-in-inactive-tab-p buffer frame))))
+              ;; The selected tab is covered by the visible-view check.
+              ;; Never gate the hidden-tab scan on a preliminary
+              ;; glassmacs--frame-tab-buffers inventory: that scan may
+              ;; fail or see a changing tab and must fail closed.
+              (glassmacs--buffer-in-inactive-tab-p buffer frame)))
        (frame-list))))
+
 
 (defcustom glassmacs-confirm-console-window-close t
   "Ask what to do when the last visible window of a live R console closes.
