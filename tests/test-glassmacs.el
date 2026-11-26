@@ -3806,3 +3806,60 @@ example) can run first and delay the sentinel."
           (should (glassmacs--buffer-in-inactive-tab-p buffer frame))
           (should (= current 1)))
       (kill-buffer buffer))))
+
+(ert-deftest glassmacs-close-review-does-not-skip-failed-inactive-tab-scan ()
+  "Failed inactive-tab scans protect document views even without a pre-scan hit."
+  (let ((frame (selected-frame))
+        (buffer (generate-new-buffer " *glassmacs-close-ownership-failure*"))
+        (scanned nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'get-buffer-window-list)
+                   (lambda (&rest _) nil))
+                  ((symbol-function 'frame-list)
+                   (lambda () (list frame)))
+                  ((symbol-function 'glassmacs--frame-has-hidden-tabs-p)
+                   (lambda (_frame) t))
+                  ((symbol-function 'glassmacs--frame-tab-buffers)
+                   (lambda (&rest _) (ert-fail "Unsafe pre-scan was called")))
+                  ((symbol-function 'glassmacs--buffer-in-inactive-tab-p)
+                   (lambda (candidate other)
+                     (setq scanned (and (eq candidate buffer) (eq other frame)))
+                     t)))
+          (should (glassmacs--buffer-shown-elsewhere-p
+                   buffer (list (selected-window))))
+          (should scanned))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-close-review-healthy-inactive-tab-miss-is-not-owned ()
+  "A conclusive absence does not force all close reviews to cancel."
+  (let ((frame (selected-frame))
+        (buffer (generate-new-buffer " *glassmacs-close-ownership-absent*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'get-buffer-window-list)
+                   (lambda (&rest _) nil))
+                  ((symbol-function 'frame-list)
+                   (lambda () (list frame)))
+                  ((symbol-function 'glassmacs--frame-has-hidden-tabs-p)
+                   (lambda (_frame) t))
+                  ((symbol-function 'glassmacs--buffer-in-inactive-tab-p)
+                   (lambda (_buffer _frame) nil)))
+          (should-not (glassmacs--buffer-shown-elsewhere-p
+                       buffer (list (selected-window)))))
+      (kill-buffer buffer))))
+
+(ert-deftest glassmacs-close-review-other-visible-view-still-protects ()
+  "The existing visible-view protection remains the first decision."
+  (save-window-excursion
+    (delete-other-windows)
+    (let ((buffer (generate-new-buffer " *glassmacs-close-multi-view*")))
+      (unwind-protect
+          (progn
+            (switch-to-buffer buffer)
+            (let ((left (selected-window))
+                  (right (split-window-right)))
+              (set-window-buffer right buffer)
+              (cl-letf (((symbol-function 'glassmacs--buffer-in-inactive-tab-p)
+                         (lambda (&rest _) (ert-fail "Unnecessary tab scan"))))
+                (should (glassmacs--buffer-shown-elsewhere-p
+                         buffer (list left))))))
+        (kill-buffer buffer)))))
