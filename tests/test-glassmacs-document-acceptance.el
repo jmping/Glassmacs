@@ -153,5 +153,29 @@ This is not a native macOS HTML-window or focus test."
           (kill-buffer (glassmacs-document-job-log-buffer job))))
       (delete-directory root t))))
 
+(ert-deftest glassmacs-shiny-preview-requires-loopback-reported-url ()
+  "A child log cannot cause browser navigation to a nonlocal URL."
+  (dolist (allowed '("http://127.0.0.1:3838/"
+                     "http://localhost:4321"
+                     "http://[::1]:8080/path"
+                     "https://127.0.0.1:9443/"))
+    (should (glassmacs-shiny--loopback-url-p allowed)))
+  (dolist (denied '("https://example.org:443/"
+                    "http://127.0.0.2:3838/"
+                    "http://localhost.evil.example:3838/"
+                    "file:///tmp/output"
+                    "http://127.0.0.1/"
+                    "http://attacker@127.0.0.1:8080/"
+                    "http://127.0.0.1:99999/"))
+    (should-not (glassmacs-shiny--loopback-url-p denied)))
+  (with-temp-buffer
+    (insert "Listening on https://example.org:443/\n")
+    (insert "Browse at http://127.0.0.1:3838/\n")
+    (should (equal (glassmacs-shiny--reported-url (current-buffer))
+                   "http://127.0.0.1:3838/")))
+  (with-temp-buffer
+    (insert "Listening on http://localhost.evil.example:3838/\n")
+    (should-not (glassmacs-shiny--reported-url (current-buffer)))))
+
 (provide 'test-glassmacs-document-acceptance)
 ;;; test-glassmacs-document-acceptance.el ends here
