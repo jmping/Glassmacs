@@ -90,7 +90,7 @@ if its output includes a line resembling Shiny's startup message."
                 (port (url-port parsed)))
            (and (member scheme '("http" "https"))
                 (member (downcase (or host ""))
-                        '("127.0.0.1" "localhost" "::1"))
+                        '("127.0.0.1" "localhost" "::1" "[::1]"))
                 (not (url-user parsed))
                 (integerp port) (<= 1 port 65535))))))
 
