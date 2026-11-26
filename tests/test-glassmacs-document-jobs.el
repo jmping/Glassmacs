@@ -133,7 +133,8 @@
                "/tmp/project-b/report.Rmd"))
       (should-error (glassmacs-document-jobs-register second)
                     :type 'user-error))
-    (let ((glassmacs-document-jobs-limit 3))
+    (let ((glassmacs-document-jobs-limit 3)
+          (glassmacs-document-jobs--registry nil))
       (dotimes (n 5)
         (let ((job (glassmacs-document-jobs-test--job
                     (format "new-%d" n) (format "/tmp/report-%d.qmd" n)
