@@ -12,6 +12,7 @@
 (require 'glassmacs-document-jobs)
 (require 'cl-lib)
 (require 'subr-x)
+(require 'url-parse)
 
 (defgroup glassmacs-shiny nil
   "Local Shiny application support."
@@ -77,14 +78,35 @@ open on a page that is not listening yet.  The address is also kept for
       (message "Shiny process stopped (%s); see %s"
                (string-trim event) glassmacs-shiny-buffer-name))))
 
+(defun glassmacs-shiny--loopback-url-p (url)
+  "Whether URL is an HTTP(S) loopback address with an explicit port.
+A child process log must not direct the browser to a remote host, even
+if its output includes a line resembling Shiny's startup message."
+  (and (stringp url)
+       (ignore-errors
+         (let* ((parsed (url-generic-parse-url url))
+                (scheme (url-type parsed))
+                (host (url-host parsed))
+                (port (url-port parsed)))
+           (and (member scheme '("http" "https"))
+                (member (downcase (or host ""))
+                        '("127.0.0.1" "localhost" "::1"))
+                (not (url-user parsed))
+                (integerp port) (<= 1 port 65535))))))
+
 (defun glassmacs-shiny--reported-url (buffer)
-  "Return the first complete app address reported in BUFFER, or nil.
-The address line must be complete, because output can arrive in pieces."
+  "Return the first complete loopback app address reported in BUFFER.
+Output may arrive in pieces.  Ignore external or malformed URLs instead
+of passing them to the browser."
   (with-current-buffer buffer
     (save-excursion
       (goto-char (point-min))
-      (and (re-search-forward glassmacs-shiny--url-regexp nil t)
-           (match-string-no-properties 1)))))
+      (catch 'found
+        (while (re-search-forward glassmacs-shiny--url-regexp nil t)
+          (let ((url (match-string-no-properties 1)))
+            (when (glassmacs-shiny--loopback-url-p url)
+              (throw 'found url))))
+        nil))))
 
 (defun glassmacs-shiny--filter (process output)
   "Insert OUTPUT from PROCESS and open the app once it reports its address."
