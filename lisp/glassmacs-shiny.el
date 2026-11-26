@@ -83,6 +83,9 @@ open on a page that is not listening yet.  The address is also kept for
 A child process log must not direct the browser to a remote host, even
 if its output includes a line resembling Shiny's startup message."
   (and (stringp url)
+       ;; \`url-port' supplies a scheme default even when none was written.
+       ;; Require a literal authority port before accepting a child log URL.
+       (string-match-p "\\\`https?://\\(?:\\[[^]]+\\]\\|[^/:@?#]+\\):[0-9]+\\(?:[/#?]\\|\\'\\)" url)
        (ignore-errors
          (let* ((parsed (url-generic-parse-url url))
                 (scheme (url-type parsed))
