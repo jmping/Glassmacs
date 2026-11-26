@@ -620,7 +620,10 @@ individual document-save and R-console checks."
 
 (defun glassmacs--frame-tab-buffers (frame)
   "Collect unique buffers shown in every tab of FRAME.
-Restore the original tab even if a tab-selection hook signals an error."
+Never return a partial inventory when a tab disappears or a tab-switch
+hook fails: a partial inventory could let native frame-close discard an
+unsaved document or bypass an R console's close review.  Restore the
+original tab in all cases, and abort the close if scanning fails."
   (with-selected-frame frame
     (if (not (glassmacs--frame-has-hidden-tabs-p frame))
         (delete-dups (mapcar #'window-buffer (window-list frame 'never)))
@@ -628,12 +631,23 @@ Restore the original tab even if a tab-selection hook signals an error."
             (count (length (funcall tab-bar-tabs-function frame)))
             buffers)
         (unwind-protect
-            (dotimes (index count)
-              (tab-bar-select-tab (1+ index))
-              (dolist (window (window-list frame 'never))
-                (cl-pushnew (window-buffer window) buffers)))
-          (tab-bar-select-tab original))
+            (condition-case err
+                (dotimes (index count)
+                  (tab-bar-select-tab (1+ index))
+                  (dolist (window (window-list frame 'never))
+                    (cl-pushnew (window-buffer window) buffers)))
+              (error
+               (user-error "Cannot safely review all tabs before closing: %s"
+                           (error-message-string err))))
+          ;; A restoration error must also abort the close.  Never
+          ;; proceed using an inventory from a different selected tab.
+          (condition-case err
+              (tab-bar-select-tab original)
+            (error
+             (user-error "Cannot restore original tab after close review: %s"
+                         (error-message-string err)))))
         (nreverse buffers)))))
+
 
 (defun glassmacs--buffer-visible-in-other-frame-p (buffer frame)
   "Whether BUFFER has a view in any other frame, including inactive tabs."
