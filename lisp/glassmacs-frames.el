@@ -337,21 +337,29 @@ Do not advise `find-file' globally: packages depend on its semantics."
 
 (defun glassmacs--buffer-in-inactive-tab-p (buffer frame)
   "Whether an inactive tab in FRAME has a view of BUFFER.
-Selection is restored even when tab-switch hooks raise an error."
+Fail closed when tab enumeration is incomplete: assume the buffer is
+shown elsewhere rather than permitting its document to be killed or an
+R console to be terminated from another window.  Restore the original
+selected tab even when a tab-switch hook raises an error."
   (when (and (frame-live-p frame)
              (glassmacs--frame-has-hidden-tabs-p frame))
     (with-selected-frame frame
       (let ((original (1+ (tab-bar--current-tab-index)))
             (count (length (funcall tab-bar-tabs-function frame)))
-            found)
+            found
+            incomplete)
         (unwind-protect
-            (dotimes (index count)
-              (unless (= (1+ index) original)
-                (tab-bar-select-tab (1+ index))
-                (when (get-buffer-window buffer frame)
-                  (setq found t))))
-          (tab-bar-select-tab original))
-        found))))
+            (condition-case nil
+                (dotimes (index count)
+                  (unless (= (1+ index) original)
+                    (tab-bar-select-tab (1+ index))
+                    (when (get-buffer-window buffer frame)
+                      (setq found t))))
+              (error (setq incomplete t)))
+          (condition-case nil
+              (tab-bar-select-tab original)
+            (error (setq incomplete t))))
+        (or found incomplete)))))
 
 (defun glassmacs--buffer-shown-elsewhere-p (buffer windows)
   "Return non-nil when BUFFER has a view outside WINDOWS.
