@@ -134,10 +134,25 @@ process launch, remote connection or automatic job restoration occurs."
                  :key #'glassmacs-document-job-id :test #'equal)
     (user-error "Research job ID already registered"))
   (push job glassmacs-document-jobs--registry)
-  (when (> (length glassmacs-document-jobs--registry)
-           glassmacs-document-jobs-limit)
-    (setcdr (nthcdr (1- glassmacs-document-jobs-limit)
-                    glassmacs-document-jobs--registry) nil))
+  ;; Never evict a pending, running or uncertain job: its dashboard row is
+  ;; needed to inspect or safely cancel work.  If all records are active,
+  ;; temporarily exceed the soft limit rather than lose ownership visibility.
+  (cl-block prune
+    (while (> (length glassmacs-document-jobs--registry)
+            glassmacs-document-jobs-limit)
+    (let ((index
+           (cl-position-if
+            (lambda (old)
+              (memq (glassmacs-document-job-status old)
+                    '(succeeded failed cancelled)))
+            glassmacs-document-jobs--registry :from-end t)))
+      (if (null index)
+          (cl-return)
+        (setq glassmacs-document-jobs--registry
+              (append (cl-subseq glassmacs-document-jobs--registry 0 index)
+                      (nthcdr (1+ index)
+                              glassmacs-document-jobs--registry))))))
+    )
   job)
 
 (defun glassmacs-document-jobs-list ()
