@@ -145,9 +145,9 @@ when a tab switch fails; do not silently create a replacement view."
                         (let ((window (get-buffer-window buffer frame)))
                           (when (and (window-live-p window)
                                      (eq (window-buffer window) buffer))
-                            (setq matched window)
                             (select-frame-set-input-focus frame)
                             (select-window window)
+                            (setq matched window)
                             (throw 'found window))))
                     ;; A stale or deleted tab can invalidate the snapshot;
                     ;; recover the prior selection and try other frames.

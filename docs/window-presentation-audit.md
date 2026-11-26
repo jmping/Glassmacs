@@ -83,3 +83,24 @@ Window cycles 3 and 4 extend the presentation stack with explicit identity-prese
 - CI tests include same-name session ambiguity, stale targets, preserving source targets when switching console views, repeated Help topics, distinct Help topics, and terminal fallback. A preexisting console-chooser test was updated to use the new exact-selection interface.
 
 These slices remain stacked on #128 and draft #112. Full exact-head CI validation of the descendant stack is necessary before consolidation. Packaged Cocoa GUI (including Finder, closing only a console frame, and multiple simultaneous Help topics) is NOT RUN; no automatic process restart, remote SSH operation, main merge, or DMG publication is authorized.
+
+
+## Integrated beta checkpoint: cycles 5–10
+
+Cycles 5–8 are consolidated in draft #112 at 520a09a; cycles 9–10
+remain pending exact-head CI. The remaining high-value work is cross-feature
+acceptance rather than speculative isolated window changes.
+
+| Scenario | Required observation |
+| --- | --- |
+| Two modified documents, one with an inactive-tab duplicate | Close one view without losing edits; cancel final close and verify content. |
+| Two live R consoles linked to distinct sources | Alternate evaluation; focus a different console without changing the source target; close a console view using Keep R Running. |
+| Two Help topics, two Customize groups, research dashboard and log | Exact repeated opens focus their own view; unrelated documents remain intact. |
+| Recovery into an already populated desktop | Recovered dirty buffers remain modified; existing documents and R processes remain untouched. |
+| Finder cold/warm open, Cmd-W, native close, Cmd-Q | Verify real Cocoa event routing and cancellation, including multi-tab windows. |
+
+Record exact candidate SHA, macOS version, architecture, profile, expected
+and observed behavior, and PASS/FAIL/NOT RUN for each scenario. Run real
+ESS/R integration on the consolidated candidate even if window-only CI
+skips it. Physical GUI checks require a packaged local macOS build; no
+main merge or public DMG is implied by this checkpoint.

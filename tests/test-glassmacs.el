@@ -3863,3 +3863,22 @@ example) can run first and delay the sentinel."
                 (should (glassmacs--buffer-shown-elsewhere-p
                          buffer (list left))))))
         (kill-buffer buffer)))))
+
+(ert-deftest glassmacs-focus-hidden-tab-restores-after-focus-error ()
+  "Finding a buffer is not success if focusing its window fails."
+  (let ((tab-bar-mode t)
+        (tab-bar-tabs-function (lambda (_frame) '(one two)))
+        (current 1)
+        (buffer (window-buffer (selected-window))))
+    (cl-letf (((symbol-function 'tab-bar--current-tab-index)
+               (lambda () (1- current)))
+              ((symbol-function 'tab-bar-select-tab)
+               (lambda (index) (setq current index)))
+              ((symbol-function 'get-buffer-window)
+               (lambda (&rest _)
+                 (and (= current 2) (selected-window))))
+              ((symbol-function 'select-frame-set-input-focus)
+               (lambda (&rest _) (error "Focus failed"))))
+      (should-not (glassmacs--focus-buffer-in-existing-tab
+                   buffer (selected-frame)))
+      (should (= current 1)))))
