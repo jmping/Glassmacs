@@ -3,7 +3,7 @@
 > **Document ID:** DOC-NAV  
 > **Status:** Informational  
 > **Owner:** Glassmacs maintainers  
-> **Last reviewed:** 2026-11-06  
+> **Last reviewed:** 2026-11-26  
 > **Coverage:** Documentation navigation  
 > **Supersedes:** None
 
@@ -17,6 +17,7 @@ The existing [documentation index and authority register](index.md) (**DOC-INDEX
 - [Keybindings](keybindings.md) — keyboard profiles.
 - [Architecture](architecture.md) — component boundaries and intended design.
 - [Acceptance matrix](acceptance-matrix.md) — implementation and verification evidence.
+- [Frozen November 2026 private validation candidate handoff](validation-candidate-2026-11-26.md) — source SHA, scope and platform policy, exact CI evidence, Copilot packaged Mac build/test steps, and nonpublication gates.
 - [Research-document integration acceptance](research-document-integration-acceptance.md) — repeatable real-render, packaged Mac and SSH acceptance with evidence requirements.
 - [Contributing](../CONTRIBUTING.md) — contributor workflow.
 - [Development](development.md) — build and test details.
