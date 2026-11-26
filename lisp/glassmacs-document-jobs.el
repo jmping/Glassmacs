@@ -139,20 +139,19 @@ process launch, remote connection or automatic job restoration occurs."
   ;; temporarily exceed the soft limit rather than lose ownership visibility.
   (cl-block prune
     (while (> (length glassmacs-document-jobs--registry)
-            glassmacs-document-jobs-limit)
-    (let ((index
-           (cl-position-if
-            (lambda (old)
-              (memq (glassmacs-document-job-status old)
-                    '(succeeded failed cancelled)))
-            glassmacs-document-jobs--registry :from-end t)))
-      (if (null index)
-          (cl-return)
+              glassmacs-document-jobs-limit)
+      (let ((index
+             (cl-position-if
+              (lambda (old)
+                (memq (glassmacs-document-job-status old)
+                      '(succeeded failed cancelled)))
+              glassmacs-document-jobs--registry :from-end t)))
+        (unless index
+          (cl-return-from prune nil))
         (setq glassmacs-document-jobs--registry
               (append (cl-subseq glassmacs-document-jobs--registry 0 index)
                       (nthcdr (1+ index)
                               glassmacs-document-jobs--registry))))))
-    )
   job)
 
 (defun glassmacs-document-jobs-list ()
