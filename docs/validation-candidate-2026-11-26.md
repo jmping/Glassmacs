@@ -78,6 +78,39 @@ The default build uses ad-hoc signing for local development. Developer ID signin
    Record source SHA, source ref, archive ZIP SHA-256, binary architecture slices, OS/CPU/Xcode/Swift versions, upstream Emacs/ESS hashes, whether the archive was from CI or locally rebuilt, **CI run and artifact ID if applicable**, operator, signing identity, notarization status, and exact app path. Never claim a local rebuild is byte-identical to the CI archive without comparing SHA-256. Keep both source provenance and generated-binary identity. Binary checksum is **not known** before the archive exists.
 8. **Return a handback**, not a release: `candidate-manifest.md`, `build.log`, `validate.log`, `batch-tests.log`, `gui-acceptance/results.json`, `gui-acceptance/summary.md`, `manual-matrix.md`, `issues.md`, screenshots/crash evidence. Give every applicable P0 a **PASS / FAIL / NOT RUN** with exact build SHA and reproduction/evidence; record workarounds and unsatisfied gates. **Never silently skip required P0**.
 
+## Evidence triage and Go/No-Go semantics
+
+Capture results in an explicit three-layer table rather than collapsing all checks into a single green status:
+
+| Layer | Evidence | Go/No-Go interpretation |
+| --- | --- | --- |
+| A — GitHub CI | Exact frozen SHA, Linux batch ERT, real ESS/R ERT, packaged macOS structural checks | Source is **eligible for private candidate testing**; this is NOT native GUI acceptance. |
+| B — packaged GUI automation on a physical Mac | The same extracted or built `.app`, its SHA-256, GUI acceptance results and raw artifacts | Automated scenarios may PASS individually; simulated native events must be labeled as simulations. |
+| C — human/physical system acceptance | Real red button, Cmd-W/Q, Dock/Finder, two live R sessions, OS dialogs, R Markdown/Quarto cancellation, crash recovery and optional Intel/clean user | **No public release approval** while any required P0 is FAIL or NOT RUN. |
+
+For this frozen source the real ESS/R CI suite reported **574 ERT tests, 573 expected, 0 unexpected and 1 skipped** (`glassmacs-r-mode-without-ess-offers-installation` is appropriately inapplicable when ESS is installed). macOS bundled-ERT and the basic Linux Emacs batch job each reported **574 tests, 539 expected, 0 unexpected, 35 skipped** because dependencies for their integration tests are absent. Therefore the separate Linux **real ESS/R integration** result must not be replaced by a macOS bundled ERT test count. None of these ERT suites measures physical Cocoa GUI acceptance.
+
+When a test is unrun because a tool or architecture is unavailable, record **NOT RUN with the exact reason**. When a test was executed but failed, record **FAIL** and attach evidence: never relabel a failure as a skip. Prior historical GUI evidence (including PR #98) is not a pass for the frozen source. The current repository includes older signed DMGs and acceptance reports for **different source SHAs**: do not inherit their signing identity, binary hash, notarization or Gatekeeper outcomes.
+
+### Handoff return format
+
+```text
+SOURCE_SHA: 9d14aeebf16a84cd143e52911f5a503c53731303
+SOURCE_REF: candidate/validation-2026-11-26
+CI_RUN_ID: 45755474378 or 45756405313 (identify the selected one)
+CI_ARTIFACT_ID: <actual ID or NOT USED>
+BUILD_OR_ARCHIVE_SOURCE: CI ARTIFACT / LOCAL REBUILD
+MACOS_VERSION / CPU_ARCH / ROSETTA / XCODE / R / QUARTO: <measured>
+APP_PATH: <actual>
+APP_BUNDLE_SIGNATURE: <observed authority, ad-hoc vs Developer ID>
+ZIP_SHA256: <measured after archive creation>
+GUI_HARNESS: PASS / FAIL / NOT RUN, with results.json and summary.md paths
+MANUAL_P0: PASS / FAIL / NOT RUN for each scenario, with evidence pointers
+INTEL / CLEAN_ACCOUNT / GATEKEEPER: PASS / FAIL / NOT RUN
+P0_BLOCKERS: <issue IDs and reproducible steps>
+RELEASE_AUTHORIZATION: NO — private validation only
+```
+
 ## Stop conditions and final authority
 
 Stop and report a P0 if any unsaved document is lost or silently discarded; source code executes in the wrong R session; cancellation terminates the wrong job or silently replays an R session; a native close/quit prompt cannot veto deletion; the packaged app fails to start or loads unbundled libraries; archive and source cannot be matched; signing/source provenance is ambiguous; or unexpected remote execution occurs. Do not downgrade a failure to a visual/cosmetic issue.
