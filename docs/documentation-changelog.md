@@ -4,9 +4,15 @@
 > **Status:** Canonical  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-28
+> **Last reviewed:** 2026-11-26
 > **Coverage:** Dated history of documentation authority and coverage changes  
 > **Supersedes:** None
+
+## 2026-11-26 — Frozen private candidate handoff (pre-Copilot)
+
+- Added informational `DOC-VALIDATION-2026-11-26`, `docs/validation-candidate-2026-11-26.md`, documenting frozen source SHA `9d14aee`, nonpublication scope, macOS and Intel verification limits, exact CI evidence, reproducible isolated packaged build, Layer C/Layer D acceptance and Copilot handback.
+- Registered the document in `DOC-INDEX` and `docs/registry.toml`, linked it from `DOC-NAV`. This is a documentation-only change: the frozen source candidate remains at `9d14aeebf16a84cd143e52911f5a503c53731303` regardless of documentation PR commits.
+- No change to canonical acceptance status or to generated acceptance matrix; no physical GUI pass, public DMG, mainline merge, or signing/notarization is implied.
 
 ## 2026-11-06 — R console frame placement
 

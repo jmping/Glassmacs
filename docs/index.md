@@ -4,7 +4,7 @@
 > **Status:** Canonical documentation governance  
 > **Owner:** Glassmacs maintainers  
 > **Effective date:** 2026-10-19  
-> **Last reviewed:** 2026-10-29
+> **Last reviewed:** 2026-11-26
 > **Coverage:** Documentation authority, status, ownership and navigation  
 > **Supersedes:** None
 
@@ -30,7 +30,7 @@ This is the **canonical index** for maintained project documentation. The short 
 | [Aquamacs 4 modern macOS risk audit](aquamacs4-modern-macos-risk-audit.md) | DOC-AQUA4-AUDIT | Informational | Source-traced evidence for the Aquamacs 4 reports in issue #34 and upstream fixes missing from the bundled Emacs | Test status (see the acceptance matrix) |
 | [Acceptance matrix](acceptance-matrix.md) | DOC-ACCEPT | Canonical for acceptance status (generated from `acceptance/matrix.toml`) | Every acceptance risk, its evidence and tests, and its implemented / automated / packaged-app / clean-machine status | Feature specifications, delivery schedule |
 | [Research-document integration acceptance](research-document-integration-acceptance.md) | DOC-RESEARCH-ACCEPT | Informational / candidate-specific protocol | Real concurrent-render tests, native macOS and trusted SSH verification with explicit NOT RUN states | Verified release/GUI pass claims without dated evidence |
-| [macOS manual acceptance checklist](macos-acceptance-checklist.md) | DOC-MAC-CHECKLIST | Canonical procedure (generated from `acceptance/matrix.toml`) | Manual (Layer D) checks on a physical or clean Mac and how to record them | Automated checks, which the matrix lists |
+| [November 2026 private validation candidate handoff](validation-candidate-2026-11-26.md) | DOC-VALIDATION-2026-11-26 | Informational / frozen pre-Copilot handoff | Exact source SHA, scope cut, architectures, CI, build/test procedure and evidence handback | Does not authorize public release, GUI PASS or `main` merge |\n| [macOS manual acceptance checklist](macos-acceptance-checklist.md) | DOC-MAC-CHECKLIST | Canonical procedure (generated from `acceptance/matrix.toml`) | Manual (Layer D) checks on a physical or clean Mac and how to record them | Automated checks, which the matrix lists |
 | [Documentation change register](documentation-changelog.md) | DOC-CHANGELOG | Canonical historical register | Changes to document scope, authority, status, ownership, splits, mergers and supersession | Complete code change history |
 | [Documentation governance](documentation-governance.md) | DOC-GOV | Canonical policy | Metadata requirements, precedence, lifecycle, review and update procedure | Individual feature specifications |
 
