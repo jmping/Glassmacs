@@ -17,6 +17,7 @@ The existing [documentation index and authority register](index.md) (**DOC-INDEX
 - [Keybindings](keybindings.md) — keyboard profiles.
 - [Architecture](architecture.md) — component boundaries and intended design.
 - [Acceptance matrix](acceptance-matrix.md) — implementation and verification evidence.
+- [Research-document integration acceptance](research-document-integration-acceptance.md) — repeatable real-render, packaged Mac and SSH acceptance with evidence requirements.
 - [Contributing](../CONTRIBUTING.md) — contributor workflow.
 - [Development](development.md) — build and test details.
 

@@ -153,11 +153,44 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
                         :type 'user-error))
       (delete-file file))))
 
+(ert-deftest glassmacs-documents-build-status-is-scoped-and-read-only ()
+  "Inspect the last job without opening output or operating on a process."
+  (let* ((source (generate-new-buffer " *glassmacs-status-source*"))
+         (other (generate-new-buffer " *glassmacs-status-other*"))
+         (log (generate-new-buffer " *glassmacs-status-log*"))
+         (job (glassmacs-document-job-new
+               "status-1"
+               (glassmacs-document-context-create "/tmp/analysis.qmd")
+               'quarto log))
+         shown)
+    (unwind-protect
+        (progn
+          (glassmacs-document-job-transition job 'running)
+          (glassmacs-document-job-transition job 'failed nil "renderer exited")
+          (with-current-buffer source
+            (setq buffer-file-name "/tmp/analysis.qmd")
+            (setq glassmacs-document-last-job job)
+            (cl-letf (((symbol-function 'display-buffer)
+                       (lambda (buffer &rest _) (setq shown buffer))))
+              (should (eq (glassmacs-document-build-show-status) shown)))
+            (with-current-buffer shown
+              (should buffer-read-only)
+              (should (string-match-p "Status: failed" (buffer-string)))
+              (should (string-match-p "renderer exited" (buffer-string)))
+              (should (string-match-p "status-1" (buffer-string)))))
+          (with-current-buffer other
+            (setq buffer-file-name "/tmp/unrelated.qmd")
+            (should-error (glassmacs-document-build-show-status)
+                          :type 'user-error)))
+      (dolist (buffer (list source other log shown))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
 ;;; Shiny apps and interactive documents
 
 (defmacro glassmacs-documents-test--fresh-shiny (&rest body)
   "Run BODY with no Glassmacs Shiny app running, and stop any it starts."
   `(let ((glassmacs-shiny-process nil)
+         (glassmacs-shiny-job nil)
          (glassmacs-shiny-url nil)
          (glassmacs-shiny--last-start nil))
      (unwind-protect (progn ,@body)
@@ -223,8 +256,8 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
         (setq buffer-file-name (car case))
         (cl-letf (((symbol-function 'executable-find) (lambda (p) (concat "/bin/" p)))
                   ((symbol-function 'glassmacs-shiny--start)
-                   (lambda (_description command directory _restart)
-                     (setq started (list command directory)))))
+                   (lambda (_description command directory _restart &optional source)
+                     (setq started (list command directory source)))))
           (glassmacs-run-interactive-document))
         (setq buffer-file-name nil))
       (let ((command (car started)))
@@ -233,7 +266,8 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
         ;; The app listens only locally, and Glassmacs opens the browser.
         (should (cl-some (lambda (arg) (string-match-p "127\\.0\\.0\\.1\\|--no-browser" arg))
                          command))
-        (should (equal (nth 1 started) "/tmp/app/"))))))
+        (should (equal (nth 1 started) "/tmp/app/"))
+        (should (equal (nth 2 started) (car case)))))))
 
 (ert-deftest glassmacs-documents-render-runs-interactive-documents ()
   (glassmacs-chunks-test--in-document "app.Rmd" "---\nruntime: shiny\n---\n"
@@ -354,6 +388,247 @@ Return (ARGUMENTS . OPENED): the renderer's arguments and the file opened."
                (lambda (&rest _) '(?k "Keep R Running"))))
       (should (glassmacs--confirm-console-windows-close
                (list (selected-window)))))))
+
+
+(ert-deftest glassmacs-documents-opt-in-render-records-per-job-output ()
+  "The experimental adapter stores each output in its own job record."
+  (let ((glassmacs-document-use-job-adapter t)
+        (glassmacs-render-open-output t)
+        opened captured)
+    (with-temp-buffer
+      (setq buffer-file-name "/tmp/project/analysis.qmd")
+      (cl-letf (((symbol-function 'glassmacs-document-local-start)
+                 (lambda (job program args on-success)
+                   (setq captured (list job program args))
+                   (let ((log (generate-new-buffer "*Glassmacs Test Build*")))
+                     (setf (glassmacs-document-job-log-buffer job) log)
+                     (with-current-buffer log
+                       (insert "Output created: analysis.html\n"))
+                     (funcall on-success job))
+                   'mock-process))
+                ((symbol-function 'display-buffer) (lambda (&rest _) nil))
+                ((symbol-function 'glassmacs-open-rendered-output)
+                 (lambda (file) (setq opened file))))
+        (should (eq (glassmacs-render-quarto) 'mock-process))
+        (should (equal (cadr captured) "quarto"))
+        (should (equal (caddr captured) '("render" "/tmp/project/analysis.qmd")))
+        (should (eq (glassmacs-document-job-kind glassmacs-document-last-job)
+                    'quarto))
+        (should (equal (glassmacs-document-job-output-file
+                        glassmacs-document-last-job)
+                       "/tmp/project/analysis.html"))
+        (should (equal opened "/tmp/project/analysis.html"))
+        (kill-buffer (glassmacs-document-job-log-buffer (car captured)))))))
+
+(ert-deftest glassmacs-documents-opt-in-render-refuses-remote-source ()
+  "Opting into the local renderer cannot silently run a remote document."
+  (let ((glassmacs-document-use-job-adapter t))
+    (with-temp-buffer
+      (setq buffer-file-name "/ssh:research:/work/analysis.qmd")
+      (should-error (glassmacs-render-quarto) :type 'user-error))))
+
+
+(ert-deftest glassmacs-documents-linked-build-output-follows-source-identity ()
+  "A previously reported output belongs to its exact source buffer."
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/project/paper.qmd")
+    (let* ((context (glassmacs-document-context-create buffer-file-name))
+           (job (glassmacs-document-job-new "linked-1" context 'quarto))
+           (opened nil))
+      (glassmacs-document-job-transition job 'running)
+      (glassmacs-document-job-transition job 'succeeded "/tmp/project/paper.html")
+      (setq glassmacs-document-last-job job)
+      (cl-letf (((symbol-function 'glassmacs-open-rendered-output)
+                 (lambda (output) (setq opened output))))
+        (glassmacs-document-build-open-last-output)
+        (should (equal opened "/tmp/project/paper.html"))
+        (setq buffer-file-name "/tmp/project/other.qmd")
+        (should-not (glassmacs-document-build-current-job))
+        (should-error (glassmacs-document-build-open-last-output)
+                      :type 'user-error)))))
+
+(ert-deftest glassmacs-documents-linked-build-log-and-cancel-are-scoped ()
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/project/paper.Rmd")
+    (let* ((context (glassmacs-document-context-create buffer-file-name))
+           (job (glassmacs-document-job-new "linked-2" context 'rmarkdown))
+           (log (generate-new-buffer "*Glassmacs Link Test*"))
+           cancelled shown)
+      (unwind-protect
+          (progn
+            (setf (glassmacs-document-job-log-buffer job) log)
+            (glassmacs-document-job-transition job 'running)
+            (setq glassmacs-document-last-job job)
+            (cl-letf (((symbol-function 'glassmacs-document-local-cancel)
+                       (lambda (target) (setq cancelled target)))
+                      ((symbol-function 'display-buffer)
+                       (lambda (buffer &rest _) (setq shown buffer))))
+              (glassmacs-document-build-show-last-log)
+              (glassmacs-document-build-cancel)
+              (should (eq shown log))
+              (should (eq cancelled job))))
+        (kill-buffer log)))))
+
+
+(ert-deftest glassmacs-documents-opt-in-shiny-has-conservative-job-status ()
+  "An opt-in local Shiny process gets a job record without changing startup."
+  (let ((glassmacs-document-use-job-adapter t)
+        (glassmacs-shiny-process nil)
+        (glassmacs-shiny-job nil)
+        (glassmacs-shiny--last-start nil)
+        (glassmacs-shiny-launch-browser nil)
+        process)
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name
+                (expand-file-name "app.R" temporary-file-directory))
+          (setq process
+                (glassmacs-shiny--start
+                 "test application" '("sh" "-c" "exit 0")
+                 temporary-file-directory (lambda () nil)))
+          (should (glassmacs-document-job-p glassmacs-shiny-job))
+          (should (eq (glassmacs-document-job-kind glassmacs-shiny-job)
+                      'shiny))
+          (while (process-live-p process)
+            (accept-process-output process 0.05))
+          (accept-process-output process 0.01)
+          (should (eq (glassmacs-document-job-status glassmacs-shiny-job)
+                      'succeeded)))
+      (when (process-live-p process) (delete-process process))
+      (when (get-buffer glassmacs-shiny-buffer-name)
+        (kill-buffer glassmacs-shiny-buffer-name)))))
+
+
+(ert-deftest glassmacs-documents-shiny-uses-app-entry-not-selected-source ()
+  "Job identity must not change with the currently selected unrelated buffer."
+  (let* ((directory (make-temp-file "glassmacs-shiny-identity-" t))
+         (app (expand-file-name "app.R" directory))
+         (glassmacs-document-use-job-adapter t))
+    (unwind-protect
+        (glassmacs-documents-test--fresh-shiny
+         (write-region "shiny::shinyApp(ui = NULL, server = NULL)"
+                       nil app)
+         (with-temp-buffer
+           (setq buffer-file-name "/tmp/unrelated/draft.R")
+           (glassmacs-shiny--start
+            "synthetic app" '("sh" "-c" "sleep 30")
+            directory #'ignore)
+           (should (glassmacs-document-job-p glassmacs-shiny-job))
+           (should (equal
+                    (glassmacs-document-context-source
+                     (glassmacs-document-job-context glassmacs-shiny-job))
+                    app))
+           (should (eq (glassmacs-document-job-status glassmacs-shiny-job)
+                       'running))
+           (glassmacs-shiny-stop)
+           (should (eq (glassmacs-document-job-status glassmacs-shiny-job)
+                       'cancelled))))
+      (delete-directory directory t))))
+
+(ert-deftest glassmacs-documents-shiny-interactive-reload-captures-source ()
+  "Reload uses the original document even when its buffer is no longer current."
+  (let (called)
+    (with-temp-buffer
+      (insert "---\nruntime: shiny\n---\n")
+      (set-buffer-modified-p nil)
+      (setq buffer-file-name "/tmp/one/report.Rmd")
+      (cl-letf (((symbol-function 'executable-find)
+                 (lambda (program) (concat "/bin/" program)))
+                ((symbol-function 'glassmacs-shiny--start)
+                 (lambda (description command directory restart &optional source)
+                   (push (list description command directory source) called)
+                   (when (= (length called) 1)
+                     ;; An explicit reload after the document buffer is gone
+                     ;; must not consult the new current source buffer.
+                     (with-temp-buffer
+                       (setq buffer-file-name "/tmp/two/other.Rmd")
+                       (funcall restart))))))
+        (glassmacs-run-interactive-document)))
+    (should (= (length called) 2))
+    (should (equal (nth 3 (car called)) "/tmp/one/report.Rmd"))
+    (should (equal (car called) (cadr called)))))
+
+(ert-deftest glassmacs-documents-shiny-launch-failure-records-failed-job ()
+  "A failed start must not leave a pending or running phantom record."
+  (let* ((glassmacs-document-use-job-adapter t)
+         (glassmacs-shiny-job nil)
+         (glassmacs-shiny-process nil)
+         (glassmacs-shiny--last-start nil))
+    (cl-letf (((symbol-function 'make-process)
+               (lambda (&rest _) (signal 'file-error '("cannot launch")))))
+      (should-error
+       (glassmacs-shiny--start
+        "bad app" '("no-such-program") temporary-file-directory #'ignore)
+       :type 'file-error))
+    (should (glassmacs-document-job-p glassmacs-shiny-job))
+    (should (eq (glassmacs-document-job-status glassmacs-shiny-job)
+                'failed))
+    (should (string-match-p "cannot launch"
+                            (glassmacs-document-job-error glassmacs-shiny-job)))
+    (should-not glassmacs-shiny-process)
+    (should-not glassmacs-shiny--last-start)))
+
+(ert-deftest glassmacs-documents-shiny-early-process-exit-is-terminal ()
+  "A short-lived failed child must be reconciled even if it exits at start."
+  (let ((glassmacs-document-use-job-adapter t))
+    (glassmacs-documents-test--fresh-shiny
+     (let* ((process
+             (glassmacs-shiny--start
+              "short app" '("sh" "-c" "exit 7")
+              temporary-file-directory #'ignore))
+            (job glassmacs-shiny-job))
+       (glassmacs-documents-test--wait-for
+        (lambda () (not (process-live-p process))))
+       (accept-process-output nil 0.01)
+       (should (eq (glassmacs-document-job-status job) 'failed))
+       (should (string-match-p "exit 7" (glassmacs-document-job-error job)))
+       (should-not glassmacs-shiny-process)))))
+
+(ert-deftest glassmacs-documents-shiny-refuses-remote-app-directory ()
+  (let ((glassmacs-document-use-job-adapter t))
+    (should-error
+     (glassmacs-shiny--start
+      "remote app" '("sh" "-c" "true")
+      "/ssh:host:/tmp/project/" #'ignore)
+     :type 'user-error)))
+
+
+(ert-deftest glassmacs-documents-viewer-failure-keeps-successful-output-history ()
+  "A missing external viewer must not prevent remembering a successful build."
+  (let* ((glassmacs-home (make-temp-file "glassmacs-viewer-history-" t))
+         (glassmacs-document-jobs--registry nil)
+         (glassmacs-document-use-job-adapter t)
+         (glassmacs-document-remember-build-outputs t)
+         (glassmacs-render-open-output t)
+         (source "/tmp/research/report.qmd")
+         (output "/tmp/research/report.html")
+         log)
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name source)
+          (cl-letf (((symbol-function 'glassmacs-document-local-start)
+                     (lambda (job _program _arguments on-success)
+                       (setq log (generate-new-buffer " *Glassmacs Failed Viewer*"))
+                       (setf (glassmacs-document-job-log-buffer job) log)
+                       (with-current-buffer log
+                         (insert "Output created: report.html\n"))
+                       (glassmacs-document-job-transition job 'running)
+                       (glassmacs-document-job-transition job 'succeeded)
+                       (should-error (funcall on-success job)
+                                     :type 'user-error)
+                       'synthetic-process))
+                    ((symbol-function 'glassmacs-open-rendered-output)
+                     (lambda (_output) (user-error "Viewer unavailable")))
+                    ((symbol-function 'display-buffer) (lambda (&rest _) nil)))
+            (should (eq (glassmacs-render-quarto) 'synthetic-process))
+            (should (equal (glassmacs-document-history-find source) output))
+            (should (equal
+                     (glassmacs-document-job-output-file glassmacs-document-last-job)
+                     output))
+            (should (eq (glassmacs-document-job-status glassmacs-document-last-job)
+                        'succeeded))))
+      (when (buffer-live-p log) (kill-buffer log))
+      (delete-directory glassmacs-home t))))
 
 (provide 'test-glassmacs-documents)
 ;;; test-glassmacs-documents.el ends here

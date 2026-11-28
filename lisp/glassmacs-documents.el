@@ -2,6 +2,8 @@
 
 (require 'glassmacs-core)
 (require 'glassmacs-packages)
+(require 'glassmacs-document-local)
+(require 'glassmacs-document-history)
 
 (defun glassmacs-rmarkdown-mode ()
   "Use poly-R for an R Markdown file when available."
@@ -92,6 +94,177 @@ application."
   :type 'boolean
   :group 'glassmacs)
 
+
+(defcustom glassmacs-document-use-job-adapter nil
+  "Use independent local job records and logs for document rendering.
+Experimental: the existing single-process rendering path remains the
+default until the per-job adapter passes full packaged-app acceptance.
+Remote documents are not implicitly executed through this adapter."
+  :type 'boolean
+  :group 'glassmacs)
+
+(defvar glassmacs-document-render--serial 0
+  "Serial number for local document jobs in this Emacs process.")
+
+(defvar-local glassmacs-document-last-job nil
+  "Most recent document job initiated from this source buffer.")
+
+(defun glassmacs-document-render--reported-output (job pattern)
+  "Find PATTERN's output file in JOB's own log without reading global logs."
+  (when-let* ((buffer (glassmacs-document-job-log-buffer job)))
+    (with-current-buffer buffer
+      (save-excursion
+        (goto-char (point-max))
+        (when (re-search-backward pattern nil t)
+          (expand-file-name (string-trim (match-string-no-properties 1))
+                            (glassmacs-document-context-directory
+                             (glassmacs-document-job-context job))))))))
+
+(defun glassmacs-document-render--local (kind file program arguments pattern)
+  "Run a local KIND build of FILE with an independently tracked job.
+Register identity before launch so missing executables and early exits
+are visible in the source buffer and the read-only jobs dashboard."
+  (let* ((context (glassmacs-document-context-for-file file))
+         (job (glassmacs-document-job-new
+               (format "%s-%d" kind (cl-incf glassmacs-document-render--serial))
+               context kind)))
+    (unless (eq (glassmacs-document-context-location context) 'local)
+      (user-error "Experimental document jobs require a local source file"))
+    (glassmacs-document-jobs-register job)
+    (setq glassmacs-document-last-job job)
+    (let ((process
+           (glassmacs-document-local-start
+            job program arguments
+            (lambda (finished)
+              (when-let* ((output (glassmacs-document-render--reported-output
+                                   finished pattern)))
+                (setf (glassmacs-document-job-output-file finished) output)
+                ;; Preserve a successful result even when its external
+                ;; browser/PDF viewer cannot open the generated document.
+                (glassmacs-document-history-record finished)
+                (when glassmacs-render-open-output
+                  (glassmacs-open-rendered-output output)))))))
+      (display-buffer (glassmacs-document-job-log-buffer job))
+      process)))
+
+(defun glassmacs-document-build-current-job ()
+  "Return this document's last job if its source identity still matches.
+For polymode chunks, inspect the base document's job without transferring
+identity to an unrelated source buffer."
+  (let ((base (or (buffer-base-buffer) (current-buffer))))
+    (with-current-buffer base
+      (when (and (glassmacs-document-job-p glassmacs-document-last-job)
+                 (equal buffer-file-name
+                        (glassmacs-document-context-source
+                         (glassmacs-document-job-context
+                          glassmacs-document-last-job))))
+        glassmacs-document-last-job))))
+
+(defun glassmacs-document-build-open-remembered-output ()
+  "Explicitly open a remembered local output for the current source document."
+  (interactive)
+  (let* ((base (or (buffer-base-buffer) (current-buffer)))
+         (source (buffer-local-value 'buffer-file-name base))
+         (output (and source (glassmacs-document-history-find source))))
+    (unless output
+      (user-error "No remembered local build output for this document"))
+    (glassmacs-open-rendered-output output)))
+
+(defun glassmacs-document-build-browse-recent-outputs ()
+  "Choose and explicitly open a previously remembered local build output.
+The picker shows full source paths to distinguish identically named files.
+It does not refresh, render, replay, or open anything until chosen."
+  (interactive)
+  (let* ((entries (glassmacs-document-history-list))
+         (choices (mapcar
+                   (lambda (entry)
+                     (cons (format "%s  [%s, %s]"
+                                   (alist-get 'source entry)
+                                   (alist-get 'kind entry)
+                                   (alist-get 'time entry))
+                           (alist-get 'output entry)))
+                   entries)))
+    (unless choices
+      (user-error "No remembered local build outputs"))
+    (let* ((selected (completing-read "Open remembered output for: "
+                                     (mapcar #'car choices) nil t))
+           (output (cdr (assoc selected choices))))
+      (unless output
+        (user-error "No remembered output selected"))
+      (glassmacs-open-rendered-output output))))
+
+(defun glassmacs-document-build-forget-remembered-output ()
+  "Forget this source's remembered output after confirmation.
+This changes only the local metadata index; it never deletes an output file."
+  (interactive)
+  (let* ((base (or (buffer-base-buffer) (current-buffer)))
+         (source (buffer-local-value 'buffer-file-name base)))
+    (unless (and source (glassmacs-document-history-find source))
+      (user-error "No remembered local build output for this document"))
+    (when (y-or-n-p (format "Forget remembered output for %s? " source))
+      (glassmacs-document-history-forget source)
+      (message "Forgot remembered output for %s (file preserved)" source))))
+
+(defun glassmacs-document-build-open-last-output ()
+  "Open the current document's most recently reported successful build output."
+  (interactive)
+  (let ((job (glassmacs-document-build-current-job)))
+    (unless (and job
+                 (eq (glassmacs-document-job-status job) 'succeeded)
+                 (glassmacs-document-job-output-file job))
+      (user-error "No successful build output is linked to this document"))
+    (glassmacs-open-rendered-output
+     (glassmacs-document-job-output-file job))))
+
+(defun glassmacs-document-build-show-status ()
+  "Show a read-only snapshot of the current source's last build.
+This does not poll, restart, cancel, or reopen any job or output."
+  (interactive)
+  (let* ((job (glassmacs-document-build-current-job))
+         (context (and job (glassmacs-document-job-context job))))
+    (unless job
+      (user-error "No build is linked to this document"))
+    (let ((buffer (get-buffer-create "*Glassmacs Document Build Status*")))
+      (with-current-buffer buffer
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert (format "Source: %s\n" (glassmacs-document-context-source context)))
+          (insert (format "Job: %s\nKind: %s\nStatus: %s\n"
+                          (glassmacs-document-job-id job)
+                          (glassmacs-document-job-kind job)
+                          (glassmacs-document-job-status job)))
+          (when-let* ((root (glassmacs-document-context-project-root context)))
+            (insert (format "Project: %s\n" root)))
+          (when-let* ((output (glassmacs-document-job-output-file job)))
+            (insert (format "Output: %s\n" output)))
+          (when-let* ((error (glassmacs-document-job-error job)))
+            (insert (format "Note: %s\n" error)))
+          (insert (format "Log: %s\n"
+                          (if (buffer-live-p (glassmacs-document-job-log-buffer job))
+                              (buffer-name (glassmacs-document-job-log-buffer job))
+                            "not retained")))
+          (goto-char (point-min))
+          (special-mode)))
+      (display-buffer buffer)
+      buffer)))
+
+(defun glassmacs-document-build-show-last-log ()
+  "Display the current document's independent build log."
+  (interactive)
+  (let* ((job (glassmacs-document-build-current-job))
+         (log (and job (glassmacs-document-job-log-buffer job))))
+    (unless (buffer-live-p log)
+      (user-error "No retained build log is linked to this document"))
+    (display-buffer log)))
+
+(defun glassmacs-document-build-cancel ()
+  "Cancel only the current document's running experimental local build."
+  (interactive)
+  (let ((job (glassmacs-document-build-current-job)))
+    (unless job
+      (user-error "No build is linked to this document"))
+    (glassmacs-document-local-cancel job)))
+
 (defconst glassmacs--render-output-marker "GLASSMACS_RENDER_OUTPUT="
   "Prefix of the line on which Glassmacs's R render command prints its output.")
 
@@ -129,33 +302,34 @@ relative to DIRECTORY unless absolute."
         (message "Rendered; the output file was not reported")))))
 
 (defun glassmacs-render-rmarkdown ()
-  "Render the current R Markdown file with rmarkdown::render() and open it.
-Runs without blocking Emacs.  rmarkdown::render() returns the output file,
-which Glassmacs prints and then opens (see `glassmacs-render-open-output')."
+  "Render the current R Markdown file with rmarkdown::render() and open it."
   (interactive)
   (let* ((file (glassmacs--current-file))
-         (directory (file-name-directory file)))
-    (glassmacs-run-process
-     "Rscript"
-     (list "-e" (format "cat(%S, normalizePath(rmarkdown::render(%s)), \"\\n\", sep = \"\")"
-                        glassmacs--render-output-marker (glassmacs-r-quote file)))
-     directory
-     (lambda ()
-       (glassmacs--open-render-output
-        (concat "^" (regexp-quote glassmacs--render-output-marker) "\\(.+\\)$")
-        directory)))))
+         (directory (file-name-directory file))
+         (arguments
+          (list "-e"
+                (format "cat(%S, normalizePath(rmarkdown::render(%s)), \"\\n\", sep = \"\")"
+                        glassmacs--render-output-marker (glassmacs-r-quote file))))
+         (pattern (concat "^" (regexp-quote glassmacs--render-output-marker)
+                          "\\(.+\\)$")))
+    (if glassmacs-document-use-job-adapter
+        (glassmacs-document-render--local 'rmarkdown file "Rscript" arguments pattern)
+      (glassmacs-run-process
+       "Rscript" arguments directory
+       (lambda () (glassmacs--open-render-output pattern directory))))))
 
 (defun glassmacs-render-quarto ()
-  "Render the current Quarto document with the Quarto CLI and open it.
-Runs without blocking Emacs; the file Quarto reports as \"Output created\"
-is opened (see `glassmacs-render-open-output')."
+  "Render the current Quarto document with the Quarto CLI and open it."
   (interactive)
   (let* ((file (glassmacs--current-file))
-         (directory (file-name-directory file)))
-    (glassmacs-run-process
-     "quarto" (list "render" file) directory
-     (lambda ()
-       (glassmacs--open-render-output "^Output created: \\(.+\\)$" directory)))))
+         (directory (file-name-directory file))
+         (arguments (list "render" file))
+         (pattern "^Output created: \\(.+\\)$"))
+    (if glassmacs-document-use-job-adapter
+        (glassmacs-document-render--local 'quarto file "quarto" arguments pattern)
+      (glassmacs-run-process
+       "quarto" arguments directory
+       (lambda () (glassmacs--open-render-output pattern directory))))))
 
 (defun glassmacs-knit-sweave ()
   "Knit the current Sweave or knitr document using knitr::knit()."

@@ -106,5 +106,49 @@ window by document or console presentation logic."
   (and (window-live-p window)
        (memq window (window-list (window-frame window) 'never))))
 
+
+(defun glassmacs-presentation-graphical-frame-p (&optional frame)
+  "Whether FRAME (or the selected frame) can display native windows.
+This is a read-only capability check; terminal sessions never create
+new graphical frames merely because a macOS preference says so."
+  (display-graphic-p (or frame (selected-frame))))
+
+(defun glassmacs-presentation-effective-placement (placement &optional frame)
+  "Return a safe effective PLACEMENT for FRAME.
+Native-window requests in a terminal become in-frame presentation.
+This preserves the user's policy preference without creating a terminal
+frame or hiding another view."
+  (if (and (eq placement 'new-frame)
+           (not (glassmacs-presentation-graphical-frame-p frame)))
+      'reuse-current
+    placement))
+
+(defun glassmacs-presentation-role-default-placement (role)
+  "Return the documented default placement preference for ROLE.
+This function observes preference values only; callers retain control
+over whether to present or focus and must not mutate window layouts
+during classification."
+  (pcase role
+    ((or 'document 'r-source)
+     (and (boundp 'glassmacs-document-opening-policy)
+          glassmacs-document-opening-policy))
+    ('r-console
+     (and (boundp 'glassmacs-r-console-placement)
+          (pcase glassmacs-r-console-placement
+            ('separate-window 'new-frame)
+            ('current-window 'reuse-current)
+            ((or 'split-right 'split-below) glassmacs-r-console-placement)
+            (_ 'reuse-current))))
+    ('r-help
+     (and (boundp 'glassmacs-r-help-placement)
+          (pcase glassmacs-r-help-placement
+            ('separate-window 'new-frame)
+            ('side-right 'split-right)
+            ('side-bottom 'split-below))))
+    ('preferences
+     (and (boundp 'glassmacs-preferences-opening-policy)
+          glassmacs-preferences-opening-policy))
+    (_ nil)))
+
 (provide 'glassmacs-presentation-model)
 ;;; glassmacs-presentation-model.el ends here

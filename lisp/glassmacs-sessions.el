@@ -650,39 +650,52 @@ placements remain available for users who prefer Emacs pane layouts."
              (string-prefix-p "*help[R]" (buffer-name buffer))
              (string-prefix-p "*R Help" (buffer-name buffer))))))
 
+(defun glassmacs-r--help-placement-side ()
+  "Return the explicit Help side placement, or nil for native windows."
+  (pcase glassmacs-r-help-placement
+    ('side-right 'right)
+    ('side-bottom 'bottom)
+    (_ nil)))
+
+(defun glassmacs-r--help-existing-side-view (buffer side)
+  "Find an existing current-tab side window showing BUFFER on SIDE.
+Other topics may occupy other Help windows; do not silently replace them."
+  (cl-loop for frame in (cons (selected-frame)
+                              (delq (selected-frame) (frame-list)))
+           thereis (cl-find-if
+                    (lambda (window)
+                      (and (eq (window-parameter window 'window-side) side)
+                           (glassmacs-presentation-view-suitable-p
+                            window buffer 'open 'reuse-current)))
+                    (window-list frame 'never))))
+
 (defun glassmacs-r--display-help (buffer _alist)
-  "Present ESS R Help BUFFER according to the single Help policy."
-  (let* ((placement (if (and (display-graphic-p)
-                             (eq glassmacs-r-help-placement 'separate-window))
-                        'new-frame 'reuse-current))
-         (side (pcase glassmacs-r-help-placement
-                 ('side-bottom 'bottom)
-                 ('side-right 'right)))
+  "Present exact ESS R Help BUFFER without replacing unrelated documents.
+Repeated requests for the same topic focus its existing visible view.
+Distinct topics receive distinct native windows by default on graphical
+macOS; explicit side-window preferences retain upstream side placement."
+  (let* ((side (glassmacs-r--help-placement-side))
+         (native (and (display-graphic-p)
+                      (null side)))
          (existing (if side
-                       (cl-loop for frame in (cons (selected-frame)
-                                                   (delq (selected-frame)
-                                                         (frame-list)))
-                                thereis (cl-find-if
-                                         (lambda (window)
-                                           (and (eq (window-parameter window 'window-side)
-                                                    side)
-                                                (glassmacs-presentation-view-suitable-p
-                                                 window buffer 'open placement)))
-                                         (window-list frame 'never)))
+                       (glassmacs-r--help-existing-side-view buffer side)
                      (glassmacs-presentation-find-suitable-view
-                      buffer 'open placement))))
+                      buffer 'open (if native 'new-frame 'reuse-current)))))
     (cond
      (existing
+      (when native
+        (select-frame-set-input-focus (window-frame existing))
+        (select-window existing))
       existing)
-     ((and (display-graphic-p)
-           (eq glassmacs-r-help-placement 'separate-window))
+     (native
       (display-buffer-pop-up-frame
        buffer '((inhibit-same-window . t) (reusable-frames . nil))))
-     (t (display-buffer-in-side-window
-         buffer (list (cons 'side
-                            (if (eq glassmacs-r-help-placement 'side-bottom)
-                                'bottom 'right))
-                      (cons 'slot 0)))))))
+     (side
+      (display-buffer-in-side-window
+       buffer (list (cons 'side side) (cons 'slot 0))))
+     (t
+      (display-buffer buffer)))))
+
 
 (defun glassmacs-r-install-help-display ()
   "Install one authoritative ESS Help rule, ahead of generic display rules."
@@ -924,13 +937,58 @@ buffer; existing splits and other windows are never deleted."
   (interactive)
   (glassmacs-r-start-and-target-session))
 
+(defun glassmacs-r--live-console-choices ()
+  "Return stable, unambiguous labels for registered live R consoles.
+The list is derived from the registry, not from currently displayed
+windows, and retains exact session identities even for same-named R
+processes.  Calling this helper never changes ESS's selected process."
+  (mapcar
+   (lambda (session)
+     (cons (format "%s — %s"
+                   (glassmacs-session-id session)
+                   (glassmacs-sessions--describe session))
+           session))
+   (glassmacs-sessions-live)))
+
+(defun glassmacs-r--read-console-for-navigation ()
+  "Choose a registered live console for navigation without retargeting R.
+This operation never starts or terminates ESS processes or modifies the
+origin document's explicit execution target."
+  (glassmacs-sessions-refresh)
+  (let ((choices (glassmacs-r--live-console-choices)))
+    (unless choices
+      (user-error "No live R console"))
+    (or (cdr (assoc (completing-read "Show R console: " choices nil t)
+                    choices))
+        (user-error "No R console selected"))))
+
 (defun glassmacs-r-switch-console ()
-  "Choose a live R console and focus its existing native window."
+  "Focus a chosen live R console without changing source execution routing.
+Selection is based on the exact registered session ID, independent of
+buffer names or other live consoles.  It never retargets the invoking
+source document."
   (interactive)
-  (let ((live (glassmacs-sessions-refresh)))
-    (unless live (user-error "No live R console"))
-    (glassmacs-r-display-console
-     (glassmacs-session-buffer (glassmacs-sessions--prompt live)))))
+  (let ((session (glassmacs-r--read-console-for-navigation)))
+    (glassmacs-r-display-console (glassmacs-session-buffer session))))
+
+(defun glassmacs-r-show-target-console ()
+  "Focus the current source document's explicitly selected R console.
+Unlike choosing a console by name, this command refuses a stale target
+and does not fall through to a different live R session.  It does not
+change any document-to-session association."
+  (interactive)
+  (let* ((id (or (and (buffer-base-buffer)
+                      (buffer-local-value
+                       'glassmacs-r-target-session (buffer-base-buffer)))
+                 glassmacs-r-target-session)))
+    (unless id
+      (user-error "This document has no explicitly linked R console"))
+    (glassmacs-sessions-refresh)
+    (let ((session (glassmacs-sessions-find id)))
+      (unless (and session (memq session (glassmacs-sessions-live)))
+        (user-error "Linked R console %s is no longer live" id))
+      (glassmacs-r-display-console (glassmacs-session-buffer session)))))
+
 
 (defun glassmacs-r-start-and-target-session ()
   "Start R and target the new session from the current source buffer.

@@ -40,3 +40,67 @@ The shared presenter currently accepts `open`, `focus`, `move`, `split`, `tab`, 
 ## Suggested packaged macOS manual script
 
 Start from a clean profile, then repeat with existing preferences. Open two .R files, modify both, and open a third via Finder. Confirm frame identities and modified flags. Start two R consoles from one source, send alternating commands, inspect each console's history and target, then close one console window without killing the other process. Request two different R Help topics; open Preferences twice; click the mode-line buffer name; explicitly move one buffer into a tab and undo. Recover dirty buffers into a populated desktop. Exercise Cmd-W cancellation and Cmd-Q cancellation; verify all unsaved contents survive. Repeat with side-pane Help and legacy buffer cycling enabled. Record screenshots and any deviations against expected frame/window/process identities.
+
+
+## November 2026 follow-up: two native-presentation development slices
+
+The window campaign is deliberately stacked on draft research integration PR #112,
+not merged independently to `main`. Cycle 1 adds a read-only role-to-policy
+lookup and terminal-safe effective placement to the presentation model. It
+protects the bootstrap path from replacing an existing source when a native
+document frame was explicitly requested. No global `display-buffer` or
+`switch-to-buffer` advice is introduced.
+
+Cycle 2 routes explicitly requested research jobs dashboard and retained log
+views through a single conservative auxiliary-display adapter. Its native
+frame default applies only to graphical macOS, and an explicit preference
+restores standard Emacs placement. Existing suitable frames can be reused;
+source buffers, ESS sessions and research processes are not changed. The
+adapter never opens completed output, connects to SSH or starts/replays a job.
+
+### CI and packaged GUI acceptance
+
+- Run complete exact-head CI for both stacked commits, including ERT, real
+  ESS/R integration and the macOS launcher build. A newly opened PR has
+  **no** assumed passing status until the actual run is inspected.
+- On packaged native Cocoa Glassmacs: open two modified documents, request
+  the research dashboard twice, inspect a retained log, then return to the
+  source documents; verify identities, no replacement and no unexpected
+  duplicate native frame. Repeat with standard Emacs display preference.
+- Repeat with two independent R consoles, two distinct R help topics,
+  new tab and terminal fallback. Verify closing only the dashboard/log view
+  does not kill R or a research job.
+- Keep all physical GUI, trusted SSH, Intel, clean-machine and
+  corresponding-source checks explicitly NOT RUN until separately evidenced.
+  No DMG publication is authorized by these slices.
+
+## November 25 follow-up: exact console and R Help identity
+
+Window cycles 3 and 4 extend the presentation stack with explicit identity-preserving navigation:
+
+- R console navigation lists registered live sessions by immutable session ID; switching a console view does not change an R source document's execution target. A separate *Focus Linked R Console* source action refuses a stale explicit target rather than silently switching sessions. Starting another console remains an explicit operation.
+- R Help navigation reuses the view showing the exact requested Help buffer, focuses that frame when graphical, and creates distinct views for different topics rather than replacing an unrelated document. Side-pane overrides remain opt-in, and terminal presentation falls back to Emacs display.
+- CI tests include same-name session ambiguity, stale targets, preserving source targets when switching console views, repeated Help topics, distinct Help topics, and terminal fallback. A preexisting console-chooser test was updated to use the new exact-selection interface.
+
+These slices remain stacked on #128 and draft #112. Full exact-head CI validation of the descendant stack is necessary before consolidation. Packaged Cocoa GUI (including Finder, closing only a console frame, and multiple simultaneous Help topics) is NOT RUN; no automatic process restart, remote SSH operation, main merge, or DMG publication is authorized.
+
+
+## Integrated beta checkpoint: cycles 5–10
+
+Cycles 5–8 are consolidated in draft #112 at 520a09a; cycles 9–10
+remain pending exact-head CI. The remaining high-value work is cross-feature
+acceptance rather than speculative isolated window changes.
+
+| Scenario | Required observation |
+| --- | --- |
+| Two modified documents, one with an inactive-tab duplicate | Close one view without losing edits; cancel final close and verify content. |
+| Two live R consoles linked to distinct sources | Alternate evaluation; focus a different console without changing the source target; close a console view using Keep R Running. |
+| Two Help topics, two Customize groups, research dashboard and log | Exact repeated opens focus their own view; unrelated documents remain intact. |
+| Recovery into an already populated desktop | Recovered dirty buffers remain modified; existing documents and R processes remain untouched. |
+| Finder cold/warm open, Cmd-W, native close, Cmd-Q | Verify real Cocoa event routing and cancellation, including multi-tab windows. |
+
+Record exact candidate SHA, macOS version, architecture, profile, expected
+and observed behavior, and PASS/FAIL/NOT RUN for each scenario. Run real
+ESS/R integration on the consolidated candidate even if window-only CI
+skips it. Physical GUI checks require a packaged local macOS build; no
+main merge or public DMG is implied by this checkpoint.

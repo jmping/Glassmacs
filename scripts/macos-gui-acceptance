@@ -1273,6 +1273,81 @@ def finder_repeat_and_mixed_documents(ctx):
     instance.quit()
 
 
+@scenario("research-document-concurrent-real-render", ["MIX-002"],
+          macos_only=True)
+def research_document_concurrent_real_render(ctx):
+    """In the actual packaged app, render two saved R Markdown files
+    concurrently with the opt-in adapter, then inspect independent job,
+    log, output and history associations. External browser focus and native
+    PDF presentation remain manual gates. Missing R/Pandoc is NOT RUN."""
+    harness = ctx.harness
+    first = harness.document(
+        "phase2-first.Rmd",
+        "---\ntitle: First\noutput: html_document\n---\n\n"
+        "```{r}\nSys.sleep(8)\n101 + 1\n```\n")
+    second = harness.document(
+        "phase2-second.Rmd",
+        "---\ntitle: Second\noutput: html_document\n---\n\n"
+        "```{r}\nSys.sleep(8)\n202 + 2\n```\n")
+    instance = harness.launch(harness.new_home("research-documents"), files=[first])
+    ctx.ready(instance)
+    emacs = instance.emacs
+    # Discover tools in the actual GUI app environment; Finder can have a
+    # different PATH from interactive terminals. Never install packages here.
+    available = emacs.eval(
+        "(and (executable-find \"Rscript\") (executable-find \"pandoc\") "
+        "(eq 0 (call-process \"Rscript\" nil nil nil \"--vanilla\" \"-e\" "
+        "\"quit(status=if (requireNamespace('rmarkdown', quietly=TRUE)) 0 else 1)\")))")
+    if not available:
+        raise NotRun("Packaged app cannot find Rscript, rmarkdown and Pandoc")
+    harness.open_documents(second)
+    for source in (first, second):
+        emacs.wait(f"(find-buffer-visiting {el(source)})",
+                   f"{source.name} to open in the Cocoa app", timeout=30)
+    emacs.eval("(setq glassmacs-document-use-job-adapter t "
+               "glassmacs-document-remember-build-outputs t "
+               "glassmacs-render-open-output nil)")
+    first_id = emacs.eval(
+        f"(with-current-buffer (find-buffer-visiting {el(first)}) "
+        "(glassmacs-render-rmarkdown) "
+        "(glassmacs-document-job-id glassmacs-document-last-job))")
+    second_id = emacs.eval(
+        f"(with-current-buffer (find-buffer-visiting {el(second)}) "
+        "(glassmacs-render-rmarkdown) "
+        "(glassmacs-document-job-id glassmacs-document-last-job))")
+    ctx.note(f"First and second build IDs: {first_id}, {second_id}")
+    ctx.expect(first_id != second_id, "Parallel jobs reused an identity")
+    get_job = lambda source: (
+        f"(buffer-local-value 'glassmacs-document-last-job "
+        f"(find-buffer-visiting {el(source)}))")
+    first_job = get_job(first)
+    second_job = get_job(second)
+    emacs.wait(
+        f"(and (eq (glassmacs-document-job-status {first_job}) 'succeeded) "
+        f"(eq (glassmacs-document-job-status {second_job}) 'succeeded))",
+        "both real R Markdown builds to finish", timeout=240)
+    output_first = first.with_suffix(".html")
+    output_second = second.with_suffix(".html")
+    verification = (
+        f"(let ((a {first_job}) (b {second_job})) "
+        "(and (not (eq (glassmacs-document-job-log-buffer a) "
+        "              (glassmacs-document-job-log-buffer b))) "
+        f"(equal (glassmacs-document-job-output-file a) {el(output_first)}) "
+        f"(equal (glassmacs-document-job-output-file b) {el(output_second)}) "
+        f"(equal (glassmacs-document-history-find {el(first)}) {el(output_first)}) "
+        f"(equal (glassmacs-document-history-find {el(second)}) {el(output_second)}) "
+        f"(file-readable-p {el(output_first)}) "
+        f"(file-readable-p {el(output_second)}) "
+        "(not (glassmacs-document-job-error a)) "
+        "(not (glassmacs-document-job-error b))))")
+    ctx.expect(emacs.eval(verification),
+               "Builds lost distinct logs, paths, output index or success state")
+    ctx.expect(harness.app_processes() == [instance.pid],
+               "Render started a second Glassmacs app process")
+    ctx.method("real Rscript/rmarkdown in packaged Cocoa app; output viewer disabled")
+    instance.quit()
+
+
 @scenario("command-w-never-loses-changes", ["CLOSE-001", "TEXT-001"])
 def command_w_never_loses_changes(ctx):
     """Command-W on a modified document asks Save / Don't Save / Cancel;
@@ -1369,8 +1444,18 @@ def quit_with_unsaved_document_asks(ctx):
 
     # Save whichever document the native dialog names. The next dialog must
     # identify the other document; canceling it keeps those edits intact.
+    # The driver can report routing, but real System Events Command-Q is the
+    # acceptance input.  A blocked Cocoa event must be diagnosed separately
+    # from a helper which was launched but is missing from Accessibility.
     ctx.type(instance, "s-q", system_events='keystroke "q" using command down')
-    saved_document, checkbox = dialog_document()
+    try:
+        saved_document, checkbox = dialog_document()
+    except Failure:
+        ctx.note(f"Quit routing at failure: {quit_route!r}")
+        ctx.note(f"Emacs prompt: {emacs.eval('(glassmacs-acceptance-prompt)')!r}")
+        ctx.note(f"Glassmacs window: {harness.front_window_text(instance.pid)!r}")
+        ctx.note(f"Quit helper process: {harness.native_quit_helper_pid()!r}")
+        raise
     ctx.expect(checkbox == "0", f"First dialog checkbox started as {checkbox}")
     harness.native_quit_checkbox(instance.pid, "button", "Save")
     remaining_document, checkbox = dialog_document(previous_document=saved_document.name)
@@ -1517,13 +1602,28 @@ def dynamic_menu_shortcut_labels(ctx):
         raise Failure("Dynamic menu shortcut acceptance requires System Events "
                       "Accessibility on the macOS runner")
     emacs = instance.emacs
-    emacs.eval("(glassmacs-set-keyboard-profile 'glassmacs-hybrid)")
+    emacs.eval("(glassmacs-acceptance-run-later (lambda () "
+               "(glassmacs-set-keyboard-profile 'glassmacs-hybrid)))")
+    emacs.wait("(eq glassmacs-keyboard-profile 'glassmacs-hybrid)",
+               "Hybrid profile activation", timeout=30)
+    emacs.wait("(eq (lookup-key global-map (kbd \"s-n\")) "
+               "'glassmacs-new-document)",
+               "Hybrid global keymap installation", timeout=30)
     diagnostic = harness.capture_menu_accessibility_diagnostics(instance.pid)
     ctx.note(f"AX menu diagnostic artifact: {diagnostic}")
     actual = harness.menu_item_shortcut(instance.pid, "File", "New Document")
     ctx.expect(actual == "s-n",
                f"Hybrid New Document visible shortcut was {actual!r}, expected s-n")
-    emacs.eval("(glassmacs-set-keyboard-profile 'traditional-emacs)")
+    # Updating Custom may write to disk.  This request must not block the
+    # acceptance listener while writing user preferences: request the change
+    # from the GUI command loop, and wait for the profile and keymap state.
+    emacs.eval("(glassmacs-acceptance-run-later (lambda () "
+               "(glassmacs-set-keyboard-profile 'traditional-emacs)))")
+    emacs.wait("(eq glassmacs-keyboard-profile 'traditional-emacs)",
+               "Traditional profile activation", timeout=30)
+    emacs.wait("(not (eq (lookup-key global-map (kbd \"s-n\")) "
+               "'glassmacs-new-document))",
+               "Traditional global keymap restoration", timeout=30)
     actual = harness.menu_item_shortcut(instance.pid, "File", "New Document")
     ctx.expect(actual == "",
                f"Unbound New Document retained a visible shortcut: {actual!r}")

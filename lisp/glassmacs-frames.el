@@ -69,25 +69,35 @@ On macOS, preserve the source document by opening a new frame."
              '(glassmacs--preferences-buffer-p
                glassmacs--display-preferences))
 
+(defun glassmacs--preferences-group-frame (group)
+  "Find a dedicated visible Customize frame for exactly GROUP.
+A frame that was repurposed to another buffer is not a suitable view."
+  (cl-find-if
+   (lambda (frame)
+     (and (eq (frame-parameter frame 'glassmacs-customize-group) group)
+          (frame-visible-p frame)
+          (let ((window (frame-selected-window frame)))
+            (and (window-live-p window)
+                 (with-current-buffer (window-buffer window)
+                   (derived-mode-p 'custom-mode))))))
+   (frame-list)))
+
 (defun glassmacs-open-preferences-group (group)
   "Open Customize GROUP in its own frame on graphical macOS.
 Customize can switch buffers directly, bypassing display-buffer rules;
 selecting a dedicated frame first protects the source document."
   (let* ((separate (and (display-graphic-p)
                         (eq glassmacs-preferences-opening-policy 'new-frame)))
-         (existing (and separate
-                        (cl-find-if
-                         (lambda (frame)
-                           (let ((window (frame-selected-window frame)))
-                             (and (window-live-p window)
-                                  (with-current-buffer (window-buffer window)
-                                    (derived-mode-p 'custom-mode)))))
-                         (frame-list))))
+         ;; A different group may have unsaved Customize edits.  Never
+         ;; commandeer that frame as a convenient presentation target.
+         (existing (and separate (glassmacs--preferences-group-frame group)))
          (target (or existing (and separate (make-frame)))))
     (if target
         (progn
           (select-frame-set-input-focus target)
-          (with-selected-frame target (customize-group group)))
+          (with-selected-frame target
+            (customize-group group)
+            (set-frame-parameter target 'glassmacs-customize-group group)))
       (customize-group group))))
 
 (defun glassmacs-open-document-preferences ()
@@ -114,7 +124,8 @@ selecting a dedicated frame first protects the source document."
 (defun glassmacs--focus-buffer-in-existing-tab (buffer &optional destination)
   "Focus BUFFER in an existing tab without replacing any window contents.
 This is an explicit navigation operation, not a presentation-policy
-lookup.  Restore each frame's selected tab when BUFFER is absent."
+lookup.  Restore each frame's selected tab when BUFFER is absent, even
+when a tab switch fails; do not silently create a replacement view."
   (require 'tab-bar)
   (let ((frames (if destination (list destination)
                   (cons (selected-frame)
@@ -126,22 +137,26 @@ lookup.  Restore each frame's selected tab when BUFFER is absent."
           (with-selected-frame frame
             (let ((original (1+ (tab-bar--current-tab-index)))
                   (count (length (funcall tab-bar-tabs-function frame)))
-                  (matched nil))
+                  matched)
               (unwind-protect
-                  (dotimes (index count)
-                    (tab-bar-select-tab (1+ index))
-                    (let ((window (get-buffer-window buffer frame)))
-                      (when (and (window-live-p window)
-                                 (eq (window-buffer window) buffer))
-                        (setq matched window)
-                        (throw 'found
-                               (progn
-                                 (select-frame-set-input-focus frame)
-                                 (select-window window)
-                                 window)))))
+                  (condition-case nil
+                      (dotimes (index count)
+                        (tab-bar-select-tab (1+ index))
+                        (let ((window (get-buffer-window buffer frame)))
+                          (when (and (window-live-p window)
+                                     (eq (window-buffer window) buffer))
+                            (select-frame-set-input-focus frame)
+                            (select-window window)
+                            (setq matched window)
+                            (throw 'found window))))
+                    ;; A stale or deleted tab can invalidate the snapshot;
+                    ;; recover the prior selection and try other frames.
+                    (error nil))
                 (unless matched
-                  (tab-bar-select-tab original)))))))
-      nil)))
+                  (condition-case nil
+                      (tab-bar-select-tab original)
+                    (error nil)))))))
+      nil))))
 
 (defun glassmacs--read-open-document ()
   "Prompt for an open ordinary document and return its buffer.
@@ -187,10 +202,11 @@ Emacs primitives."
   (unless (buffer-live-p buffer)
     (user-error "Cannot present a dead buffer"))
   (let* ((intent (or intent 'open))
-         (placement (or placement
-                        (and (eq intent 'open)
-                             (glassmacs--document-opening-action buffer))
-                        'reuse-current))
+         (placement (glassmacs-presentation-effective-placement
+                     (or placement
+                         (and (memq intent '(open focus))
+                              (glassmacs--document-opening-action buffer))
+                         'reuse-current)))
          (existing (glassmacs-presentation-find-suitable-view
                     buffer intent placement destination)))
     (cond
@@ -202,8 +218,14 @@ Emacs primitives."
       (or (glassmacs--focus-buffer-in-existing-tab buffer destination)
           (glassmacs-present-buffer buffer 'new-view placement destination)))
      ((and (memq intent '(open focus))
+           (fboundp 'glassmacs--no-visible-graphical-frame-p)
+           (glassmacs--no-visible-graphical-frame-p)
            (fboundp 'glassmacs--ensure-visible-frame)
            (glassmacs--ensure-visible-frame))
+      ;; An existing hidden last Cocoa frame is the sole safe bootstrap
+      ;; destination.  Never create a second frame when no native window is
+      ;; visible; the original document protection applies once a visible
+      ;; frame exists.
       (switch-to-buffer buffer)
       (selected-window))
      ((or (eq intent 'move) (eq intent 'split)
@@ -315,45 +337,50 @@ Do not advise `find-file' globally: packages depend on its semantics."
 
 (defun glassmacs--buffer-in-inactive-tab-p (buffer frame)
   "Whether an inactive tab in FRAME has a view of BUFFER.
-Selection is restored even when tab-switch hooks raise an error."
+Fail closed when tab enumeration is incomplete: assume the buffer is
+shown elsewhere rather than permitting its document to be killed or an
+R console to be terminated from another window.  Restore the original
+selected tab even when a tab-switch hook raises an error."
   (when (and (frame-live-p frame)
              (glassmacs--frame-has-hidden-tabs-p frame))
     (with-selected-frame frame
       (let ((original (1+ (tab-bar--current-tab-index)))
             (count (length (funcall tab-bar-tabs-function frame)))
-            found)
+            found
+            incomplete)
         (unwind-protect
-            (dotimes (index count)
-              (unless (= (1+ index) original)
-                (tab-bar-select-tab (1+ index))
-                (when (get-buffer-window buffer frame)
-                  (setq found t))))
-          (tab-bar-select-tab original))
-        found))))
+            (condition-case nil
+                (dotimes (index count)
+                  (unless (= (1+ index) original)
+                    (tab-bar-select-tab (1+ index))
+                    (when (get-buffer-window buffer frame)
+                      (setq found t))))
+              (error (setq incomplete t)))
+          (condition-case nil
+              (tab-bar-select-tab original)
+            (error (setq incomplete t))))
+        (or found incomplete)))))
 
 (defun glassmacs--buffer-shown-elsewhere-p (buffer windows)
   "Return non-nil when BUFFER has a view outside WINDOWS.
 Include inactive tab views, which ordinary window enumeration omits.
-This avoids killing a document or prompting to hide a live R session
-while another tab still owns a view of that buffer."
+A failed inventory must never be interpreted as permission to discard
+an unsaved document or terminate a live R console.  For inactive tabs,
+use the conservative ownership scanner, which protects the buffer if
+a tab switch fails."
   (or (cl-some (lambda (window) (not (memq window windows)))
                (get-buffer-window-list buffer nil t))
       (cl-some
        (lambda (frame)
          (and (frame-live-p frame)
               (glassmacs--frame-has-hidden-tabs-p frame)
-              (memq buffer (glassmacs--frame-tab-buffers frame))
-              ;; If BUFFER occupies a view in this frame that is not one of
-              ;; the closing windows, keep the buffer alive.  A selected-tab
-              ;; view outside WINDOWS is handled by the first clause.
-              (or (not (memq buffer
-                             (mapcar #'window-buffer
-                                     (cl-remove-if-not
-                                      (lambda (window)
-                                        (eq (window-frame window) frame))
-                                      windows))))
-                  (glassmacs--buffer-in-inactive-tab-p buffer frame))))
+              ;; The selected tab is covered by the visible-view check.
+              ;; Never gate the hidden-tab scan on a preliminary
+              ;; glassmacs--frame-tab-buffers inventory: that scan may
+              ;; fail or see a changing tab and must fail closed.
+              (glassmacs--buffer-in-inactive-tab-p buffer frame)))
        (frame-list))))
+
 
 (defcustom glassmacs-confirm-console-window-close t
   "Ask what to do when the last visible window of a live R console closes.
@@ -598,7 +625,10 @@ individual document-save and R-console checks."
 
 (defun glassmacs--frame-tab-buffers (frame)
   "Collect unique buffers shown in every tab of FRAME.
-Restore the original tab even if a tab-selection hook signals an error."
+Never return a partial inventory when a tab disappears or a tab-switch
+hook fails: a partial inventory could let native frame-close discard an
+unsaved document or bypass an R console's close review.  Restore the
+original tab in all cases, and abort the close if scanning fails."
   (with-selected-frame frame
     (if (not (glassmacs--frame-has-hidden-tabs-p frame))
         (delete-dups (mapcar #'window-buffer (window-list frame 'never)))
@@ -606,12 +636,23 @@ Restore the original tab even if a tab-selection hook signals an error."
             (count (length (funcall tab-bar-tabs-function frame)))
             buffers)
         (unwind-protect
-            (dotimes (index count)
-              (tab-bar-select-tab (1+ index))
-              (dolist (window (window-list frame 'never))
-                (cl-pushnew (window-buffer window) buffers)))
-          (tab-bar-select-tab original))
+            (condition-case err
+                (dotimes (index count)
+                  (tab-bar-select-tab (1+ index))
+                  (dolist (window (window-list frame 'never))
+                    (cl-pushnew (window-buffer window) buffers)))
+              (error
+               (user-error "Cannot safely review all tabs before closing: %s"
+                           (error-message-string err))))
+          ;; A restoration error must also abort the close.  Never
+          ;; proceed using an inventory from a different selected tab.
+          (condition-case err
+              (tab-bar-select-tab original)
+            (error
+             (user-error "Cannot restore original tab after close review: %s"
+                         (error-message-string err)))))
         (nreverse buffers)))))
+
 
 (defun glassmacs--buffer-visible-in-other-frame-p (buffer frame)
   "Whether BUFFER has a view in any other frame, including inactive tabs."

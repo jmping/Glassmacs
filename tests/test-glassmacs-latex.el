@@ -132,5 +132,23 @@
         (glassmacs-latex-test--wait-for-sentinel process))
       (should (eq succeeded t)))))
 
+
+(ert-deftest glassmacs-latex-opt-in-sweave-uses-document-job ()
+  "Experimental Sweave rendering reports a PDF through the job adapter."
+  (let ((glassmacs-document-use-job-adapter t)
+        captured)
+    (with-temp-buffer
+      (setq buffer-file-name "/tmp/research/paper.Rnw")
+      (cl-letf (((symbol-function 'glassmacs-document-render--local)
+                 (lambda (&rest args) (setq captured args) 'job-process)))
+        (should (eq (glassmacs-knit-sweave-pdf) 'job-process))
+        (should (eq (nth 0 captured) 'sweave))
+        (should (equal (nth 1 captured) "/tmp/research/paper.Rnw"))
+        (should (equal (nth 2 captured) "Rscript"))
+        (should (string-match-p "knitr::knit2pdf"
+                                (cadr (nth 3 captured))))
+        (should (string-match-p "GLASSMACS_RENDER_OUTPUT"
+                                (cadr (nth 3 captured))))))))
+
 (provide 'test-glassmacs-latex)
 ;;; test-glassmacs-latex.el ends here

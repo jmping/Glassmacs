@@ -240,6 +240,85 @@ one render runs at a time; starting another while one is running is refused.
 A missing executable is reported immediately. R packages such as `rmarkdown` or
 `knitr` must be installed in the selected R library.
 
+**Experimental research-build adapter (draft campaign #111):** Set
+`glassmacs-document-use-job-adapter` to non-nil to opt into per-document
+local R Markdown/Quarto job records and independent output logs. The default
+path remains the single-process renderer described above until the new
+adapter passes integrated and packaged-app acceptance. Each opt-in job records
+its source directory, status and reported output; local cancellation and
+concurrent jobs use the separate job API. The adapter deliberately refuses a
+remote source document rather than pretending that local Rscript/Quarto can
+execute safely across SSH. Remote document rendering is deferred until the
+#102 remote campaign is accepted.
+
+**Failure-state hardening:** Missing local renderer executables mark the attempted build as failed rather than leaving a pending record. Extremely short-lived subprocesses are reconciled after their per-job metadata is installed, with duplicate completion callbacks suppressed. This remains a local, opt-in adapter; packaged-app acceptance is required before changing the default.
+
+The experimental **Document** menu also provides **Open Last Build Output**,
+**Show Last Build Log**, **Show Build Status**, and **Cancel Document Build** for the source's own
+last job. The status inspector is a read-only snapshot of job ID, renderer,
+status, reported output, retained log and any recorded error; it does not
+poll, restart or open anything. Output association is in-memory and source-specific; it does not
+restore builds after restarting Glassmacs or treat a renamed document as
+identical. Cancel affects only that local job's owned process and does not
+promise termination of child process trees.
+
+**Opt-in local build history:** Set `glassmacs-document-remember-build-outputs`
+to non-nil to retain the last successful local output association for up to
+100 source documents in a private mode-0600 JSON index inside the Glassmacs
+profile. The index contains source/output paths, renderer type and time, but
+no code, logs or credentials. **Document → Open Remembered Build Output**
+explicitly checks and opens a remembered file, including after reopening the
+source document. It never restarts a build or automatically opens an output on
+startup. Remote source and output paths are excluded; a missing, changed or
+unreadable file is not silently reconstructed. This is not persistent job or
+project-session restoration.
+
+**Recent output navigation (experimental):** With
+`glassmacs-document-remember-build-outputs` enabled, run
+`M-x glassmacs-document-build-browse-recent-outputs` to choose a previously
+successful local output from the bounded private index. The picker shows the
+full source path, renderer kind and recorded time, disambiguating reports with
+the same basename in different projects. Nothing is opened until you select
+an entry, and missing outputs report an error rather than triggering a rebuild.
+Run `M-x glassmacs-document-build-forget-remembered-output` in a source buffer
+to forget that source's record after confirmation. This removes metadata only;
+the generated file remains on disk. The opt-in index is local-only, contains
+no commands or logs, and never restores or executes work automatically.
+
+**Research jobs dashboard (experimental):** With
+`glassmacs-document-use-job-adapter` enabled, choose
+**Document → Show Research Jobs…** or run
+`M-x glassmacs-document-jobs-show`. The read-only table lists up to
+100 jobs **from the current Emacs process only**, with status, renderer,
+stable job ID, full source path and reported output. Jobs are registered
+before local renderer startup so missing-executable failures remain visible;
+completed and cancelled jobs stay inspectable until the bounded index evicts
+them or Glassmacs exits. Refresh explicitly with **g**; **RET**/**l** displays
+a retained log, **o** explicitly opens a successful local output, and **c**
+asks before cancelling the selected running, owned local document or Shiny
+process. A remote/unknown process cannot be cancelled through this view.
+No command in the dashboard runs code, reconnects SSH, replays jobs, restores
+processes, or automatically opens files. Remote durable R jobs in draft
+#102 are **not** included; integration will require separate trusted-host
+acceptance. Shiny launch/reload use the same status view only when the adapter
+is enabled. Output history remains a separate, opt-in on-disk index.
+
+The **Document** menu also exposes **Browse Recent Build Outputs…** and
+**Forget Remembered Output…** when local output history is enabled.
+Forgetting asks confirmation and never removes the generated file.
+When opening an output after a successful build fails in the external
+viewer, the job retains its output path and opt-in history record; presentation
+failure does not change a successful render into a failed process.
+
+**Integrated acceptance protocol:** The real two-document build, isolation and remembered-output tests are included in `./scripts/test` and exercised when dependencies are present in the Linux ESS/R integration job. For candidate-specific native macOS, Quarto, Sweave, Shiny and trusted-SSH acceptance, record PASS/FAIL/NOT RUN evidence using [the integrated document acceptance runbook](research-document-integration-acceptance.md) and [issue #122](https://github.com/jmping/Glassmacs/issues/122). Passing CI does not certify Cocoa windows, actual viewer integration or remote disconnection behavior.
+
+**Sweave experimental adapter:** When the local job adapter is enabled,
+`glassmacs-knit-sweave-pdf` also uses a distinct job/log and associates the
+PDF reported by `knitr::knit2pdf()` with its `.Rnw` source. The legacy
+AUCTeX/Skim/Preview path remains the default. SyncTeX still points to the
+generated TeX source rather than reliably mapping inverse search into
+original Sweave chunks; that source-map problem remains a separate gate.
+
 ## Shiny
 
 From `app.R`, `ui.R`, or `server.R`, or a directory containing one of those
@@ -261,6 +340,24 @@ listening. Set `glassmacs-shiny-launch-browser` to nil to only report the
 address. **Open Shiny Preview** reopens it, **Reload Shiny App** restarts the
 last app after edits, and **Stop Shiny App** (`M-x glassmacs-shiny-stop`)
 terminates it. One app runs at a time.
+
+When the experimental document job adapter is enabled, a local Shiny process
+also receives a conservative job-status record (running, succeeded, failed,
+or cancelled). The recorded source is the captured app entry point (app.R or
+ui.R) or the exact interactive .Rmd/.qmd source, **never** whichever file is
+selected after launch. Explicit reload retains this source even when its
+buffer is closed. A process creation failure records a failed job; a very
+short-lived child is reconciled after registration. The existing localhost-only
+URL discovery, stop/reload and single-app ownership remain authoritative;
+this does not turn Shiny into a durable or remotely reattachable job. The source association is an in-memory
+status aid, not persistent project restoration.
+
+**Optional project context:** Setting `glassmacs-document-detect-project-root`
+to non-nil attaches the local upstream Emacs `project.el` root to new build
+context records. It does not change the current working directory, select an
+ESS session, enable remote execution, or establish source-to-output mapping.
+TRAMP/SSH project probing is skipped deliberately; remote project identity
+will require an explicit, separately reviewed trust and path model.
 
 R, the Shiny R package, Quarto, and document packages are external
 dependencies; their presence is not guaranteed by installing Glassmacs.

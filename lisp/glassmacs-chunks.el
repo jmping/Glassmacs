@@ -389,6 +389,51 @@ as a local Shiny app instead, since it cannot be rendered to a file."
       '(menu-item "Run Interactive Document" glassmacs-run-interactive-document
                   :visible (glassmacs-shiny-interactive-document-p)
                   :help "Run this runtime: shiny document and open it in the browser"))
+    (define-key menu [build-cancel]
+      '(menu-item "Cancel Document Build" glassmacs-document-build-cancel
+                  :visible (bound-and-true-p glassmacs-document-use-job-adapter)
+                  :enable (let ((job (glassmacs-document-build-current-job)))
+                            (and job
+                                 (eq (glassmacs-document-job-status job) 'running)))))
+    (define-key menu [build-status]
+      '(menu-item "Show Build Status" glassmacs-document-build-show-status
+                  :visible (bound-and-true-p glassmacs-document-use-job-adapter)
+                  :enable (glassmacs-document-build-current-job)))
+    (define-key menu [build-log]
+      '(menu-item "Show Last Build Log" glassmacs-document-build-show-last-log
+                  :visible (bound-and-true-p glassmacs-document-use-job-adapter)
+                  :enable (let ((job (glassmacs-document-build-current-job)))
+                            (and job (buffer-live-p
+                                      (glassmacs-document-job-log-buffer job))))))
+    (define-key menu [jobs]
+      '(menu-item "Show Research Jobs..." glassmacs-document-jobs-show
+                  :visible (bound-and-true-p glassmacs-document-use-job-adapter)))
+    (define-key menu [build-recent]
+      '(menu-item "Browse Recent Build Outputs..."
+                  glassmacs-document-build-browse-recent-outputs
+                  :visible (bound-and-true-p
+                            glassmacs-document-remember-build-outputs)))
+    (define-key menu [build-forget]
+      '(menu-item "Forget Remembered Output..."
+                  glassmacs-document-build-forget-remembered-output
+                  :visible (bound-and-true-p
+                            glassmacs-document-remember-build-outputs)
+                  :enable (let ((source
+                                 (buffer-file-name
+                                  (or (buffer-base-buffer) (current-buffer)))))
+                            (and source (not (file-remote-p source))))))
+    (define-key menu [build-remembered]
+      '(menu-item "Open Remembered Build Output"
+                  glassmacs-document-build-open-remembered-output
+                  :visible (bound-and-true-p
+                            glassmacs-document-remember-build-outputs)))
+    (define-key menu [build-output]
+      '(menu-item "Open Last Build Output" glassmacs-document-build-open-last-output
+                  :visible (bound-and-true-p glassmacs-document-use-job-adapter)
+                  :enable (let ((job (glassmacs-document-build-current-job)))
+                            (and job
+                                 (eq (glassmacs-document-job-status job) 'succeeded)
+                                 (glassmacs-document-job-output-file job)))))
     (define-key menu [separator-render] menu-bar-separator)
     (define-key menu [insert]
       '(menu-item "Insert R Chunk" glassmacs-chunks-insert))
