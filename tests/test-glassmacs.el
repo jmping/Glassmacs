@@ -1434,7 +1434,7 @@ otherwise never build."
         (system-type 'darwin)
         (glassmacs-keyboard-profile 'glassmacs-hybrid)
         (glassmacs--saved-hybrid-keybindings nil)
-        (original-default (default-value 'glassmacs-keyboard-profile))
+        (original-default (default-value 'glassmacs-keyboard-profile)))
         (custom-file (make-temp-file "glassmacs-profile-")))
     (unwind-protect
         (cl-letf (((symbol-function 'display-graphic-p)
