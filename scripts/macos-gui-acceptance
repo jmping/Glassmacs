@@ -1444,8 +1444,18 @@ def quit_with_unsaved_document_asks(ctx):
 
     # Save whichever document the native dialog names. The next dialog must
     # identify the other document; canceling it keeps those edits intact.
+    # The driver can report routing, but real System Events Command-Q is the
+    # acceptance input.  A blocked Cocoa event must be diagnosed separately
+    # from a helper which was launched but is missing from Accessibility.
     ctx.type(instance, "s-q", system_events='keystroke "q" using command down')
-    saved_document, checkbox = dialog_document()
+    try:
+        saved_document, checkbox = dialog_document()
+    except Failure:
+        ctx.note(f"Quit routing at failure: {quit_route!r}")
+        ctx.note(f"Emacs prompt: {emacs.eval('(glassmacs-acceptance-prompt)')!r}")
+        ctx.note(f"Glassmacs window: {harness.front_window_text(instance.pid)!r}")
+        ctx.note(f"Quit helper process: {harness.native_quit_helper_pid()!r}")
+        raise
     ctx.expect(checkbox == "0", f"First dialog checkbox started as {checkbox}")
     harness.native_quit_checkbox(instance.pid, "button", "Save")
     remaining_document, checkbox = dialog_document(previous_document=saved_document.name)
@@ -1598,7 +1608,16 @@ def dynamic_menu_shortcut_labels(ctx):
     actual = harness.menu_item_shortcut(instance.pid, "File", "New Document")
     ctx.expect(actual == "s-n",
                f"Hybrid New Document visible shortcut was {actual!r}, expected s-n")
-    emacs.eval("(glassmacs-set-keyboard-profile 'traditional-emacs)")
+    # Updating Custom may write to disk.  This request must not block the
+    # acceptance listener while writing user preferences: request the change
+    # from the GUI command loop, and wait for the profile and keymap state.
+    emacs.eval("(glassmacs-acceptance-run-later (lambda () "
+               "(glassmacs-set-keyboard-profile 'traditional-emacs)))")
+    emacs.wait("(eq glassmacs-keyboard-profile 'traditional-emacs)",
+               "Traditional profile activation", timeout=30)
+    emacs.wait("(not (eq (lookup-key global-map (kbd \"s-n\")) "
+               "'glassmacs-new-document))",
+               "Traditional global keymap restoration", timeout=30)
     actual = harness.menu_item_shortcut(instance.pid, "File", "New Document")
     ctx.expect(actual == "",
                f"Unbound New Document retained a visible shortcut: {actual!r}")
