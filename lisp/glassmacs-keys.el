@@ -84,12 +84,20 @@ PROFILE must be `glassmacs-hybrid', `traditional-emacs', or nil."
         "nil")))))
   (unless (memq profile '(glassmacs-hybrid traditional-emacs nil))
     (user-error "Unknown Glassmacs keyboard profile: %s" profile))
-  (setq glassmacs-keyboard-profile profile)
-  (glassmacs--install-hybrid-bindings)
-  (let ((user-init-file (or user-init-file custom-file)))
-    (customize-save-variable 'glassmacs-keyboard-profile profile))
-  (message "Glassmacs keyboard profile: %s"
-           (or profile "disabled")))
+  ;; Custom's setter updates the default and installs the bindings.  A
+  ;; failed preference write must not leave the visible profile changed
+  ;; without persistence; roll back to the prior working profile instead.
+  (let ((previous (default-value 'glassmacs-keyboard-profile))
+        (user-init-file (or user-init-file custom-file)))
+    (condition-case error-data
+        (progn
+          (customize-save-variable 'glassmacs-keyboard-profile profile)
+          (message "Glassmacs keyboard profile: %s"
+                   (or profile "disabled")))
+      (error
+       (set-default 'glassmacs-keyboard-profile previous)
+       (glassmacs--install-hybrid-bindings)
+       (signal (car error-data) (cdr error-data))))))
 
 (defun glassmacs-select-hybrid-keyboard-profile ()
   "Select and persist the Hybrid macOS / Emacs keyboard profile."
