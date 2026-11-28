@@ -95,8 +95,10 @@ PROFILE must be `glassmacs-hybrid', `traditional-emacs', or nil."
           (message "Glassmacs keyboard profile: %s"
                    (or profile "disabled")))
       (error
-       (set-default 'glassmacs-keyboard-profile previous)
-       (glassmacs--install-hybrid-bindings)
+       ;; Custom may have already switched bindings before its file write
+       ;; failed.  Apply the rollback through the same setter, rather than
+       ;; restoring the variable alone, so the keymap and state agree.
+       (glassmacs--set-keyboard-profile 'glassmacs-keyboard-profile previous)
        (signal (car error-data) (cdr error-data))))))
 
 (defun glassmacs-select-hybrid-keyboard-profile ()
