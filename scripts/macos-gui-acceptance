@@ -1602,7 +1602,13 @@ def dynamic_menu_shortcut_labels(ctx):
         raise Failure("Dynamic menu shortcut acceptance requires System Events "
                       "Accessibility on the macOS runner")
     emacs = instance.emacs
-    emacs.eval("(glassmacs-set-keyboard-profile 'glassmacs-hybrid)")
+    emacs.eval("(glassmacs-acceptance-run-later (lambda () "
+               "(glassmacs-set-keyboard-profile 'glassmacs-hybrid)))")
+    emacs.wait("(eq glassmacs-keyboard-profile 'glassmacs-hybrid)",
+               "Hybrid profile activation", timeout=30)
+    emacs.wait("(eq (lookup-key global-map (kbd \"s-n\")) "
+               "'glassmacs-new-document)",
+               "Hybrid global keymap installation", timeout=30)
     diagnostic = harness.capture_menu_accessibility_diagnostics(instance.pid)
     ctx.note(f"AX menu diagnostic artifact: {diagnostic}")
     actual = harness.menu_item_shortcut(instance.pid, "File", "New Document")
